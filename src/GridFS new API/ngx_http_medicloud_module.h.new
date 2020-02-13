@@ -1,0 +1,145 @@
+/**
+ * Nginx media serving module for Medicloud.
+ *
+ * @author: Assen Totin assen.totin@curaden.ch
+ */
+
+//FIXME: some of this may not be needed - check
+// Includes
+#include <curl/curl.h>
+#include <dlfcn.h>
+#include <mongoc.h>
+#include <ngx_config.h>
+#include <ngx_core.h>
+#include <ngx_http.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <time.h>
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+// Definitions
+#define DEFAULT_CONTENT_TYPE "application/octet-stream"
+#define DEFAULT_ETAG "00000000000000000000000000000000"
+#define LOCATION_PUBLIC1 "public"
+#define LOCATION_PUBLIC2 "profile"
+#define LOCATION_PRIVATE "private"
+#define DNLD_ATTACHMENT "download"
+#define DNLD_STREAM "stream"
+#define HEADER_ETAG "ETag"
+#define HEADER_CONTENT_DISPOSITION "Content-Disposition"
+#define HEADER_AUTHORIZATION "Authorization"
+#define MONGO_DEFAULT_URL "mongodb://localhost:27017"
+#define MONGO_DEFAULT_DB "practicedent"
+#define MONGO_COLLECTION_FILES "fs"
+#define WEB_TOKEN "medicloud_token"
+#define ERROR_MESSAGE_LENGTH 1024
+
+// Structures
+typedef struct {
+	ngx_array_t loc_confs; 		// ngx_http_medicloud_conf_t
+} ngx_http_medicloud_main_conf_t;
+
+typedef struct {
+	ngx_str_t mongo_url;
+	ngx_str_t mongo_db;
+} ngx_http_medicloud_loc_conf_t;
+
+typedef struct {
+	int64_t last_modified;
+	int64_t length; 
+	char *content_type;
+	char *etag;
+	u_char *data;
+	char *filename;
+} grid_file_t;
+
+typedef struct {
+	bool is_public;				// Media type, public or private
+	bool is_attachment;			// Download method, attachment or not
+	char *id;					// Media ID
+	char *user_id;				//FIXME: Change this to char if the ID will be a Mongo ID?
+	char *if_none_match;
+	char *error;
+	char *uri;
+	char *uri_dup;
+	char *bucket;
+	char *mongo_url;
+	char *mongo_db;
+	char *authorization;
+	char *token;
+} sm_t;
+
+// Prototypes
+static void* ngx_http_medicloud_create_loc_conf(ngx_conf_t* directive);
+static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* directive, void* parent, void* child);
+static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t* request);
+static int auth_private(mongoc_client_t *mongo_conn, sm_t *sm, ngx_log_t *log);
+//static int serve_file(mongoc_client_t *mongo_conn, sm_t *sm, ngx_log_t *log, grid_file_t *grid_file);
+void cleanup_grid_file(grid_file_t *grid_file);
+void cleanup_sm(sm_t *sm);
+char *from_ngx_str(ngx_str_t ngx_str);
+void debug(char *s);
+
+// Globals: array to specify how to handle configuration directives.
+static ngx_command_t ngx_http_medicloud_commands[] = {
+	{
+		ngx_string("medicloud"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_NOARGS,
+		ngx_http_medicloud_init,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_medicloud_loc_conf_t, mongo_url),
+		NULL
+	},
+	{
+		ngx_string("mongo_url"),
+		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_medicloud_loc_conf_t, mongo_url),
+		NULL
+	},
+	{
+		ngx_string("mongo_db"),
+		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_medicloud_loc_conf_t, mongo_db),
+		NULL
+	},
+	ngx_null_command
+};
+
+// Globals: module context
+static ngx_http_module_t ngx_http_medicloud_module_ctx = {
+	NULL,								// pre-configuration
+	NULL,								// pre-configuration
+	NULL,								// allocations and initilizations of configurations for the main block configuration
+	NULL,								// set the configuration based on the directives supplied in the configuration files
+	NULL,								// allocations and initilizations of configurations for the server block configuration
+	NULL,								// merge the server block configuration with the main block
+	ngx_http_medicloud_create_loc_conf,	// allocations and initilizations of configurations for the location block configuration
+	ngx_http_medicloud_merge_loc_conf	// callback to merge the location block configuration with the server block
+};
+
+// Globals: module definition
+ngx_module_t ngx_http_medicloud_module = {
+	NGX_MODULE_V1,
+	&ngx_http_medicloud_module_ctx,	// pointer to be passed to calls made by NGINX’s API to your module
+	ngx_http_medicloud_commands,	// pointer to a struct with extra configuration directives used by the module
+	NGX_HTTP_MODULE,				// type of module defined
+	NULL,							// hook into the initialisation of the master process
+	NULL,							// hook into the module initialisation phase; happens prior to master process forking
+	NULL,							// hook into the module initialisation in new process phase; happens as the worker processes are forked.
+	NULL,							// hook into the initialisation of threads
+	NULL,							// hook into the termination of a thread
+	NULL,							// hook into the termination of a child process (such as a worker process)
+	NULL,							// hook into the termination of the master process
+	NGX_MODULE_V1_PADDING
+};
+

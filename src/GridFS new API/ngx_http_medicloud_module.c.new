@@ -1,0 +1,763 @@
+/*
+TIMELINE:
+- Impelment skeleton Nginx module in C following the Nginx Moule API. Includes required I/O and logging. Time: 8 hrs
+- Implement MongoDB connection using the MongoDB C driver. Includes custom configuration for MongoDB connection in Nginx config file. Time: 8 hrs.
+- Implement business logic to separate public from private downloads. Time: 8 hrs.
+
+(- Implement web token extraction from cookie or header. Includes token validation as JWT. Time: 8 hrs)
+(4. Implement business logic to authorise private downloads. Time: 8 hrs.)
+
+- Implement file extraction from GridFS: 8 hrs.
+- Implement ETag extraction from request and GridFS and validation. Includes RFC7232 compliance: 8 hrs.
+- Implement attachment and streaming downloads. Includes URI encoding for file names. Time: 8 hr.
+
+(99. Integrate build with the Build Server & Jenkins: 8 hr.)
+
+
+QUETIONS:
+1. Как можем по URL да определим дали ресурсът е публичен (съотв. не изисква авторизация) или не (съотв. изисква се авторизация). Смисълът е да не се прави авторизация за ресурси, които са публични и всеки може да вид итака или иначе.
+
+2. Каква е разликата между download и stream в URL-а?
+
+3. Какъв е смисълът на bucket в URL-а, с който се взима медията?
+
+4. Как клиентът подава авторизационният си ключ (хедър, cookie и пр.) - нужно е описание за извличането му (вкл. някакво декодиране, ако се прави, напр. base64 и пр.)
+
+5. Как се валидира авторизационният ключ на клиента - в коя колекция на Монго, с каква заявка и пр.
+
+6. Как от авторизационния ключ се извлича ID на клиента и дали това ID е Монго _id - от коя колекция на Монго, с каква заявка и пр.
+
+(6а - опционално) Ако подаваният от клиента идентификатор на медия (id) за сваляне не е _id на обект от Монго, как се извлича въпросното _id от подаденото id?
+
+7. Как се проверява дали даденият клиент има право на достъп до заявения ресурс (id или _id, ако са различни) - в коя колекция на Монго, с каква заявка и пр.
+
+8. Файловете, които са public, в същата Монго колекция ли се намират, заедно с файловете, които са private, или в отделна (и коя/кои са те)?
+
+---
+
+1. за момента имаме три "бъкета" 
+- private - само за тенанта
+- public - не е нужно да има авторизация
+- profile - мисля че и там нямаше нужда от авторизация
+
+2.
+- download - слага флаг isAttachment = true
+- stream - слага флаг isAttachment = false
+Ако е true се слага хедър:
+
+headers['Content-Disposition'] = 'attachment; filename="' + encodeURIComponent(this.file.filename) + '";'
+
+3. Не те разбрах :|
+
+4. 
+- Взима файла от базата за да чете metadata
+- Ако няма metadata.access взима токена от регуеста и го валидира през допълнителния jwt ( не този към expressjs middleware а допълнително сложения )
+- expressJWT пък се ползва за всички /private
+- Ако има в метадатата ETag връща http status 304
+- Ако няма ETag го сваля .
+Всички /private (GET, POST ) както и за POST /public се прави проверка дали има хедър Authorization || authorization
+Ако няма хедъри чете кукито и ако има куги СЕТВА 
+
+Authorization = 'Bearer ' + cookie value
+authorization = 'Bearer ' + cookie value
+
+5. session колекцията
+
+MONGODEV:SECONDARY> db.session.findOne();
+{
+	"_id" : ObjectId("5d09e0a52bad0f0e820ce624"),
+	"tid" : ObjectId("4f72e5addf08ee10a842e573"),
+	"sid" : "54c774b134a1e3755f252cba9f254e1ffc9e25ba8e35ebbff18e722d5dac8a7a",
+	"uid" : ObjectId("507bc7d98d8c8c55b155657f"),
+	"created" : 1560928421546,
+	"last_ip" : "94.156.218.116",
+	"origin" : "https://stage.onebox-pro.ch",
+	"test" : null
+}
+
+
+6. В линка се подава :id което го търси в 
+
+полето "metadata.fid" в таблица fs.files
+
+7. Освен за metadata.fid търси и metadata.tid ( Tenant ID ) Нооо сега като гледам го търси така само за delete :D
+
+8. Всичко е в fs.files и fs.chunks ( дефоултните на gridfs адаптора ) 
+
+-----
+
+10x, Ники, доста неща станаха ясни. Да уточня, че говорим само за GET - всичко по POST, PUT и DELETE си остава във вашия app.
+
+Остават обаче такива, дето ти си ги знаеш, а аз - не :) Дотук имаме:
+- Извличане на etag от хедър If-None-Match, ако има такъв.
+- Извличане на token от cookie на име "medicloud_token" или, ако то липсва, от хедър Authorization (като задедно като Bearer).
+- Взимане на данните и метаданните за файла от GridFS.
+- Ако има meatdata.etag и съвпада (weak) с подадени от клиента, връщаме 304.
+- Ако клиентът не е подал etag или не съвпада с този в базата, подаваме целия файл.
+
+Въпроси по твоите обяснения:
+- Да уточним сервирането на private file: какво от сесията трябва да съвпадне с метаданните на файла (намерен по metadata.fid) - само uid, само tid или и двете?
+- Какво е значението на metadata.access и какви стойности може да има? Какво правим, ако има metadata.access и какво, ако го няма?
+- Какво правим с web token, след като се сдобием с него? Валидираме ли го някак (не разбрах това за "допълнителен jwt" и тогава сигурно има друг "основен"...)?
+- Как от web token стигаме до сесията на клиента, за вземем uid и tid?
+- Правилно ли разбирам, че ако клиентът не е подал Authorization хедър, но е подал cookie, ние следва да му върнем Authorization хедър като Bearer с кукито?
+
+---
+
+
+*/
+
+/**
+ * Nginx media serving module for Medicloud.
+ *
+ * @author: Assen Totin assen.totin@curaden.ch
+ */
+
+//#include "../config"
+#include "ngx_http_medicloud_module.h"
+
+/**
+ * Create location configuration
+ */
+static void* ngx_http_medicloud_create_loc_conf(ngx_conf_t* cf) {
+	ngx_http_medicloud_loc_conf_t* loc_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_medicloud_loc_conf_t));
+	if (loc_conf == NULL) {
+		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to allocate memory for Medicloud location config.");
+		return NGX_CONF_ERROR;
+	}
+
+	return loc_conf;
+}
+
+/**
+ * Merge location configuration
+ */
+static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_child) {
+	ngx_http_medicloud_loc_conf_t *parent = void_parent;
+	ngx_http_medicloud_loc_conf_t *child = void_child;
+
+	ngx_conf_merge_str_value(child->mongo_url, parent->mongo_url, MONGO_DEFAULT_URL);
+	ngx_conf_merge_str_value(child->mongo_db, parent->mongo_db, MONGO_DEFAULT_DB);
+
+	return NGX_CONF_OK;
+}
+
+/**
+ * Init module and set handler
+ */
+static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+    ngx_http_core_loc_conf_t  *clcf;
+
+    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    clcf->handler = ngx_http_medicloud_handler;
+
+    return NGX_CONF_OK;
+}
+
+/**
+ * Content handler: the main workhorse of the module
+ */
+static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
+	ngx_buf_t *b;
+	ngx_chain_t out;
+	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
+
+	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
+
+	// ----- RETRIEVE LOCATION AND OID FROM REQUEST ----- //
+
+	// Error message storage
+	int res = 0;
+
+	// Prepare session management data
+	sm_t sm;
+	sm.error = NULL;
+	sm.if_none_match = NULL;
+	sm.uri = NULL;
+	sm.uri_dup = NULL;
+	sm.mongo_url = from_ngx_str(medicloud_loc_conf->mongo_url);
+	sm.mongo_db = from_ngx_str(medicloud_loc_conf->mongo_db);
+	sm.authorization = NULL;
+	sm.token = NULL;
+
+	// Etag from client If-None-Match
+	if (r->headers_in.if_none_match) 
+		sm.if_none_match = from_ngx_str(r->headers_in.if_none_match->value);
+
+	// Find web token:
+	// - in cookie which name is stored in WEB_TOKEN, or
+	// - in header 'Authorization' which values is "Bearer TOKEN"
+	ngx_str_t cookie_name = ngx_string(WEB_TOKEN);
+	ngx_str_t cookie_value = ngx_null_string;
+	ngx_int_t rc = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, &cookie_value);
+	if (rc != NGX_DECLINED)
+		sm.token = from_ngx_str(cookie_value);
+	if (r->headers_in.authorization) {
+		sm.authorization = from_ngx_str(r->headers_in.authorization->value);
+		if (! sm.token && strstr(sm.authorization, "Bearer")) {
+			sm.token = malloc(strlen(sm.authorization) + 1);
+			strncpy(sm.token, sm.authorization + 7, strlen(sm.authorization) - 7);
+		}
+	}
+
+	// URI
+	// URI format: /:bucket/download/:id
+	// URI format: /:bucket/stream/:id
+	sm.uri = from_ngx_str(r->uri);
+	sm.uri_dup = from_ngx_str(r->uri);
+	sm.bucket = strtok(sm.uri_dup, "/");
+	char *attachment = strtok(NULL, "/");
+	sm.id = strtok(NULL, "/");
+
+	// Authorisation flag based on URL
+	if ((! strcmp(sm.bucket, LOCATION_PUBLIC1)) || (! strcmp(sm.bucket, LOCATION_PUBLIC2)))
+		sm.is_public = true;
+	else if (!strcmp(sm.bucket, LOCATION_PRIVATE))
+		sm.is_public = false;
+	else {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Invalid bucket specified in URI %s", sm.uri);
+		cleanup_sm(&sm);
+		return NGX_HTTP_BAD_REQUEST;
+	}
+
+	// Attachment flag based on URL
+	if (!strcmp(attachment, DNLD_ATTACHMENT))
+		sm.is_attachment = true;
+	else if (!strcmp(attachment, DNLD_STREAM))
+		sm.is_attachment = false;
+	else {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Invalid stream/download mode specified in URI %s", sm.uri);
+		cleanup_sm(&sm);
+		return NGX_HTTP_BAD_REQUEST;
+	}
+
+	// Connect MongoDB
+	mongoc_init();
+	mongoc_client_t *mongo_conn = mongoc_client_new (sm.mongo_url);
+	if (! mongo_conn) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to connect to MongoDB");
+		cleanup_sm(&sm);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Authorise request if private
+	if ((! sm.is_public) && (res = auth_private(mongo_conn, &sm, r->connection->log) != 0)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to authorise request for URI %s", sm.uri);
+		cleanup_sm(&sm);
+		mongoc_client_destroy(mongo_conn);
+		mongoc_cleanup ();
+		return res;
+	}
+
+	// Create file data struct for our library
+	grid_file_t grid_file;
+	grid_file.length = 0;
+	grid_file.last_modified = time(NULL);
+	grid_file.content_type = NULL;
+	grid_file.data = NULL;
+	grid_file.etag = NULL;
+	grid_file.filename = NULL;
+
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "BEFORE SERVE");
+
+	// Serve the content (this can be made to depend on the location)
+	res = serve_file(mongo_conn, &sm, r->connection->log, &grid_file);
+
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AFTER SERV123");
+
+	// Diconnect MongoDB
+	mongoc_client_destroy(mongo_conn);
+	mongoc_cleanup();
+
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AFTER MONGO CLEANUP");
+
+	// Check error, if any
+	if (res != 0) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to get file for URI %s", sm.uri);
+		cleanup_sm(&sm);
+		cleanup_grid_file(&grid_file);
+		return res;
+	}
+
+	// ----- PREPARE THE HEADERS ----- //
+
+	// HTTP status
+	r->headers_out.status = NGX_HTTP_OK;
+
+	// Content-Length
+	r->headers_out.content_length_n = grid_file.length;
+
+	// Content-Type 
+	if (grid_file.content_type != NULL) {
+		r->headers_out.content_type.len = strlen(grid_file.content_type);
+		r->headers_out.content_type.data = (u_char*)grid_file.content_type;
+	}
+	else {
+		r->headers_out.content_type.len = sizeof(DEFAULT_CONTENT_TYPE) - 1;
+		r->headers_out.content_type.data = (u_char*) DEFAULT_CONTENT_TYPE;
+	}
+	
+	// Last-Modified: use uploadDate field as last_modified if available (convert from ms to UNIX timestamp)
+	r->headers_out.last_modified_time = (time_t) (grid_file.last_modified / 1000);
+
+	// ETag: use etag field if available
+	if (grid_file.etag != NULL) {
+		int b1_len = strlen(grid_file.etag) + 2;
+		ngx_buf_t *b1 = ngx_create_temp_buf(r->pool, b1_len);
+		b1->last = ngx_sprintf(b1->last, "\"%s\"", grid_file.etag);
+
+		r->headers_out.etag = ngx_list_push(&r->headers_out.headers);
+		r->headers_out.etag->hash = 1;
+		r->headers_out.etag->key.len = sizeof(HEADER_ETAG) - 1;
+		r->headers_out.etag->key.data = (u_char*)HEADER_ETAG;
+		r->headers_out.etag->value.len = b1_len;
+		r->headers_out.etag->value.data = b1->start;
+	}
+
+	// Attachment: if sm.is_attachment
+	if (sm.is_attachment) {
+		// URI-encode the file name?
+		CURL *curl = curl_easy_init();
+		char *encoded = grid_file.filename;
+		if (curl) {
+			encoded = curl_easy_escape(curl, grid_file.filename, strlen(grid_file.filename));
+			if (! encoded) {
+				// FIXME: Log error and continue with original name
+				encoded = grid_file.filename;
+			}
+		}
+		else {
+			// FIXME: Log error (original name will remain)
+		}
+
+//FIXME: Add custom header
+/*
+		//headers['Content-Disposition'] = 'attachment; filename="' + encodeURIComponent(this.file.filename) + '";'
+		int b2_len = 23 + strlen(encoded) + 2;
+		ngx_buf_t *b2 = ngx_create_temp_buf(r->pool, b2_len);
+		b2->last = ngx_sprintf(b2->last, "\"attachment; filename=\\\"%s\\\"\"", encoded);
+
+		r->headers_out.content_disposition = ngx_list_push(&r->headers_out.headers);
+		r->headers_out.content_disposition->hash = 1;
+		r->headers_out.content_disposition->key.len = sizeof(HEADER_CONTENT_DISPOSITION) - 1;
+		r->headers_out.content_disposition->key.data = (u_char*)HEADER_CONTENT_DISPOSITION;
+		r->headers_out.content_disposition->value.len = b2_len;
+		r->headers_out.content_disposition->value.data = b2->start;
+*/
+		if (curl) {
+			if (encoded)
+				curl_free(encoded);
+			curl_easy_cleanup(curl);
+		}
+	}
+
+	// Authorization: set if the request has the token in a cookie, but does not have an Authorization header
+	if (! sm.authorization && sm.token) {
+		int b3_len = strlen(sm.token) + 7 + 2;
+		ngx_buf_t *b3 = ngx_create_temp_buf(r->pool, b3_len);
+		b3->last = ngx_sprintf(b3->last, "\"Bearer %s\"", sm.token);
+
+//FIXME: Custom header
+/*
+		r->headers_out.authorization = ngx_list_push(&r->headers_out.headers);
+		r->headers_out.authorization->hash = 1;
+		r->headers_out.authorization->key.len = sizeof(HEADER_AUTHORIZATION) - 1;
+		r->headers_out.authorization->key.data = (u_char*)HEADER_AUTHORIZATION;
+		r->headers_out.authorization->value.len = b3_len;
+		r->headers_out.authorization->value.data = b3->start;
+*/
+	}
+
+	// ----- PREPARE THE BODY ----- //
+
+	// Prepare output buffer
+	b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+	if (b == NULL) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to allocate response buffer");
+		cleanup_sm(&sm);
+		cleanup_grid_file(&grid_file);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Prepare output chain; hook the buffer
+	out.buf = b;
+	out.next = NULL; 
+
+	// Fill the buffer
+	b->pos = grid_file.data;
+	b->last = grid_file.data + grid_file.length;
+	b->memory = 1; 
+	b->last_buf = 1; 
+
+	// ----- SERVE CONTENT ----- //
+
+	// Send headers
+	ngx_http_send_header(r); 
+
+	// Send the body, and return the status code of the output filter chain.
+	ngx_int_t retval =  ngx_http_output_filter(r, &out);
+
+	// ----- ADDITIONAL (TIME CONSUMING) TASKS AFTER SERVING THE CONTENT ----- //
+
+	// Nothing so far
+
+	// ----- COMPPLETE WORK ----- //
+	cleanup_sm(&sm);
+	cleanup_grid_file(&grid_file);
+	return retval;
+} 
+
+/**
+ * Authorise access to a file
+ */
+static int auth_private(mongoc_client_t *mongo_conn, sm_t *sm, ngx_log_t *log) {
+	//FIXME: Check if we have a web token, return 401 otherwise
+	if (! sm->token) {
+		ngx_log_error(NGX_LOG_ERR, log, 0, "Web token not found for URI %s", sm->uri);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	// TODO: Get the session data here
+	//res = fetch_sm(sm, memc_servers, memc_servers_cnt, error);
+	//if (res != 0)
+	//	return res;
+
+	//TODO: Everything here needs revisiting and checking based on actual workflow in Medicloud
+	// Get collection from GridFS
+	mongoc_collection_t *mongo_collection = mongoc_client_get_collection (mongo_conn, sm->mongo_db, MONGO_COLLECTION_FILES);
+
+	// Define OID for bucket
+	bson_oid_t oid;
+	bson_oid_init_from_string (&oid, sm->bucket);
+
+	// Define query for GridFS
+	bson_t mongo_query;
+	bson_init (&mongo_query);
+	bson_append_oid (&mongo_query, "_id", -1, &oid);
+	// FIXME: check what type is user_id!
+	bson_append_utf8 (&mongo_query, "user_id", -1, sm->user_id, -1);
+
+	// Run 'count' query to see if the supplied bucket belongs to the retrieved user_id
+	bson_error_t mongo_error;
+	// For old RHEL-7 mongo-c-driver-devel-1.3.6
+	//int64_t count = mongoc_collection_count (mongo_collection, MONGOC_QUERY_NONE, &mongo_query, 0, 0, NULL, &mongo_error);
+	// For recent mongo-c-driver-devel-1.14.0
+	int64_t count = mongoc_collection_count_documents (mongo_collection, &mongo_query, NULL, NULL, NULL, &mongo_error);
+
+	// Clean up MongoDB query
+	bson_destroy(&mongo_query);
+
+	// Check query result
+	if (count == -1) {
+		ngx_log_error(NGX_LOG_ERR, log, 0, "Cannot get count from MongoDB for file %s", sm->id);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	if (count == 0) {
+		ngx_log_error(NGX_LOG_ERR, log, 0, "File %s does not belong to user %s", sm->id, sm->user_id);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	return 0;
+}
+
+/**
+ * Serve a file from GridFS
+ */
+static int serve_file(mongoc_client_t *mongo_conn, sm_t *sm, ngx_log_t *log, grid_file_t *grid_file) {
+	int ret = 0;
+
+	// GridFS handler
+	bson_error_t mongo_error;
+	mongoc_database_t *db = mongoc_client_get_database (mongo_conn, sm->mongo_db);
+	mongoc_gridfs_bucket_t *bucket = mongoc_gridfs_bucket_new (db, NULL, NULL, &mongo_error);
+	if (! bucket) {
+		ngx_log_error(NGX_LOG_ERR, log, 0, "Unable to get GridFS handler in DB %s: %s", sm->mongo_db, mongo_error.message);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+/*
+6. В линка се подава :id което го търси в 
+полето "metadata.fid" в таблица fs.files
+
+MONGODEV:SECONDARY> db.fs.files.findOne();
+{
+	"_id" : ObjectId("5b0bbb828dd9f5405d83c71b"),
+	"filename" : "image_uploaded_from_ios.jpg",
+	"contentType" : "image/jpeg",
+	"length" : 33717,
+	"chunkSize" : 261120,
+	"uploadDate" : ISODate("2018-05-28T08:19:14.323Z"),
+	"aliases" : null,
+	"metadata" : {
+		"ETag" : "72fa0118-9409-458a-9dc3-8edf6b3ac028",
+		"fid" : ObjectId("5b0bbb828dd9f5405d83c718"),
+		"tid" : ObjectId("57d93ce7077cb859674cdd63"),
+		"uid" : ObjectId("57d93cc9077cb859674cdd61"),
+		"bucket" : "original",
+		"access" : 1
+	},
+	"md5" : "b49283c0cca5226e4456623b8b370f2c"
+}
+
+*/
+
+	// Define OID for media
+	bson_oid_t oid_media;
+	bson_oid_init_from_string (&oid_media, sm->id);
+
+	// Define query to GridFS: filter on metadata.fid (media ID) and, if file is private, metadata.uid ()
+	// FIXME: Destroy this?
+	bson_t filter;
+	bson_init (&filter);
+
+	bson_append_oid (&filter, "metadata.fid", -1, &oid_media);
+	if (! sm->is_public) {
+		bson_oid_t oid_user;
+		bson_oid_init_from_string (&oid_user, sm->user_id);
+		bson_append_oid (&filter, "metadata.uid", -1, &oid_user);
+	}
+
+ngx_log_error(NGX_LOG_ERR, log, 0, "BSON: %s", bson_as_json(&filter, NULL));
+
+	// Find the file (if matches filter)
+	bson_t opts;
+	bson_init(&opts);
+	mongoc_cursor_t *cursor = mongoc_gridfs_bucket_find (bucket, &filter,  &opts);
+
+	const bson_t *doc;
+	if (cursor && mongoc_cursor_next (cursor, &doc)) {
+		ngx_log_error(NGX_LOG_ERR, log, 0, "DOC: %s", bson_as_json(doc, NULL));
+
+		bson_iter_t iter;
+
+		// Get metadata
+		if (bson_iter_init (&iter, doc) && bson_iter_find (&iter, "metadata") && BSON_ITER_HOLDS_DOCUMENT(&iter)) {
+			bson_iter_t child;
+			bson_iter_recurse (&iter, &child);
+
+			// Get ETag
+			if (bson_iter_find (&child, "ETag") && BSON_ITER_HOLDS_UTF8 (&child)) {
+				const char *etag = bson_iter_utf8 (&child, NULL);
+				grid_file->etag = malloc(strlen(etag) + 1);
+				strcpy(grid_file->etag, etag);
+				ngx_log_error(NGX_LOG_ERR, log, 0, "ETAG: %s", grid_file->etag);
+			}
+			else {
+				ngx_log_error(NGX_LOG_ERR, log, 0, "Unable to read ETag of file, trying MD5: %s", bson_as_json(doc, NULL));
+				// Get md5
+				bson_iter_t iter2;
+				if (bson_iter_init (&iter2, doc) && bson_iter_find (&iter2, "md5") && BSON_ITER_HOLDS_UTF8 (&iter2)) {
+					const char *md5 = bson_iter_utf8 (&iter2, NULL);
+					grid_file->etag = malloc(strlen(md5) + 1);
+					strcpy(grid_file->etag, md5);
+					ngx_log_error(NGX_LOG_ERR, log, 0, "MD5: %s", md5);
+				}
+				else {
+					// This should not be critical, set etag to string of 32 zeroes
+					ngx_log_error(NGX_LOG_ERR, log, 0, "Unable to read md5 of file, using default etag: %s", bson_as_json(doc, NULL));
+					grid_file->etag = malloc(strlen(DEFAULT_ETAG) + 1);
+					strcpy(grid_file->etag, DEFAULT_ETAG);
+				}
+			}
+		}
+		else {
+			// 
+			ngx_log_error(NGX_LOG_ERR, log, 0, "Unable to read metadata of file: %s", bson_as_json(doc, NULL));
+			ret = NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		// Compare with a supplied ETag, if any, and return 304 on match
+		// NB: This will also match when weak check is requested (W/"1234567890")
+		if (sm->if_none_match && strstr(sm->if_none_match, grid_file->etag)) {
+			// FIXME: We should return here, so clean up & return??
+			ret = NGX_HTTP_NOT_MODIFIED;
+		}
+
+		// Get file OID
+		const bson_oid_t *oid_file;
+		if (bson_iter_init (&iter, doc) && bson_iter_find (&iter, "_id") && BSON_ITER_HOLDS_OID (&iter)) {
+			oid_file = bson_iter_oid (&iter);
+		}
+		else {
+			ngx_log_error(NGX_LOG_ERR, log, 0, "Unable to read _id of file: %s", bson_as_json(doc, NULL));
+			ret = NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		// Get filename
+		if (bson_iter_init (&iter, doc) && bson_iter_find (&iter, "filename") && BSON_ITER_HOLDS_UTF8 (&iter)) {
+			const char *filename = bson_iter_utf8 (&iter, NULL);
+			grid_file->filename = malloc(strlen(filename) + 1);
+			strcpy(grid_file->filename, filename);
+			ngx_log_error(NGX_LOG_ERR, log, 0, "FILENAME: %s", grid_file->filename);
+		}
+		else {
+			ngx_log_error(NGX_LOG_ERR, log, 0, "Unable to read filename of file: %s", bson_as_json(doc, NULL));
+			ret = NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		// Get file length
+		if (bson_iter_init (&iter, doc) && bson_iter_find (&iter, "length") && BSON_ITER_HOLDS_INT32 (&iter)) {
+			grid_file->length = bson_iter_int32 (&iter);
+			//ngx_log_error(NGX_LOG_ERR, log, 0, "FILENAME: %s", grid_file->filename);
+		}
+		else {
+			ngx_log_error(NGX_LOG_ERR, log, 0, "Unable to read length of file: %s", bson_as_json(doc, NULL));
+			ret = NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		// Get content type
+		if (bson_iter_init (&iter, doc) && bson_iter_find (&iter, "contentType") && BSON_ITER_HOLDS_UTF8 (&iter)) {
+			const char *content_type = bson_iter_utf8 (&iter, NULL);
+			grid_file->content_type = malloc(strlen(content_type) + 1);
+			strcpy(grid_file->content_type, content_type);
+			ngx_log_error(NGX_LOG_ERR, log, 0, "CONTENT-TYPE: %s", grid_file->content_type);
+		}
+		else {
+			// Use default content-type if missing
+			ngx_log_error(NGX_LOG_ERR, log, 0, "Unable to read contentType of file, using default %s: %s", DEFAULT_CONTENT_TYPE, bson_as_json(doc, NULL));
+			grid_file->content_type = malloc(strlen(DEFAULT_CONTENT_TYPE) + 1);
+			strcpy(grid_file->content_type, DEFAULT_CONTENT_TYPE);
+		}
+
+
+
+
+/*
+			// Get the file ID as OID
+			if (bson_iter_find (&iter, "_id") && BSON_ITER_HOLDS_OID (&iter)) {
+				//const bson_oid_t *oid_file = bson_iter_oid (&iter);
+
+				//bson_error_t mongo_error;
+				//if (mongoc_gridfs_bucket_download_to_stream (bucket, &oid_file, mongoc_stream_t *destination, &mongo_error)) {
+
+
+
+					//mongoc_stream_close (file_stream);
+					//mongoc_stream_destroy (file_stream);
+				//}
+				//else
+					//res = NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+*/
+	}
+	else
+		ret = NGX_HTTP_NOT_FOUND;
+
+
+	// Clean up
+	mongoc_cursor_destroy (cursor);
+	bson_destroy (&filter);
+	mongoc_gridfs_bucket_destroy (bucket);
+	mongoc_database_destroy (db);
+
+	return ret;
+}
+
+
+/*
+	// Get stream from the file handler
+	mongoc_stream_t *mongo_stream = mongoc_stream_gridfs_new (mongo_file);
+	if (! mongo_stream) {
+		mongoc_gridfs_destroy (mongo_gridfs);
+		ngx_log_error(NGX_LOG_ERR, log, 0, "Could not open file %s in GridFS", sm->id);
+		return NGX_HTTP_NOT_FOUND;
+	}
+
+	// Poll the stream until exhausted
+	char buf[4096];
+	ssize_t r, cnt = 1;
+	struct iovec iov = { buf, sizeof buf };
+	for (;;) {
+		r = mongoc_stream_readv (mongo_stream, &iov, 1, -1, 1000);
+
+		if(r < 0) {
+			mongoc_stream_close(mongo_stream);
+			mongoc_stream_destroy(mongo_stream);
+			mongoc_gridfs_destroy(mongo_gridfs);
+			mongoc_client_destroy(mongo_conn);
+			ngx_log_error(NGX_LOG_ERR, log, 0, "Error reading file %s from GridFS", sm->id);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		if (r == 0)
+			break;
+
+		if (!grid_file->data)
+			grid_file->data = malloc(iov.iov_len);
+		else {
+			cnt++;
+			void *_tmp = realloc(grid_file->data, cnt * iov.iov_len);
+			grid_file->data = (u_char *) _tmp;
+		}
+
+		memcpy(grid_file->data + (cnt -1) * iov.iov_len, iov.iov_base, iov.iov_len);
+	}
+
+	// Clean-up
+	mongoc_stream_close(mongo_stream);
+	mongoc_stream_destroy(mongo_stream);
+	mongoc_gridfs_destroy(mongo_gridfs);
+
+	return 0;
+}
+*/
+
+/**
+ * Helper: clean up session management data
+ */
+void cleanup_sm(sm_t *sm) {
+	if (sm->error)
+		free(sm->error);
+	if (sm->uri)
+		free(sm->uri);
+	if (sm->uri_dup)
+		free(sm->uri_dup);
+	if (sm->if_none_match)
+		free(sm->if_none_match);
+	if (sm->mongo_url)
+		free(sm->mongo_url);
+	if (sm->mongo_db)
+		free(sm->mongo_db);
+	if (sm->authorization)
+		free(sm->authorization);
+	if (sm->token)
+		free(sm->token);
+}
+
+/**
+ * Helper: clean up grid file data
+ */
+void cleanup_grid_file(grid_file_t *grid_file) {
+	if (grid_file->content_type)
+		free(grid_file->content_type);
+	if (grid_file->etag)
+		free(grid_file->etag);
+	if (grid_file->data)
+		free(grid_file->data);
+	if (grid_file->filename)
+		free(grid_file->filename);
+}
+
+/**
+ * Helper: convert Nginx string to normal
+ */
+char *from_ngx_str(ngx_str_t ngx_str) {
+		if (! ngx_str.len)
+			return NULL;
+
+		char *ret = malloc(ngx_str.len + 1);
+		memcpy(ret, ngx_str.data, ngx_str.len);
+		ret[ngx_str.len] = '\0';
+		return ret;
+}
+
+/**
+ * Helper: debug
+ */
+void debug(char *s) {
+	FILE *fp = fopen("/tmp/debug.me", "a");
+	fprintf(fp, "%s\n", s);
+	fclose(fp);
+}
+
