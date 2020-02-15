@@ -7,7 +7,6 @@
 // Includes
 #include <curl/curl.h>
 #include <errno.h>
-#include <jwt.h>
 #include <mongoc.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -17,6 +16,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 // Definitions
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
@@ -31,17 +33,15 @@
 #define HEADER_CONTENT_DISPOSITION "Content-Disposition"
 #define HEADER_AUTHORIZATION "Authorization"
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
-#define MONGO_DEFAULT_URL "mongodb://localhost:27017"
-#define MONGO_DEFAULT_DB "practicedent"
-#define MONGO_DEFAULT_ENABLED 1
-#define MONGO_COLLECTION_FILES "fs.files"
-#define GRIDFS_COLLECTION_FILES "fs"
 #define FS_DEFAULT_ENABLED 1
 #define FS_DEFAULT_DEPTH 4
 #define FS_DEFAULT_ROOT "/usr/share/curaden/fs"
 #define FS_METADATA_COLLECTION "fsmd"
 #define WEB_TOKEN "medicloud_token"
 #define ERROR_MESSAGE_LENGTH 1024
+#define AUTH_DEFAULT_SOCKET "/tmp/auth.socket"
+#define AUTH_BUFFER_CHUNK 1024
+#define AUTH_SOCKET_TYPE SOCK_STREAM
 
 // Structures
 typedef struct {
@@ -49,50 +49,25 @@ typedef struct {
 } ngx_http_medicloud_main_conf_t;
 
 typedef struct {
-	ngx_str_t jwt_key;
-	ngx_flag_t mongo_enabled;
-	ngx_str_t mongo_url;
-	ngx_str_t mongo_db;
-	ngx_flag_t fs_enabled;
 	uint fs_depth;
 	ngx_str_t fs_root;
+	ngx_str_t auth_socket;
 } ngx_http_medicloud_loc_conf_t;
 
 typedef struct {
-	mongoc_client_t *conn;
-	mongoc_collection_t *collection;
-	mongoc_cursor_t *cursor;
-	mongoc_gridfs_t *gridfs;
-	mongoc_gridfs_file_t *file;
-	mongoc_stream_t *stream;
-	bson_t filter;
-	jwt_t *jwt;
-} medicloud_mongo_t;
-
-typedef struct {
-	const char *etag;
-	const char *md5;
-	const char *filename;
-	const char *content_type;
-	char uid[25];
-	char tid[25];
-	int64_t length;
-	time_t upload_date; 
-	int32_t access; 
-} medicloud_mongo_file_t;
-
-typedef struct {
-	int64_t length; 
-	time_t upload_date; 
-	char *content_type;
 	char *etag;
+	char *md5;
 	char *filename;
+	char *content_type;
+	char *error;
 	u_char *data;
-} medicloud_grid_file_t;
+	time_t upload_date; 
+	int32_t status;
+	int64_t length;
+} medicloud_file_t;
 
 typedef struct {
 	char *id;					// Media ID
-	const char *jwt_key;
 	const char *uid;
 	const char *tid;
 	time_t exp;
@@ -102,29 +77,23 @@ typedef struct {
 	char *bucket;
 	char *attachment;
 	bool is_attachment;
-	bool mongo_enabled;
-	char *mongo_url;
-	char *mongo_db;
-	bool fs_enabled;
 	uint fs_depth;
 	char *fs_root;
 	char *authorization;
 	char *token;
-} sm_t;
+	char *auth_socket;
+	char *auth_req;
+	char *auth_resp;
+} session_t;
 
 // Prototypes
-static ngx_int_t ngx_http_medicloud_module_start(ngx_cycle_t *cycle); 
-static void ngx_http_medicloud_master_end(ngx_cycle_t *cycle);
 static void* ngx_http_medicloud_create_loc_conf(ngx_conf_t* directive);
 static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* directive, void* parent, void* child);
 static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t* request);
-static ngx_int_t get_metadata(medicloud_mongo_t *mongo, medicloud_mongo_file_t *mongo_file, sm_t *sm, ngx_http_request_t *r, char *collection_name);
-static ngx_int_t init_grid_file(medicloud_mongo_file_t *mongo_file, sm_t *sm, medicloud_grid_file_t *grid_file, ngx_http_request_t *r);
-static ngx_int_t read_gridfs(medicloud_mongo_t *mongo, sm_t *sm, medicloud_grid_file_t *grid_file, ngx_http_request_t *r);
-static ngx_int_t read_fs(medicloud_mongo_t *mongo, sm_t *sm, medicloud_grid_file_t *grid_file, ngx_http_request_t *r);
-static ngx_int_t send_file(sm_t *sm, medicloud_grid_file_t *grid_file, ngx_http_request_t *r);
-void cleanup_mongo(medicloud_mongo_t *mongo);
+static ngx_int_t get_metadata(medicloud_file_t *meta_file, session_t *session, ngx_http_request_t *r, char *collection_name);
+static ngx_int_t read_fs(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
+static ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
 
 // Globals: array to specify how to handle configuration directives.
@@ -134,31 +103,31 @@ static ngx_command_t ngx_http_medicloud_commands[] = {
 		NGX_HTTP_LOC_CONF | NGX_CONF_NOARGS,
 		ngx_http_medicloud_init,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_medicloud_loc_conf_t, mongo_url),
+		offsetof(ngx_http_medicloud_loc_conf_t, medicloud),
 		NULL
 	},
 	{
-		ngx_string("mongo_url"),
+		ngx_string("fs_root"),
 		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_medicloud_loc_conf_t, mongo_url),
+		offsetof(ngx_http_medicloud_loc_conf_t, fs_root),
 		NULL
 	},
 	{
-		ngx_string("jwt_key"),
+		ngx_string("fs_depth"),
 		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-		ngx_conf_set_str_slot,
+		ngx_conf_set_num_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_medicloud_loc_conf_t, jwt_key),
+		offsetof(ngx_http_medicloud_loc_conf_t, fs_depth),
 		NULL
 	},
 	{
-		ngx_string("mongo_db"),
+		ngx_string("auth_socket"),
 		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_medicloud_loc_conf_t, mongo_db),
+		offsetof(ngx_http_medicloud_loc_conf_t, auth_socket),
 		NULL
 	},
 	ngx_null_command
@@ -182,13 +151,13 @@ ngx_module_t ngx_http_medicloud_module = {
 	&ngx_http_medicloud_module_ctx,	// pointer to be passed to calls made by NGINX’s API to your module
 	ngx_http_medicloud_commands,	// pointer to a struct with extra configuration directives used by the module
 	NGX_HTTP_MODULE,				// type of module defined
-	NULL,			// hook into the initialisation of the master process
-	ngx_http_medicloud_module_start,							// hook into the module initialisation phase; happens prior to master process forking
+	NULL,							// hook into the initialisation of the master process
+	NULL,							// hook into the module initialisation phase; happens prior to master process forking
 	NULL,							// hook into the module initialisation in new process phase; happens as the worker processes are forked.
 	NULL,							// hook into the initialisation of threads
 	NULL,							// hook into the termination of a thread
 	NULL,							// hook into the termination of a child process (such as a worker process)
-	ngx_http_medicloud_master_end,				// hook into the termination of the master process
+	NULL,							// hook into the termination of the master process
 	NGX_MODULE_V1_PADDING
 };
 
