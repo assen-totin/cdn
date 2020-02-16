@@ -29,6 +29,7 @@ static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* cf, void* void_parent
 	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, FS_DEFAULT_ROOT);
 	ngx_conf_merge_uint_value(child->fs_depth, parent->fs_depth, FS_DEFAULT_DEPTH);
 	ngx_conf_merge_str_value(child->auth_socket, parent->auth_socket, AUTH_DEFAULT_SOCKET);
+	ngx_conf_merge_str_value(child->jwt_key, parent->jwt_key, "");
 
 	return NGX_CONF_OK;
 }
@@ -52,7 +53,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	char *bson_tmp, *bucket, *attachment, *id;
 	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
 	ngx_int_t ret;
-	medicloud_file_t meta_file, dnld_file;
+	medicloud_file_t meta_file, meta_file;
 
 	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
 
@@ -62,6 +63,8 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	session.fs_depth = medicloud_loc_conf->fs_depth;
 	session.fs_root = from_ngx_str(r->pool, medicloud_loc_conf->fs_root);
 	session.auth_socket = from_ngx_str(r->pool, medicloud_loc_conf->auth_socket);
+	session.jwt_key = from_ngx_str(r->pool, medicloud_loc_conf->jwt_key);
+	session.jwt = NULL;
 
 	// URI
 	// URI format: /:bucket/download/:id
@@ -73,22 +76,6 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 
 	// Get bucket
 	bucket = strtok(session.uri_dup, "/");
-	session.bucket = ngx_pnalloc(r->pool, strlen(bucket) + 1);
-	strcpy(session.bucket, bucket);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found bucket: %s", session.bucket);
-
-	// Check if we know anyhting about the bucket
-	if ((! strcmp(session.bucket, LOCATION_PUBLIC1)) || (! strcmp(session.bucket, LOCATION_PUBLIC2))) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Bucket is public: %s", session.uri);
-	}
-	else if (!strcmp(session.bucket, LOCATION_PRIVATE)) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Bucket is private: %s", session.uri);
-	}
-	else {
-		// Return code to refuse processing so that other filters may kick in
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "URI %s invalid bucket %s", session.uri, session.bucket);
-		return NGX_DECLINED;
-	}
 
 	// Get attachment/stream mode
 	attachment = strtok(NULL, "/");
@@ -111,7 +98,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		return NGX_DECLINED;
 	}
 
-	// Get media ID
+	// Get file ID
 	id = strtok(NULL, "/");
 	if (! id) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "URI %s file ID not found", session.uri);
@@ -158,19 +145,27 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 
 	// Set some defaults (to be used if no corresponding field is found)
 	meta_file.etag = NULL;
-	meta_file.md5 = NULL;
 	meta_file.filename = NULL;
 	meta_file.content_type = NULL;
-	meta_file.length = 0;
-	meta_file.upload_date = 0;
 	meta_file.data = NULL;
+	meta_file.length = -1;
+	meta_file.upload_date = -1;
+	meta_file.status = -1;
 
-	// FIXME: Prepare outbound message to auth server in session->auth_req
-	// Format is: our custom JSON with filename, newline, original JWT
+	ret = process_jwt_token(session, r);
+	if (ret)
+		return ret;
+
+	// Prepare outbound message to auth server in session->auth_req
+	bson_t b = BSON_INITIALIZER;
+	BSON_APPEND_UTF8 (&b, "id", session->id);
+	BSON_APPEND_INT32 (&b, "uid", session->uid);
+	BSON_APPEND_INT32 (&b, "tid", session->tid);
+	session->auth_req = bson_as_json (&b, NULL);
 
 	// Query for metadata here over the Unix socket
-	char *auth_resp;
 	ret = get_metadata(&session, r);
+	bson_free(session->auth_req);
 	if (ret)
 		return ret;
 
@@ -180,22 +175,17 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	if (ret)
 		return ret;
 
-	// Process the file (unless we got 404 previously)
+	// Process the file
 	if (! ret) {
-		// Init download data
-		ret = init_dnld_file(&meta_file, &session, &dnld_file, r);
-		if (ret)
-			return ret;
-
-		ret = read_fs(&session, &dnld_file, r);
+		ret = read_fs(&session, &meta_file, r);
 		if (ret)
 			return ret;
 
 		// Send the file
-		ret = send_file(&session, &dnld_file, r);
+		ret = send_file(&session, &meta_file, r);
 
 		// Unmap memory mapped for sending the file
-		if (munmap(dnld_file.data, dnld_file.length) < 0)
+		if (munmap(meta_file.data, meta_file.length) < 0)
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", session.id, errno);
 
 		return ret;
@@ -204,9 +194,61 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 
 
 /**
+ * Process JWT
+ */
+ngx_int_t process_jwt_token(session_t *session, ngx_http_request_t *r) {
+	int jwt_res, ret;
+
+	// Extract the token	
+	if ((jwt_res = jwt_decode(&session->jwt, session->token, (unsigned char*)session->jwt_key, strlen(session->jwt_key)))) {
+		if (jwt_res == EINVAL) {
+			// Invalid signature
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s invalid signature", session->token);
+			ret = NGX_HTTP_UNAUTHORIZED;
+		}
+		else {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s system error %u while decoding", session->token, jwt_res);
+			ret = NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+		return ret;
+	}
+
+	session->exp = jwt_get_grant_int(session->jwt, "exp");
+	if (errno == ENOENT) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim EXP", session->token);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim EXP %l", session->token, session->exp);
+	if (session->exp < time(NULL)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s has expired: EXP is %l, now is %l", session->token, session->exp, time(NULL));
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	session->uid = atoi(jwt_get_grant(session->jwt, "uid"));
+	if (session->uid)
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim UID %s", session->token, session->uid);
+	else {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim UID", session->token);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	session->tid = atoi(jwt_get_grant(session->jwt, "tid"));
+	if (session->tid) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim TID %s", session->token, session->uid);
+	}
+	else {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim TID", session->token);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	return 0;
+}
+
+
+/**
  * Get file metadata
  */
-int get_metadata(session_t *session, ngx_http_request_t *r) {
+ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 	// Socket variables
 	struct sockaddr_un remote_un;
 	int unix_socket, addr_len_un, bytes_in, bytes_out, auth_resp_len, auth_resp_pos;
@@ -288,6 +330,7 @@ ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_
 	bson_error_t error;
 	bson_iter_t iter;
 	const char *bson_key;
+	char *bson_val_char;
 
 	// Walk around the JSON which we received from the authentication servier, session->auth_resp
 	if (! bson_init_from_json(doc, session->auth_resp, strlen(session->auth_resp), &error)) {
@@ -304,20 +347,39 @@ ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_
 		bson_key = bson_iter_key (&iter);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
 
-		if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
-			meta_file->status = bson_iter_int32 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata status: %u", session->id, meta_file->status);
+		if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			meta_file->filename = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(meta_file->filename, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata filename: %s", session->id, meta_file->filename);
 		}
 
 		else if ((! strcmp(bson_key, "error")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			meta_file->error = bson_iter_utf8 (&iter, NULL);
-			if (strlen(meta_file->error))
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			if (strlen(bson_val_char)) {
+				meta_file->error = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+				strcpy(meta_file->error, bson_val_char);
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata error: %s", session->id, meta_file->error);
+			}
 		}
 
-		else if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			meta_file->filename = bson_iter_utf8 (&iter, NULL);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata filename: %s", session->id, meta_file->filename);
+		else if ((! strcmp(bson_key, "content_type")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			meta_file->content_type = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(meta_file->content_type, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata content_type: %s", session->id, meta_file->content_type);
+		}
+
+		else if ((! strcmp(bson_key, "etag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			meta_file->etag = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(meta_file->etag, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata etag: %s", session->id, meta_file->etag);
+		}
+
+		else if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
+			meta_file->status = bson_iter_int32 (&iter);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata status: %u", session->id, meta_file->status);
 		}
 
 		else if (! strcmp(bson_key, "length")) {
@@ -328,100 +390,56 @@ ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata length: %l", session->id, meta_file->length);
 		}
 
-		else if ((! strcmp(bson_key, "content_type")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			meta_file->content_type = bson_iter_utf8 (&iter, NULL);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata content_type: %s", session->id, meta_file->content_type);
-		}
-
 		else if ((! strcmp(bson_key, "upload_date")) && (bson_iter_type(&iter) == BSON_TYPE_DATE_TIME)) {
 			meta_file->upload_date = bson_iter_date_time (&iter) / 1000;
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata upload_date: %l", session->id, meta_file->upload_date);
 		}
 
-		else if ((! strcmp(bson_key, "ETag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			meta_file->etag = bson_iter_utf8 (&metadata, NULL);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata etag: %s", session->id, meta_file->etag);
-		}
 	}
+
+	// Check if we have all the fields
+	if (! meta_file->filename) {
+		meta_file->filename = ngx_pcalloc(r->pool, strlen(session->id) + 1);
+		strcpy(meta_file->filename, session->id);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s filename not found, will use file ID %s", session->id, session->id);
+	}
+
+	if (! meta_file->content_type) {
+		meta_file->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
+		strcpy(meta_file->content_type, DEFAULT_CONTENT_TYPE);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_type not found, using default %s", session->id, DEFAULT_CONTENT_TYPE);
+	}
+
+	if (! meta_file->etag) {
+		meta_file->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
+		strcpy(meta_file->etag, DEFAULT_ETAG);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_type not found, using default %s", session->id, DEFAULT_ETAG);
+	}
+
+	if (meta_file->status < 0) {
+		meta_file->status = DEFAULT_HTTP_CODE;
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s status not found, using default %s", session->id, DEFAULT_HTTP_CODE);
+	}
+
+	if (meta_file->length < 0)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s length not found, will use stat() to determine it", session->id);
+
+	if (meta_file->upload_date < 0)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", session->id);
+
 
 	return (meta_file->status == 200) ? 0 : meta_file->status;
 }
 
-/**
- * Init file for download
- */
-ngx_int_t init_dnld_file(medicloud_file_t *meta_file, session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r) {
-	// Set ETag: use MD5 field if no ETag field found, use defailt if no MD5 field found
-	if (meta_file->etag) {
-		dnld_file->etag = ngx_pcalloc(r->pool, strlen(meta_file->etag) + 1);
-		strcpy(dnld_file->etag, meta_file->etag);
-	}
-	else if (meta_file->md5) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s ETag not found, using MD5 %s", session->id, meta_file->md5);
-		dnld_file->etag = ngx_pcalloc(r->pool, strlen(meta_file->md5) + 1);
-		strcpy(dnld_file->etag, meta_file->md5);
-	}
-	else {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s ETag and MD5 not found, using default %s", session->id, DEFAULT_ETAG);
-		dnld_file->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
-		strcpy(dnld_file->etag, DEFAULT_ETAG);
-	}
-
-	// Compare file ETag with a supplied ETag, if any, and return 304 on match
-	// NB: This will also match when weak check is requested (W/"1234567890")
-	if (session->if_none_match && strstr(session->if_none_match, dnld_file->etag)) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s has a match on ETag, sending 304", session->id);
-		return NGX_HTTP_NOT_MODIFIED;
-	}
-
-	// Set filename
-	if (meta_file->filename) {
-		dnld_file->filename = ngx_pcalloc(r->pool, strlen(meta_file->filename) + 1);
-		strcpy(dnld_file->filename, meta_file->filename);
-	}
-	else {
-		dnld_file->filename = ngx_pcalloc(r->pool, strlen(DEFAULT_FILENAME) + 1);
-		strcpy(dnld_file->filename, DEFAULT_FILENAME);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s filename not found, using default %s", session->id, DEFAULT_FILENAME);
-	}
-
-	// Set content type
-	if (meta_file->content_type) {
-		dnld_file->content_type = ngx_pcalloc(r->pool, strlen(meta_file->content_type) + 1);
-		strcpy(dnld_file->content_type, meta_file->content_type);
-	}
-	else {
-		dnld_file->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
-		strcpy(dnld_file->content_type, DEFAULT_CONTENT_TYPE);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content type not found, using default %s", session->id, DEFAULT_CONTENT_TYPE);
-	}
-
-	// Set upload date
-	if (meta_file->upload_date)
-		dnld_file->upload_date = meta_file->upload_date;
-	else {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to find upload date, using current time", session->id);
-		dnld_file->upload_date = time(NULL);
-	}
-
-	// Set length
-	if (meta_file->length)
-		dnld_file->length = meta_file->length;
-	else {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s length not found ot empty file", session->id);
-		return NGX_HTTP_OK;
-	}
-
-	return 0;
-}
 
 /**
  * Read file from Filesystem
  */
-ngx_int_t read_fs(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r) {
+ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r) {
 	// Get path
 	int i, len, pos=0, fd;
 	char *path;
+	struct stat statbuf;
 
 	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(session->id) + 1;
 	path = ngx_pcalloc(r->pool, len);
@@ -450,7 +468,16 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *dnld_file, ngx_http_requ
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	if ((dnld_file->data = mmap(NULL, dnld_file->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
+	// Fill-in any misisng info from actual file
+	if ((meta_file.length < 0) || (metafile.upload_date < 0)) {
+		fstat(fd, &statbuf);
+		if (meta_file.length < 0)
+			meta_file.length = statbuf.st_size;
+		if (meta_file.upload_date < 0)
+			meta_file.upload_date = statbuf.st_mtime;
+	}
+
+	if ((meta_file->data = mmap(NULL, meta_file->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %u", session->id, path, errno);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
@@ -466,7 +493,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *dnld_file, ngx_http_requ
 /**
  * Send file to client
  */
-ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r) {
+ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r) {
 	int b1_len, b2_len;
 	char *encoded = NULL;
 	bool curl_encoded = false;
@@ -480,19 +507,19 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_re
 	r->headers_out.status = NGX_HTTP_OK;
 
 	// Content-Length
-	r->headers_out.content_length_n = dnld_file->length;
+	r->headers_out.content_length_n = meta_file->length;
 
 	// Content-Type 
-	r->headers_out.content_type.len = strlen(dnld_file->content_type);
-	r->headers_out.content_type.data = (u_char*)dnld_file->content_type;
+	r->headers_out.content_type.len = strlen(meta_file->content_type);
+	r->headers_out.content_type.data = (u_char*)meta_file->content_type;
 	
 	// Last-Modified
-	r->headers_out.last_modified_time = dnld_file->upload_date;
+	r->headers_out.last_modified_time = meta_file->upload_date;
 
 	// ETag
-	b1_len = strlen(dnld_file->etag) + 2;
+	b1_len = strlen(meta_file->etag) + 2;
 	ngx_buf_t *b1 = ngx_create_temp_buf(r->pool, b1_len);
-	b1->last = ngx_sprintf(b1->last, "\"%s\"", dnld_file->etag);
+	b1->last = ngx_sprintf(b1->last, "\"%s\"", meta_file->etag);
 
 	r->headers_out.etag = ngx_list_push(&r->headers_out.headers);
 	r->headers_out.etag->hash = 1;
@@ -506,14 +533,14 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_re
 		// URI-encode the file name?
 		curl = curl_easy_init();
 		if (curl) {
-			encoded = curl_easy_escape(curl, dnld_file->filename, strlen(dnld_file->filename));
+			encoded = curl_easy_escape(curl, meta_file->filename, strlen(meta_file->filename));
 			if (encoded) {
 				curl_encoded = true;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using URI-encoded filename %s", session->id, encoded);
 			}
 			else {
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to URI-encode filename %s", session->id, dnld_file->filename);
-				encoded = dnld_file->filename;
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to URI-encode filename %s", session->id, meta_file->filename);
+				encoded = meta_file->filename;
 			}
 		}
 		else {
@@ -563,8 +590,8 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_re
 	out.next = NULL; 
 
 	// Fill the buffer
-	b->pos = dnld_file->data;
-	b->last = dnld_file->data + dnld_file->length;
+	b->pos = meta_file->data;
+	b->last = meta_file->data + meta_file->length;
 	b->memory = 1; 
 	b->last_buf = 1; 
 
