@@ -49,17 +49,15 @@ static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *c
  * Content handler
  */
 static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
-	char *bson_tmp, *bucket, *attachment, *id;
 	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
 	ngx_int_t ret;
-	medicloud_file_t meta_file, meta_file;
+	medicloud_file_t meta_file;
 
 	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
 
 	// Prepare session management data
 	session_t session;
 	session.id = NULL;
-	session.token = NULL;
 	session.fs_depth = medicloud_loc_conf->fs_depth;
 	session.fs_root = from_ngx_str(r->pool, medicloud_loc_conf->fs_root);
 	session.auth_socket = from_ngx_str(r->pool, medicloud_loc_conf->auth_socket);
@@ -109,29 +107,30 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
 
 	// Prepare outbound message to auth server in session->auth_req
-	bson_t bh = BSON_INITIALIZER;
+	bson_t b = BSON_INITIALIZER;
+	BSON_APPEND_UTF8 (&b, "uri", session.uri);
+
+	bson_t bh;
+	BSON_APPEND_DOCUMENT_BEGIN(&b, "headers", &bh);
 	if (session.hdr_if_modified_since)
 		BSON_APPEND_UTF8 (&bh, "if_modified_since", session.hdr_if_modified_since);
 	if (session.hdr_if_none_match)
 		BSON_APPEND_UTF8 (&bh, "if_none_match", session.hdr_if_none_match);
-	if (session.authorisation)
-		BSON_APPEND_UTF8 (&bh, "authorisation", session.authorisation);
-
-	bson_t b = BSON_INITIALIZER;
-	BSON_APPEND_UTF8 (&b, "uri", session.uri);
-	BSON_APPEND_DOCUMENT_BEGIN(b, "headers", bh);
+	if (session.hdr_authorisation)
+		BSON_APPEND_UTF8 (&bh, "authorisation", session.hdr_authorisation);
+	bson_append_document_end (&b, &bh);
 
 	session.auth_req = bson_as_json (&b, NULL);
 
 	// Query for metadata here over the Unix socket
 	ret = get_metadata(&session, r);
-	bson_free(session->auth_req);
+	bson_free(session.auth_req);
 	if (ret)
 		return ret;
 
 	// Process metadata
 	ret = process_metadata(&session, &meta_file, r);
-	free(session->auth_resp);
+	free(session.auth_resp);
 	if (ret)
 		return ret;
 
@@ -157,7 +156,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 	// Socket variables
 	struct sockaddr_un remote_un;
-	int unix_socket, addr_len_un, bytes_in, bytes_out, auth_resp_len, auth_resp_pos;
+	int unix_socket, addr_len_un, bytes_in, auth_resp_len, auth_resp_pos;
 	char msg_in[AUTH_BUFFER_CHUNK];
 
 	// Init the Unix socket
@@ -207,7 +206,7 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 			if (bytes_in) {
 				// We read some more data, append it  (but expand buffer before that if necessary)
 				if (auth_resp_pos + bytes_in > auth_resp_len - 1) {
-					session->auth_resp = realloc(auth_resp, auth_resp_len + AUTH_BUFFER_CHUNK);
+					session->auth_resp = realloc(session->auth_resp, auth_resp_len + AUTH_BUFFER_CHUNK);
 				}
 
 				memcpy(session->auth_resp + auth_resp_pos, &msg_in[0], bytes_in);
@@ -233,11 +232,11 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
  * Process file metadata
  */
 ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r) {
-	const bson_t *doc;
+	bson_t *doc;
 	bson_error_t error;
 	bson_iter_t iter;
 	const char *bson_key;
-	char *bson_val_char;
+	const char *bson_val_char;
 
 	// Walk around the JSON which we received from the authentication servier, session->auth_resp
 	if (! bson_init_from_json(doc, session->auth_resp, strlen(session->auth_resp), &error)) {
@@ -387,12 +386,12 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_requ
 	}
 
 	// Fill-in any missing info from actual file
-	if ((meta_file.length < 0) || (metafile.upload_date < 0)) {
+	if ((meta_file->length < 0) || (meta_file->upload_date < 0)) {
 		fstat(fd, &statbuf);
-		if (meta_file.length < 0)
-			meta_file.length = statbuf.st_size;
-		if (meta_file.upload_date < 0)
-			meta_file.upload_date = statbuf.st_mtime;
+		if (meta_file->length < 0)
+			meta_file->length = statbuf.st_size;
+		if (meta_file->upload_date < 0)
+			meta_file->upload_date = statbuf.st_mtime;
 	}
 
 	if ((meta_file->data = mmap(NULL, meta_file->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
@@ -406,9 +405,9 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_requ
 	}
 
 	// Return 304 in certain cases
-	if (session->if_not_match && meta_file->etag && ! strcmp(session->if_not_match, meta_file->etag))
+	if (session->if_none_match && meta_file->etag && ! strcmp(session->if_none_match, meta_file->etag))
 		return NGX_HTTP_NOT_MODIFIED;
-	if (session->if_modified_since == meta_file.upload_date)
+	if (session->if_modified_since == meta_file->upload_date)
 		return NGX_HTTP_NOT_MODIFIED;
 
 	return 0;

@@ -4,6 +4,9 @@
  * @author: Assen Totin assen.totin@curaden.ch
  */
 
+#define __USE_XOPEN
+#define _GNU_SOURCE
+
 // Includes
 #include <bson/bson.h>
 #include <curl/curl.h>
@@ -43,6 +46,7 @@ typedef struct {
 } ngx_http_medicloud_main_conf_t;
 
 typedef struct {
+	bool medicloud;
 	uint fs_depth;
 	ngx_str_t fs_root;
 	ngx_str_t auth_socket;
@@ -74,6 +78,8 @@ typedef struct {
 	char *hdr_authorisation;
 	char *hdr_cookies;
 	char *hdr_if_none_match;
+	char *hdr_if_modified_since;
+	time_t if_modified_since;
 } session_t;
 
 // Prototypes
@@ -81,7 +87,7 @@ static void* ngx_http_medicloud_create_loc_conf(ngx_conf_t* directive);
 static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* directive, void* parent, void* child);
 static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t* request);
-static ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r, char *collection_name);
+static ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r);
 static ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r);
 static ngx_int_t read_fs(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
 static ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
