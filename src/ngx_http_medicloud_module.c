@@ -29,7 +29,6 @@ static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* cf, void* void_parent
 	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, FS_DEFAULT_ROOT);
 	ngx_conf_merge_uint_value(child->fs_depth, parent->fs_depth, FS_DEFAULT_DEPTH);
 	ngx_conf_merge_str_value(child->auth_socket, parent->auth_socket, AUTH_DEFAULT_SOCKET);
-	ngx_conf_merge_str_value(child->jwt_key, parent->jwt_key, "");
 
 	return NGX_CONF_OK;
 }
@@ -59,109 +58,70 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 
 	// Prepare session management data
 	session_t session;
+	session.id = NULL;
 	session.token = NULL;
 	session.fs_depth = medicloud_loc_conf->fs_depth;
 	session.fs_root = from_ngx_str(r->pool, medicloud_loc_conf->fs_root);
 	session.auth_socket = from_ngx_str(r->pool, medicloud_loc_conf->auth_socket);
-	session.jwt_key = from_ngx_str(r->pool, medicloud_loc_conf->jwt_key);
-	session.jwt = NULL;
-
-	// URI
-	// URI format: /:bucket/download/:id
-	// URI format: /:bucket/stream/:id
-	session.uri = from_ngx_str(r->pool, r->uri);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", session.uri);
-
-	session.uri_dup = from_ngx_str(r->pool, r->uri);
-
-	// Get bucket
-	bucket = strtok(session.uri_dup, "/");
-
-	// Get attachment/stream mode
-	attachment = strtok(NULL, "/");
-	session.attachment = ngx_pnalloc(r->pool, strlen(attachment) + 1);
-	strcpy(session.attachment, attachment);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found download/stream: %s", session.attachment);
-
-	// Attachment flag based on URL
-	if (!strcmp(attachment, DNLD_ATTACHMENT)) {
-		session.is_attachment = true;
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Download will be an attachmanet");
-	}
-	else if (!strcmp(attachment, DNLD_STREAM)) {
-		session.is_attachment = false;
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Download will be a stream");
-	}
-	else {
-		// Return code to refuse processing so that other filters may kick in
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "URI %s invalid stream/download mode %s", session.uri, attachment);
-		return NGX_DECLINED;
-	}
-
-	// Get file ID
-	id = strtok(NULL, "/");
-	if (! id) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "URI %s file ID not found", session.uri);
-		return NGX_DECLINED;
-	}
-	session.id = ngx_pnalloc(r->pool, strlen(id) + 1);
-	strcpy(session.id, id);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found file ID: %s", session.id);
-
-	// Etag from client If-None-Match
-	if (r->headers_in.if_none_match) {
-		session.if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Received ETag: %s", session.if_none_match);
-	}
-	else
-		session.if_none_match = NULL;
-
-	// Find web token:
-	// - in cookie which name is stored in WEB_TOKEN, or
-	// - in header 'Authorization' which values is "Bearer TOKEN"
-	ngx_str_t cookie_name = ngx_string(WEB_TOKEN);
-	ngx_str_t cookie_value = ngx_null_string;
-	ngx_int_t rc = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, &cookie_value);
-	if (rc != NGX_DECLINED) {
-		session.token = from_ngx_str(r->pool, cookie_value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Web token found in cookie %s: %s", WEB_TOKEN, session.token);
-	}
-	else {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Web token not found in cookie: %s", WEB_TOKEN);
-
-		if (r->headers_in.authorization) {
-			session.authorization = from_ngx_str(r->pool, r->headers_in.authorization->value);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found Authorization header: %s", session.authorization);
-
-			if (strstr(session.authorization, "Bearer")) {
-				session.token = ngx_pcalloc(r->pool, strlen(session.authorization) + 1);
-				strncpy(session.token, session.authorization + 7, strlen(session.authorization) - 7);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Web token found in Authorization header: %s", session.token);
-			}
-			else
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Web token not found in Authorization header");
-		}
-	}
+	session.hdr_authorisation = NULL;
+	session.hdr_cookies = NULL;
+	session.hdr_if_none_match = NULL;
+	session.hdr_if_modified_since = NULL;
+	session.if_modified_since = -1;
 
 	// Set some defaults (to be used if no corresponding field is found)
 	meta_file.etag = NULL;
 	meta_file.filename = NULL;
 	meta_file.content_type = NULL;
+	meta_file.content_disposition = NULL;
 	meta_file.data = NULL;
 	meta_file.length = -1;
 	meta_file.upload_date = -1;
 	meta_file.status = -1;
 
-	ret = process_jwt_token(session, r);
-	if (ret)
-		return ret;
+	// URI
+	session.uri = from_ngx_str(r->pool, r->uri);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", session.uri);
+
+	// Headers
+	if (r->headers_in.authorization) {
+		session.hdr_authorisation = from_ngx_str(r->pool, r->headers_in.authorization->value);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header Authorization: %s", session.hdr_authorisation);
+	}
+	if (r->headers_in.cookies) {
+		session.hdr_cookies = from_ngx_str(r->pool, r->headers_in.cookies->value);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header Cookies: %s", session.hdr_cookies);
+	}
+	if (r->headers_in.if_modified_since) {
+		session.hdr_if_modified_since = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Modified-Since: %s", session.hdr_if_modified_since);
+
+		struct tm ltm;
+		if (strptime(session.hdr_if_modified_since, "%a, %d %m %y %H:%M:%S GMT", &ltm))
+			session.if_modified_since = mktime(&ltm);
+	}
+	if (r->headers_in.if_none_match) {
+		session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session.hdr_if_none_match);
+	}
+
+	// TODO: support Range incoming header
+	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
 
 	// Prepare outbound message to auth server in session->auth_req
+	bson_t bh = BSON_INITIALIZER;
+	if (session.hdr_if_modified_since)
+		BSON_APPEND_UTF8 (&bh, "if_modified_since", session.hdr_if_modified_since);
+	if (session.hdr_if_none_match)
+		BSON_APPEND_UTF8 (&bh, "if_none_match", session.hdr_if_none_match);
+	if (session.authorisation)
+		BSON_APPEND_UTF8 (&bh, "authorisation", session.authorisation);
+
 	bson_t b = BSON_INITIALIZER;
-	BSON_APPEND_UTF8 (&b, "id", session->id);
-	BSON_APPEND_INT32 (&b, "uid", session->uid);
-	BSON_APPEND_INT32 (&b, "tid", session->tid);
-	session->auth_req = bson_as_json (&b, NULL);
+	BSON_APPEND_UTF8 (&b, "uri", session.uri);
+	BSON_APPEND_DOCUMENT_BEGIN(b, "headers", bh);
+
+	session.auth_req = bson_as_json (&b, NULL);
 
 	// Query for metadata here over the Unix socket
 	ret = get_metadata(&session, r);
@@ -170,78 +130,24 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		return ret;
 
 	// Process metadata
-	ret = process_metadata(&meta_file, &session, r);
+	ret = process_metadata(&session, &meta_file, r);
 	free(session->auth_resp);
 	if (ret)
 		return ret;
 
 	// Process the file
-	if (! ret) {
-		ret = read_fs(&session, &meta_file, r);
-		if (ret)
-			return ret;
-
-		// Send the file
-		ret = send_file(&session, &meta_file, r);
-
-		// Unmap memory mapped for sending the file
-		if (munmap(meta_file.data, meta_file.length) < 0)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", session.id, errno);
-
+	ret = read_fs(&session, &meta_file, r);
+	if (ret)
 		return ret;
-	}
-}
 
+	// Send the file
+	ret = send_file(&session, &meta_file, r);
 
-/**
- * Process JWT
- */
-ngx_int_t process_jwt_token(session_t *session, ngx_http_request_t *r) {
-	int jwt_res, ret;
+	// Unmap memory mapped for sending the file
+	if (munmap(meta_file.data, meta_file.length) < 0)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", session.id, errno);
 
-	// Extract the token	
-	if ((jwt_res = jwt_decode(&session->jwt, session->token, (unsigned char*)session->jwt_key, strlen(session->jwt_key)))) {
-		if (jwt_res == EINVAL) {
-			// Invalid signature
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s invalid signature", session->token);
-			ret = NGX_HTTP_UNAUTHORIZED;
-		}
-		else {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s system error %u while decoding", session->token, jwt_res);
-			ret = NGX_HTTP_INTERNAL_SERVER_ERROR;
-		}
-		return ret;
-	}
-
-	session->exp = jwt_get_grant_int(session->jwt, "exp");
-	if (errno == ENOENT) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim EXP", session->token);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim EXP %l", session->token, session->exp);
-	if (session->exp < time(NULL)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s has expired: EXP is %l, now is %l", session->token, session->exp, time(NULL));
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-
-	session->uid = atoi(jwt_get_grant(session->jwt, "uid"));
-	if (session->uid)
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim UID %s", session->token, session->uid);
-	else {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim UID", session->token);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-
-	session->tid = atoi(jwt_get_grant(session->jwt, "tid"));
-	if (session->tid) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim TID %s", session->token, session->uid);
-	}
-	else {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim TID", session->token);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-
-	return 0;
+	return NGX_OK;
 }
 
 
@@ -318,6 +224,7 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 	// Clean up, log, return
 	close(unix_socket);
 	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth server response: %s", session->auth_resp);
+
 	return 0;
 }
 
@@ -325,7 +232,7 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 /**
  * Process file metadata
  */
-ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_http_request_t *r) {
+ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r) {
 	const bson_t *doc;
 	bson_error_t error;
 	bson_iter_t iter;
@@ -370,6 +277,13 @@ ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata content_type: %s", session->id, meta_file->content_type);
 		}
 
+		else if ((! strcmp(bson_key, "content_disposition")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			meta_file->content_disposition = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(meta_file->content_disposition, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata content_disposition: %s", session->id, meta_file->content_disposition);
+		}
+
 		else if ((! strcmp(bson_key, "etag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
 			meta_file->etag = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
@@ -394,7 +308,6 @@ ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_
 			meta_file->upload_date = bson_iter_date_time (&iter) / 1000;
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s metadata upload_date: %l", session->id, meta_file->upload_date);
 		}
-
 	}
 
 	// Check if we have all the fields
@@ -410,15 +323,16 @@ ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_type not found, using default %s", session->id, DEFAULT_CONTENT_TYPE);
 	}
 
+	if (! meta_file->content_disposition) {
+		meta_file->content_disposition = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
+		strcpy(meta_file->content_disposition, DEFAULT_CONTENT_TYPE);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_disposition not found, not setting it", session->id);
+	}
+
 	if (! meta_file->etag) {
 		meta_file->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
 		strcpy(meta_file->etag, DEFAULT_ETAG);
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_type not found, using default %s", session->id, DEFAULT_ETAG);
-	}
-
-	if (meta_file->status < 0) {
-		meta_file->status = DEFAULT_HTTP_CODE;
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s status not found, using default %s", session->id, DEFAULT_HTTP_CODE);
 	}
 
 	if (meta_file->length < 0)
@@ -427,8 +341,12 @@ ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_
 	if (meta_file->upload_date < 0)
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", session->id);
 
+	if (meta_file->status < 0) {
+		meta_file->status = DEFAULT_HTTP_CODE;
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s status not found, using default %s", session->id, DEFAULT_HTTP_CODE);
+	}
 
-	return (meta_file->status == 200) ? 0 : meta_file->status;
+	return (meta_file->status == NGX_HTTP_OK) ? 0 : meta_file->status;
 }
 
 
@@ -468,7 +386,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_requ
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	// Fill-in any misisng info from actual file
+	// Fill-in any missing info from actual file
 	if ((meta_file.length < 0) || (metafile.upload_date < 0)) {
 		fstat(fd, &statbuf);
 		if (meta_file.length < 0)
@@ -486,6 +404,12 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_requ
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", session->id, path, errno);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
+
+	// Return 304 in certain cases
+	if (session->if_not_match && meta_file->etag && ! strcmp(session->if_not_match, meta_file->etag))
+		return NGX_HTTP_NOT_MODIFIED;
+	if (session->if_modified_since == meta_file.upload_date)
+		return NGX_HTTP_NOT_MODIFIED;
 
 	return 0;
 }
@@ -528,8 +452,8 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_re
 	r->headers_out.etag->value.len = b1_len;
 	r->headers_out.etag->value.data = b1->start;
 
-	// Attachment: if is_attachment
-	if (session->is_attachment) {
+	// Attachment: if file will be an attachment
+	if (meta_file->content_disposition && strcmp(meta_file->content_disposition, CONTENT_DISPOSITION_ATTACHMENT)) {
 		// URI-encode the file name?
 		curl = curl_easy_init();
 		if (curl) {
@@ -568,6 +492,10 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_re
 		}
 	}
 
+	//TODO: Return Content-Range header if Range header was specified in the request
+
+/*
+	//TODO: enable this block once Range inbond header is supported
 	// Accept-ranges (not strictly necessary, but good to have)
 	r->headers_out.accept_ranges = ngx_list_push(&r->headers_out.headers);
 	r->headers_out.accept_ranges->hash = 1;
@@ -575,7 +503,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_re
 	r->headers_out.accept_ranges->key.data = (u_char*)HEADER_ACCEPT_RANGES;
 	r->headers_out.accept_ranges->value.len = sizeof("none") - 1;
 	r->headers_out.accept_ranges->value.data = (u_char*)"none";
-
+*/
 	// ----- PREPARE THE BODY ----- //
 
 	// Prepare output buffer
@@ -589,7 +517,8 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_re
 	out.buf = b;
 	out.next = NULL; 
 
-	// Fill the buffer
+	// Set the buffer
+	// TODO: partial response if Range request header was set
 	b->pos = meta_file->data;
 	b->last = meta_file->data + meta_file->length;
 	b->memory = 1; 

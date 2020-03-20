@@ -25,18 +25,13 @@
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
 #define DEFAULT_ETAG "00000000000000000000000000000000"
 #define DEFAULT_HTTP_CODE 500
-#define LOCATION_PUBLIC1 "public"
-#define LOCATION_PUBLIC2 "profile"
-#define LOCATION_PRIVATE "private"
-#define DNLD_ATTACHMENT "download"
-#define DNLD_STREAM "stream"
 #define HEADER_ETAG "ETag"
-#define HEADER_CONTENT_DISPOSITION "Content-Disposition"
 #define HEADER_AUTHORIZATION "Authorization"
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
+#define HEADER_CONTENT_DISPOSITION "Content-Disposition"
+#define CONTENT_DISPOSITION_ATTACHMENT "attachment"
 #define FS_DEFAULT_DEPTH 4
 #define FS_DEFAULT_ROOT "/usr/share/curaden/fs"
-#define WEB_TOKEN "medicloud_token"
 #define ERROR_MESSAGE_LENGTH 1024
 #define AUTH_DEFAULT_SOCKET "/tmp/auth.socket"
 #define AUTH_BUFFER_CHUNK 1024
@@ -51,13 +46,13 @@ typedef struct {
 	uint fs_depth;
 	ngx_str_t fs_root;
 	ngx_str_t auth_socket;
-	ngx_str_t jwt_key;
 } ngx_http_medicloud_loc_conf_t;
 
 typedef struct {
 	char *etag;
 	char *filename;
 	char *content_type;
+	char *content_disposition;
 	char *error;
 	u_char *data;
 	time_t upload_date; 
@@ -67,23 +62,18 @@ typedef struct {
 
 typedef struct {
 	char *id;					// File ID
-	int *uid;
-	int *tid;
 	time_t exp;
 	char *if_none_match;
 	char *uri;
-	char *uri_dup;
-	char *attachment;
-	bool is_attachment;
 	uint fs_depth;
 	char *fs_root;
 	char *authorization;
-	char *token;
 	char *auth_socket;
 	char *auth_req;
 	char *auth_resp;
-	const char *jwt_key;
-	jwt_t *jwt;
+	char *hdr_authorisation;
+	char *hdr_cookies;
+	char *hdr_if_none_match;
 } session_t;
 
 // Prototypes
@@ -91,9 +81,8 @@ static void* ngx_http_medicloud_create_loc_conf(ngx_conf_t* directive);
 static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* directive, void* parent, void* child);
 static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t* request);
-static ngx_int_t process_jwt_token(session_t *session, ngx_http_request_t *r);
-static ngx_int_t get_metadata(medicloud_file_t *meta_file, session_t *session, ngx_http_request_t *r, char *collection_name);
-static ngx_int_t process_metadata(medicloud_file_t *meta_file, session_t *session, ngx_http_request_t *r);
+static ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r, char *collection_name);
+static ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r);
 static ngx_int_t read_fs(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
 static ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
@@ -130,14 +119,6 @@ static ngx_command_t ngx_http_medicloud_commands[] = {
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_medicloud_loc_conf_t, auth_socket),
-		NULL
-	},
-	{
-		ngx_string("jwt_key"),
-		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-		ngx_conf_set_str_slot,
-		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_medicloud_loc_conf_t, jwt_key),
 		NULL
 	},
 	ngx_null_command
