@@ -86,17 +86,17 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		session.hdr_authorisation = from_ngx_str(r->pool, r->headers_in.authorization->value);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header Authorization: %s", session.hdr_authorisation);
 	}
-	if (r->headers_in.cookies) {
-		session.hdr_cookies = from_ngx_str(r->pool, r->headers_in.cookies->value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header Cookies: %s", session.hdr_cookies);
-	}
 	if (r->headers_in.if_modified_since) {
 		session.hdr_if_modified_since = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Modified-Since: %s", session.hdr_if_modified_since);
 
 		struct tm ltm;
-		if (strptime(session.hdr_if_modified_since, "%a, %d %m %y %H:%M:%S GMT", &ltm))
+		if (strptime(session.hdr_if_modified_since, "%a, %d %m %y %H:%M:%S GMT", &ltm)) {
 			session.if_modified_since = mktime(&ltm);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %u", session.if_modified_since);
+		}
+		else
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", session.hdr_if_modified_since);
 	}
 	if (r->headers_in.if_none_match) {
 		session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
@@ -110,6 +110,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	bson_t b = BSON_INITIALIZER;
 	BSON_APPEND_UTF8 (&b, "uri", session.uri);
 
+	// Append headers
 	bson_t bh;
 	BSON_APPEND_DOCUMENT_BEGIN(&b, "headers", &bh);
 	if (session.hdr_if_modified_since)
@@ -119,6 +120,24 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	if (session.hdr_authorisation)
 		BSON_APPEND_UTF8 (&bh, "authorisation", session.hdr_authorisation);
 	bson_append_document_end (&b, &bh);
+
+	// Append cookies
+	bson_t bc;
+
+	if (r->headers_in.cookies.nelts) {
+		BSON_APPEND_DOCUMENT_BEGIN(&b, "cookies", &bc);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %u cookies", r->headers_in.cookies.nelts);
+
+		ngx_table_elt_t *elt = headers_in.cookies.elts;
+		for (i=0; i<r->headers_in.cookies.nelts; i++) {
+			char *cookie_name = from_ngx_str(r->pool, elt[i]->key);
+			char *cookie_value = from_ngx_str(r->pool, elt[i]->value);
+			BSON_APPEND_UTF8 (&bh, cookie_name, cookie_value);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with values %s", cookie_name, cookie_value);
+		}
+
+		bson_append_document_end (&b, &bh);
+	}
 
 	session.auth_req = bson_as_json (&b, NULL);
 

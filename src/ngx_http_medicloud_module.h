@@ -76,7 +76,6 @@ typedef struct {
 	char *auth_req;
 	char *auth_resp;
 	char *hdr_authorisation;
-	char *hdr_cookies;
 	char *hdr_if_none_match;
 	char *hdr_if_modified_since;
 	time_t if_modified_since;
