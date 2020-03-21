@@ -19,7 +19,7 @@ Packager: Curaden AG <technik@curaden.ch>
 Group: Curaden
 License: Proprietary
 BuildArch: x86_64
-Requires: nginx, libcurl, libjwt, mongo-c-driver
+Requires: nginx, libcurl, libbson
 
 %description
 Medicloud CDN Nginx module

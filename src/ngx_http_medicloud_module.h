@@ -11,7 +11,6 @@
 #include <bson/bson.h>
 #include <curl/curl.h>
 #include <errno.h>
-#include <jwt.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -46,14 +45,14 @@ typedef struct {
 } ngx_http_medicloud_main_conf_t;
 
 typedef struct {
-	bool medicloud;
-	uint fs_depth;
-	ngx_str_t fs_root;
 	ngx_str_t auth_socket;
+	ngx_str_t fs_root;
+	uint fs_depth;
 } ngx_http_medicloud_loc_conf_t;
 
 typedef struct {
 	char *etag;
+	char *file;
 	char *filename;
 	char *content_type;
 	char *content_disposition;
@@ -65,7 +64,6 @@ typedef struct {
 } medicloud_file_t;
 
 typedef struct {
-	char *id;					// File ID
 	time_t exp;
 	char *uri;
 	uint fs_depth;
@@ -98,12 +96,12 @@ static ngx_command_t ngx_http_medicloud_commands[] = {
 		NGX_HTTP_LOC_CONF | NGX_CONF_NOARGS,
 		ngx_http_medicloud_init,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_medicloud_loc_conf_t, medicloud),
+		0,
 		NULL
 	},
 	{
 		ngx_string("fs_root"),
-		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_medicloud_loc_conf_t, fs_root),
@@ -111,7 +109,7 @@ static ngx_command_t ngx_http_medicloud_commands[] = {
 	},
 	{
 		ngx_string("fs_depth"),
-		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_num_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_medicloud_loc_conf_t, fs_depth),
@@ -119,7 +117,7 @@ static ngx_command_t ngx_http_medicloud_commands[] = {
 	},
 	{
 		ngx_string("auth_socket"),
-		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_medicloud_loc_conf_t, auth_socket),
