@@ -52,6 +52,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
 	ngx_int_t ret;
 	medicloud_file_t meta_file;
+	int i;
 
 	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
 
@@ -62,7 +63,6 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	session.fs_root = from_ngx_str(r->pool, medicloud_loc_conf->fs_root);
 	session.auth_socket = from_ngx_str(r->pool, medicloud_loc_conf->auth_socket);
 	session.hdr_authorisation = NULL;
-	session.hdr_cookies = NULL;
 	session.hdr_if_none_match = NULL;
 	session.hdr_if_modified_since = NULL;
 	session.if_modified_since = -1;
@@ -128,10 +128,10 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		BSON_APPEND_DOCUMENT_BEGIN(&b, "cookies", &bc);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %u cookies", r->headers_in.cookies.nelts);
 
-		ngx_table_elt_t *elt = headers_in.cookies.elts;
+		ngx_table_elt_t *elt = r->headers_in.cookies.elts;
 		for (i=0; i<r->headers_in.cookies.nelts; i++) {
-			char *cookie_name = from_ngx_str(r->pool, elt[i]->key);
-			char *cookie_value = from_ngx_str(r->pool, elt[i]->value);
+			char *cookie_name = from_ngx_str(r->pool, elt[i].key);
+			char *cookie_value = from_ngx_str(r->pool, elt[i].value);
 			BSON_APPEND_UTF8 (&bh, cookie_name, cookie_value);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with values %s", cookie_name, cookie_value);
 		}
@@ -251,19 +251,19 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
  * Process file metadata
  */
 ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r) {
-	bson_t *doc;
+	bson_t doc;
 	bson_error_t error;
 	bson_iter_t iter;
 	const char *bson_key;
 	const char *bson_val_char;
 
 	// Walk around the JSON which we received from the authentication servier, session->auth_resp
-	if (! bson_init_from_json(doc, session->auth_resp, strlen(session->auth_resp), &error)) {
+	if (! bson_init_from_json(&doc, session->auth_resp, strlen(session->auth_resp), &error)) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->auth_resp);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	if (! bson_iter_init (&iter, doc)) {
+	if (! bson_iter_init (&iter, &doc)) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to initialise BSON iterator");
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
@@ -424,7 +424,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_requ
 	}
 
 	// Return 304 in certain cases
-	if (session->if_none_match && meta_file->etag && ! strcmp(session->if_none_match, meta_file->etag))
+	if (session->hdr_if_none_match && meta_file->etag && ! strcmp(session->hdr_if_none_match, meta_file->etag))
 		return NGX_HTTP_NOT_MODIFIED;
 	if (session->if_modified_since == meta_file->upload_date)
 		return NGX_HTTP_NOT_MODIFIED;

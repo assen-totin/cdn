@@ -67,7 +67,6 @@ typedef struct {
 typedef struct {
 	char *id;					// File ID
 	time_t exp;
-	char *if_none_match;
 	char *uri;
 	uint fs_depth;
 	char *fs_root;
