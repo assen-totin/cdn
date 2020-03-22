@@ -87,6 +87,7 @@ static ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r);
 static ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r);
 static ngx_int_t read_fs(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
 static ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
+static void ngx_http_medicloud_cleanup(void *a);
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
 
 // Globals: array to specify how to handle configuration directives.
@@ -129,7 +130,7 @@ static ngx_command_t ngx_http_medicloud_commands[] = {
 // Globals: module context
 static ngx_http_module_t ngx_http_medicloud_module_ctx = {
 	NULL,								// pre-configuration
-	NULL,								// pre-configuration
+	NULL,								// post-configuration
 	NULL,								// allocations and initilizations of configurations for the main block configuration
 	NULL,								// set the configuration based on the directives supplied in the configuration files
 	NULL,								// allocations and initilizations of configurations for the server block configuration

@@ -52,7 +52,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
 	ngx_int_t ret;
 	ngx_table_elt_t **elts;
-	medicloud_file_t metadata;
+	medicloud_file_t *metadata;
 	bson_t bc, bh;
 	int i;
 	char *s0, *s1, *s2;
@@ -78,15 +78,19 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	session.hdr_if_modified_since = -1;
 
 	// Set some defaults (to be used if no corresponding field is found)
-	metadata.etag = NULL;
-	metadata.file = NULL;
-	metadata.filename = NULL;
-	metadata.content_type = NULL;
-	metadata.content_disposition = NULL;
-	metadata.data = NULL;
-	metadata.length = -1;
-	metadata.upload_date = -1;
-	metadata.status = -1;
+	metadata = ngx_pcalloc(r->pool, sizeof(medicloud_file_t));
+	metadata->etag = NULL;
+	metadata->file = NULL;
+	metadata->filename = NULL;
+	metadata->content_type = NULL;
+	metadata->content_disposition = NULL;
+	metadata->data = NULL;
+	metadata->length = -1;
+	metadata->upload_date = -1;
+	metadata->status = -1;
+
+	// Attach metadata to request for further use
+	ngx_http_set_ctx(r, metadata, ngx_http_medicloud_module);
 
 	// URI
 	session.uri = from_ngx_str(r->pool, r->uri);
@@ -196,23 +200,23 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		return ret;
 
 	// Process metadata
-	ret = process_metadata(&session, &metadata, r);
+	ret = process_metadata(&session, metadata, r);
 	free(session.auth_resp);
 	if (ret)
 		return ret;
 
 	// Process the file
-	ret = read_fs(&session, &metadata, r);
+	ret = read_fs(&session, metadata, r);
 	if (ret)
 		return ret;
 
 	// Send the file
-	ret = send_file(&session, &metadata, r);
+	ret = send_file(&session, metadata, r);
 
 	//FIXME: Unmapping here kills the download midway
 	// Unmap memory mapped for sending the file
-//	if (munmap(metadata.data, metadata.length) < 0)
-//		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", metadata.file, errno);
+//	if (munmap(metadata->data, metadata->length) < 0)
+//		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", metadata->file, errno);
 
 	return NGX_OK;
 }
@@ -439,6 +443,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 	int i, len, pos=0, fd;
 	char *path;
 	struct stat statbuf;
+	ngx_http_cleanup_t *c;
 
 	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
 	path = ngx_pcalloc(r->pool, len);
@@ -484,12 +489,19 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 		return NGX_HTTP_NOT_MODIFIED;
 	}
 
+	// Map the physical file to memory
 	if ((metadata->data = mmap(NULL, metadata->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %u", metadata->file, path, errno);
 		if (close(fd) < 0)
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", metadata->file, path, errno);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
+
+	// Set cleanup handler to unmap the file
+	c = ngx_pcalloc(r->pool, sizeof(ngx_http_cleanup_t));
+	c->handler = ngx_http_medicloud_cleanup;
+	c->data = r;
+	r->cleanup = c;
 
 	if (close(fd) < 0) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", metadata->file, path, errno);
@@ -624,6 +636,19 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 } 
 
 /**
+ * Cleanup (unmap mapped file after serving)
+ */
+static void ngx_http_medicloud_cleanup(void *a) {
+    ngx_http_request_t *r = (ngx_http_request_t *)a;
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "ngx_http_medicloud_cleanup");
+
+    medicloud_file_t *metadata;
+    metadata = ngx_http_get_module_ctx(r, ngx_http_medicloud_module);
+    if (munmap(metadata->data, metadata->length) < 0)
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", metadata->file, errno);
+}
+
+/**
  * Helper: convert Nginx string to normal
  */
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
@@ -634,4 +659,5 @@ char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 		memcpy(ret, ngx_str.data, ngx_str.len);
 		return ret;
 }
+
 
