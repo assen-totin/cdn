@@ -51,8 +51,14 @@ static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *c
 static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
 	ngx_int_t ret;
-	medicloud_file_t meta_file;
+	medicloud_file_t metadata;
+	bson_t b, bc, bh;
 	int i;
+	char *s0, *s1, *s2;
+	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
+	char *cookie_delim = " ", *cookie_subdelim = "=";
+	char *cookie_name = NULL, *cookie_value = NULL;
+
 
 	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
 
@@ -67,43 +73,42 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	session.if_modified_since = -1;
 
 	// Set some defaults (to be used if no corresponding field is found)
-	meta_file.etag = NULL;
-	meta_file.file = NULL;
-	meta_file.filename = NULL;
-	meta_file.content_type = NULL;
-	meta_file.content_disposition = NULL;
-	meta_file.data = NULL;
-	meta_file.length = -1;
-	meta_file.upload_date = -1;
-	meta_file.status = -1;
+	metadata.etag = NULL;
+	metadata.file = NULL;
+	metadata.filename = NULL;
+	metadata.content_type = NULL;
+	metadata.content_disposition = NULL;
+	metadata.data = NULL;
+	metadata.length = -1;
+	metadata.upload_date = -1;
+	metadata.status = -1;
 
 	// URI
 	session.uri = from_ngx_str(r->pool, r->uri);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", session.uri);
 
 	// Headers
-	char *q1, *q2;
 	if (r->headers_in.authorization) {
 		session.hdr_authorisation = from_ngx_str(r->pool, r->headers_in.authorization->value);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header Authorization: %s", session.hdr_authorisation);
 	}
 	if (r->headers_in.if_modified_since) {
-		q1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Modified-Since: %s", q1);
+		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Modified-Since: %s", s1);
 
 		struct tm ltm;
-		if (strptime(q1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
+		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
 			session.hdr_if_modified_since = mktime(&ltm);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session.hdr_if_modified_since);
 		}
 		else
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", q1);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
 	}
 	if (r->headers_in.if_none_match) {
 		session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
-		q1 = strchr(session.hdr_if_none_match, '"');
-		q2 = strrchr(session.hdr_if_none_match, '"');
-		if ((q1 == session.hdr_if_none_match) && (q2 == session.hdr_if_none_match + strlen(session.hdr_if_none_match) - 1)) {
+		s1 = strchr(session.hdr_if_none_match, '"');
+		s2 = strrchr(session.hdr_if_none_match, '"');
+		if ((s1 == session.hdr_if_none_match) && (s2 == session.hdr_if_none_match + strlen(session.hdr_if_none_match) - 1)) {
 			char *no_quotes = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1);
 			strncpy(no_quotes, session.hdr_if_none_match + 1, strlen(session.hdr_if_none_match) - 2);
 			session.hdr_if_none_match = no_quotes;
@@ -115,14 +120,13 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
 
 	// Prepare outbound message to auth server in session->auth_req
-	bson_t b = BSON_INITIALIZER;
+	b = BSON_INITIALIZER;
 	BSON_APPEND_UTF8 (&b, "uri", session.uri);
 
 	// Append headers
-	bson_t bh;
 	BSON_APPEND_DOCUMENT_BEGIN(&b, "headers", &bh);
 	if (session.hdr_if_modified_since)
-		BSON_APPEND_UTF8 (&bh, "if_modified_since", session.hdr_if_modified_since);
+		BSON_APPEND_INT32 (&bh, "if_modified_since", session.hdr_if_modified_since);
 	if (session.hdr_if_none_match)
 		BSON_APPEND_UTF8 (&bh, "if_none_match", session.hdr_if_none_match);
 	if (session.hdr_authorisation)
@@ -130,32 +134,27 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	bson_append_document_end (&b, &bh);
 
 	// Append cookies
-	bson_t bc;
 	BSON_APPEND_DOCUMENT_BEGIN(&b, "cookies", &bc);
 	if (r->headers_in.cookies.nelts) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
 		ngx_table_elt_t **elt = r->headers_in.cookies.elts;
 		for (i=0; i<r->headers_in.cookies.nelts; i++) {
-			char *hdr_cookie = from_ngx_str(r->pool, elts[i]->value);
-			char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
-			char *delim = " ";
-			char *subdelim = "=";
-			char *cookie_name = NULL, *cookie_value = NULL;
-			for (str1 = hdr_cookie; ; str1 = NULL) {
-				token = strtok_r(str1, delim, &saveptr1);
+			s0 = from_ngx_str(r->pool, elts[i]->value);
+			for (str1 = s0; ; str1 = NULL) {
+				token = strtok_r(str1, cookie_delim, &saveptr1);
 				if (token == NULL)
 					break;
 
-				q1 = strchr(token, ';');
-				if (q1 == token + strlen(token) - 1) {
-					q2 = ngx_pcalloc(r->pool, strlen(token));
-					strncpy(q2, token, strlen(token) - 1);
+				s1 = strchr(token, ';');
+				if (s1 == token + strlen(token) - 1) {
+					s2 = ngx_pcalloc(r->pool, strlen(token));
+					strncpy(s2, token, strlen(token) - 1);
 				}
 				else
-					q2 = token;
+					s2 = token;
 
-				for (i=0, str2 = q2; ; i++, str2 = NULL) {
-					subtoken = strtok_r(str2, subdelim, &saveptr2);
+				for (i=0, str2 = s2; ; i++, str2 = NULL) {
+					subtoken = strtok_r(str2, cookie_subdelim, &saveptr2);
 					if (subtoken == NULL)
 						break;
 
@@ -163,14 +162,18 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 						cookie_name = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
 						strcpy(cookie_name, subtoken);
 					}
-					else {
+					else if (i == 1) {
 						cookie_value = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
 						strcpy(cookie_value, subtoken);
 					}
+					else
+						ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Malformed cookie %s", s0);
 				}
 
-				BSON_APPEND_UTF8 (&bc, cookie_name, cookie_value);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", cookie_name, cookie_value);
+				if (i == 1) {
+					BSON_APPEND_UTF8 (&bc, cookie_name, cookie_value);
+					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", cookie_name, cookie_value);
+				}
 			}
 		}
 	}
@@ -188,21 +191,21 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		return ret;
 
 	// Process metadata
-	ret = process_metadata(&session, &meta_file, r);
+	ret = process_metadata(&session, &metadata, r);
 	free(session.auth_resp);
 	if (ret)
 		return ret;
 
 	// Process the file
-	ret = read_fs(&session, &meta_file, r);
+	ret = read_fs(&session, &metadata, r);
 	if (ret)
 		return ret;
 
 	// Send the file
-	ret = send_file(&session, &meta_file, r);
+	ret = send_file(&session, &metadata, r);
 
 	// Unmap memory mapped for sending the file
-	if (munmap(meta_file.data, meta_file.length) < 0)
+	if (munmap(metadata.data, metadata.length) < 0)
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", session.file, errno);
 
 	return NGX_OK;
@@ -290,7 +293,7 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 /**
  * Process file metadata
  */
-ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r) {
+ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
 	bson_t doc;
 	bson_error_t error;
 	bson_iter_t iter;
@@ -314,124 +317,124 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_file, ngx_
 
 		if ((! strcmp(bson_key, "file")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			meta_file->file = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			strcpy(meta_file->file, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata file: %s", meta_file->file);
+			metadata->file = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(metadata->file, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata file: %s", metadata->file);
 		}
 
 		else if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			meta_file->filename = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			strcpy(meta_file->filename, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata filename: %s", meta_file->filename);
+			metadata->filename = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(metadata->filename, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata filename: %s", metadata->filename);
 		}
 
 		else if ((! strcmp(bson_key, "error")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
 			if (strlen(bson_val_char)) {
-				meta_file->error = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-				strcpy(meta_file->error, bson_val_char);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata error: %s", meta_file->error);
+				metadata->error = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+				strcpy(metadata->error, bson_val_char);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata error: %s", metadata->error);
 			}
 		}
 
 		else if ((! strcmp(bson_key, "content_type")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			meta_file->content_type = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			strcpy(meta_file->content_type, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_type: %s", meta_file->content_type);
+			metadata->content_type = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(metadata->content_type, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_type: %s", metadata->content_type);
 		}
 
 		else if ((! strcmp(bson_key, "content_disposition")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			meta_file->content_disposition = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			strcpy(meta_file->content_disposition, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_disposition: %s", meta_file->content_disposition);
+			metadata->content_disposition = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(metadata->content_disposition, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_disposition: %s", metadata->content_disposition);
 		}
 
 		else if ((! strcmp(bson_key, "etag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			meta_file->etag = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			strcpy(meta_file->etag, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata etag: %s", meta_file->etag);
+			metadata->etag = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			strcpy(metadata->etag, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata etag: %s", metadata->etag);
 		}
 
 		else if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
-			meta_file->status = bson_iter_int32 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", meta_file->status);
+			metadata->status = bson_iter_int32 (&iter);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 		}
 
 		else if (! strcmp(bson_key, "length")) {
 			if (bson_iter_type(&iter) == BSON_TYPE_INT32)
-				meta_file->length = bson_iter_int32 (&iter);
+				metadata->length = bson_iter_int32 (&iter);
 			else if (bson_iter_type(&iter) == BSON_TYPE_INT64)
-				meta_file->length = bson_iter_int64 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", meta_file->length);
+				metadata->length = bson_iter_int64 (&iter);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
 		}
 
 		else if ((! strcmp(bson_key, "upload_date")) && (bson_iter_type(&iter) == BSON_TYPE_DATE_TIME)) {
-			meta_file->upload_date = bson_iter_date_time (&iter) / 1000;
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", meta_file->upload_date);
+			metadata->upload_date = bson_iter_date_time (&iter) / 1000;
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
 		}
 	}
 
 	// Check if we have all the fields
-	if (! meta_file->file) {
+	if (! metadata->file) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Filename not received, aborting request.");
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	if (! meta_file->filename) {
-		meta_file->filename = ngx_pcalloc(r->pool, strlen(meta_file->file) + 1);
-		strcpy(meta_file->filename, meta->file);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s filename not found, will use file ID %s", meta_file->file, meta_file->file);
+	if (! metadata->filename) {
+		metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1);
+		strcpy(metadata->filename, meta->file);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file, metadata->file);
 	}
 
-	if (! meta_file->content_type) {
-		meta_file->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
-		strcpy(meta_file->content_type, DEFAULT_CONTENT_TYPE);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_type not found, using default %s", meta_file->file, DEFAULT_CONTENT_TYPE);
+	if (! metadata->content_type) {
+		metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
+		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file, DEFAULT_CONTENT_TYPE);
 	}
 
-	if (! meta_file->content_disposition)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_disposition not found, not setting it", meta_file->file);
+	if (! metadata->content_disposition)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file);
 
-	if (! meta_file->etag) {
-		meta_file->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
-		strcpy(meta_file->etag, DEFAULT_ETAG);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s etag not found, using default %s", meta_file->file, DEFAULT_ETAG);
+	if (! metadata->etag) {
+		metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
+		strcpy(metadata->etag, DEFAULT_ETAG);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
 	}
 
-	if (meta_file->length < 0)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s length not found, will use stat() to determine it", meta_file->file);
+	if (metadata->length < 0)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s length not found, will use stat() to determine it", metadata->file);
 
-	if (meta_file->upload_date < 0)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", meta_file->file);
+	if (metadata->upload_date < 0)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", metadata->file);
 
-	if (meta_file->status < 0) {
-		meta_file->status = DEFAULT_HTTP_CODE;
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s status not found, using default %s", meta_file->file, DEFAULT_HTTP_CODE);
+	if (metadata->status < 0) {
+		metadata->status = DEFAULT_HTTP_CODE;
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s status not found, using default %s", metadata->file, DEFAULT_HTTP_CODE);
 	}
 
 	// Return 304 in certain cases
-	if (session->hdr_if_none_match && meta_file->etag && ! strcmp(session->hdr_if_none_match, meta_file->etag)) {
+	if (session->hdr_if_none_match && metadata->etag && ! strcmp(session->hdr_if_none_match, metadata->etag)) {
 		return NGX_HTTP_NOT_MODIFIED;
 	}
 
-	return (meta_file->status == NGX_HTTP_OK) ? 0 : meta_file->status;
+	return (metadata->status == NGX_HTTP_OK) ? 0 : metadata->status;
 }
 
 
 /**
  * Read file from Filesystem
  */
-ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r) {
+ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
 	// Get path
 	int i, len, pos=0, fd;
 	char *path;
 	struct stat statbuf;
 
-	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(meta_file->file) + 1;
+	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
 	path = ngx_pcalloc(r->pool, len);
 	memset(path, '\0', len);
 
@@ -442,48 +445,48 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_requ
 	pos ++;
 
 	for (i=0; i < session->fs_depth; i++) {
-		memcpy(path + pos, meta_file->file + i, 1);
+		memcpy(path + pos, metadata->file + i, 1);
 		pos ++;
 		memcpy(path + pos, "/", 1);
 		pos ++;
 	}
 
-	memcpy(path + pos, meta_file->file, strlen(meta_file->file));
+	memcpy(path + pos, metadata->file, strlen(metadata->file));
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", meta_file->file, path);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, path);
 
 	// Read the file: use mmap to map the physical file to memory
 	if ((fd = open(path, O_RDONLY)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %u", meta_file->file, path, errno);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %u", metadata->file, path, errno);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	// Fill-in any missing info from actual file
-	if ((meta_file->length < 0) || (meta_file->upload_date < 0)) {
+	if ((metadata->length < 0) || (metadata->upload_date < 0)) {
 		fstat(fd, &statbuf);
-		if (meta_file->length < 0)
-			meta_file->length = statbuf.st_size;
-		if (meta_file->upload_date < 0)
-			meta_file->upload_date = statbuf.st_mtime;
+		if (metadata->length < 0)
+			metadata->length = statbuf.st_size;
+		if (metadata->upload_date < 0)
+			metadata->upload_date = statbuf.st_mtime;
 	}
 
-	if (session->if_modified_since >= meta_file->upload_date) {
+	if (session->hdr_if_modified_since >= metadata->upload_date) {
 		if (close(fd) < 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", meta_file->file, path, errno);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", metadata->file, path, errno);
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		return NGX_HTTP_NOT_MODIFIED;
 	}
 
-	if ((meta_file->data = mmap(NULL, meta_file->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %u", meta_file->file, path, errno);
+	if ((metadata->data = mmap(NULL, metadata->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %u", metadata->file, path, errno);
 		if (close(fd) < 0)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", meta_file->file, path, errno);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", metadata->file, path, errno);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	if (close(fd) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", meta_file->file, path, errno);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", metadata->file, path, errno);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -493,7 +496,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_requ
 /**
  * Send file to client
  */
-ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_request_t *r) {
+ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
 	int b1_len, b2_len;
 	char *encoded = NULL;
 	bool curl_encoded = false;
@@ -507,19 +510,19 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_re
 	r->headers_out.status = NGX_HTTP_OK;
 
 	// Content-Length
-	r->headers_out.content_length_n = meta_file->length;
+	r->headers_out.content_length_n = metadata->length;
 
 	// Content-Type 
-	r->headers_out.content_type.len = strlen(meta_file->content_type);
-	r->headers_out.content_type.data = (u_char*)meta_file->content_type;
+	r->headers_out.content_type.len = strlen(metadata->content_type);
+	r->headers_out.content_type.data = (u_char*)metadata->content_type;
 	
 	// Last-Modified
-	r->headers_out.last_modified_time = meta_file->upload_date;
+	r->headers_out.last_modified_time = metadata->upload_date;
 
 	// ETag
-	b1_len = strlen(meta_file->etag) + 2;
+	b1_len = strlen(metadata->etag) + 2;
 	ngx_buf_t *b1 = ngx_create_temp_buf(r->pool, b1_len);
-	b1->last = ngx_sprintf(b1->last, "\"%s\"", meta_file->etag);
+	b1->last = ngx_sprintf(b1->last, "\"%s\"", metadata->etag);
 
 	r->headers_out.etag = ngx_list_push(&r->headers_out.headers);
 	r->headers_out.etag->hash = 1;
@@ -529,22 +532,22 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_re
 	r->headers_out.etag->value.data = b1->start;
 
 	// Attachment: if file will be an attachment
-	if (meta_file->content_disposition && strcmp(meta_file->content_disposition, CONTENT_DISPOSITION_ATTACHMENT)) {
+	if (metadata->content_disposition && strcmp(metadata->content_disposition, CONTENT_DISPOSITION_ATTACHMENT)) {
 		// URI-encode the file name?
 		curl = curl_easy_init();
 		if (curl) {
-			encoded = curl_easy_escape(curl, meta_file->filename, strlen(meta_file->filename));
+			encoded = curl_easy_escape(curl, metadata->filename, strlen(metadata->filename));
 			if (encoded) {
 				curl_encoded = true;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using URI-encoded filename %s", meta_file->file, encoded);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using URI-encoded filename %s", metadata->file, encoded);
 			}
 			else {
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to URI-encode filename %s", meta_file->file, meta_file->filename);
-				encoded = meta_file->filename;
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to URI-encode filename %s", metadata->file, metadata->filename);
+				encoded = metadata->filename;
 			}
 		}
 		else {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to init curl for URI-encoding", meta_file->file);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to init curl for URI-encoding", metadata->file);
 		}
 
 		// Add Content-Disposition header
@@ -595,8 +598,8 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_re
 
 	// Set the buffer
 	// TODO: partial response if Range request header was set
-	b->pos = meta_file->data;
-	b->last = meta_file->data + meta_file->length;
+	b->pos = metadata->data;
+	b->last = metadata->data + metadata->length;
 	b->mmap = 1; 
 	b->last_buf = 1; 
 
