@@ -63,7 +63,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	session.auth_socket = from_ngx_str(r->pool, medicloud_loc_conf->auth_socket);
 	session.hdr_authorisation = NULL;
 	session.hdr_if_none_match = NULL;
-	session.hdr_if_modified_since = NULL;
+	session.hdr_if_modified_since = -1;
 	session.if_modified_since = -1;
 
 	// Set some defaults (to be used if no corresponding field is found)
@@ -82,28 +82,29 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", session.uri);
 
 	// Headers
+	char *q1, *q2;
 	if (r->headers_in.authorization) {
 		session.hdr_authorisation = from_ngx_str(r->pool, r->headers_in.authorization->value);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header Authorization: %s", session.hdr_authorisation);
 	}
 	if (r->headers_in.if_modified_since) {
-		session.hdr_if_modified_since = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Modified-Since: %s", session.hdr_if_modified_since);
+		q1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Modified-Since: %s", q1);
 
 		struct tm ltm;
-		if (strptime(session.hdr_if_modified_since, "%a, %d %m %y %H:%M:%S GMT", &ltm)) {
-			session.if_modified_since = mktime(&ltm);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session.if_modified_since);
+		if (strptime(q1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
+			session.hdr_if_modified_since = mktime(&ltm);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session.hdr_if_modified_since);
 		}
 		else
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", session.hdr_if_modified_since);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", q1);
 	}
 	if (r->headers_in.if_none_match) {
 		session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
-		char *q1 = strchr(session.hdr_if_none_match, '"');
-		char *q2 = strrchr(session.hdr_if_none_match, '"');
+		q1 = strchr(session.hdr_if_none_match, '"');
+		q2 = strrchr(session.hdr_if_none_match, '"');
 		if ((q1 == session.hdr_if_none_match) && (q2 == session.hdr_if_none_match + strlen(session.hdr_if_none_match) - 1)) {
-			char *no_quotes = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 2);
+			char *no_quotes = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1);
 			strncpy(no_quotes, session.hdr_if_none_match + 1, strlen(session.hdr_if_none_match) - 2);
 			session.hdr_if_none_match = no_quotes;
 		}
@@ -132,13 +133,45 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	bson_t bc;
 	BSON_APPEND_DOCUMENT_BEGIN(&b, "cookies", &bc);
 	if (r->headers_in.cookies.nelts) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l cookies", r->headers_in.cookies.nelts);
-		ngx_table_elt_t *elt = r->headers_in.cookies.elts;
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
+		ngx_table_elt_t **elt = r->headers_in.cookies.elts;
 		for (i=0; i<r->headers_in.cookies.nelts; i++) {
-			char *cookie_name = from_ngx_str(r->pool, elt[i].key);
-			char *cookie_value = from_ngx_str(r->pool, elt[i].value);
-			BSON_APPEND_UTF8 (&bc, cookie_name, cookie_value);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with values %s", cookie_name, cookie_value);
+			char *hdr_cookie = from_ngx_str(r->pool, elts[i]->value);
+			char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
+			char *delim = " ";
+			char *subdelim = "=";
+			char *cookie_name = NULL, *cookie_value = NULL;
+			for (str1 = hdr_cookie; ; str1 = NULL) {
+				token = strtok_r(str1, delim, &saveptr1);
+				if (token == NULL)
+					break;
+
+				q1 = strchr(token, ';');
+				if (q1 == token + strlen(token) - 1) {
+					q2 = ngx_pcalloc(r->pool, strlen(token));
+					strncpy(q2, token, strlen(token) - 1);
+				}
+				else
+					q2 = token;
+
+				for (i=0, str2 = q2; ; i++, str2 = NULL) {
+					subtoken = strtok_r(str2, subdelim, &saveptr2);
+					if (subtoken == NULL)
+						break;
+
+					if (i == 0) {
+						cookie_name = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
+						strcpy(cookie_name, subtoken);
+					}
+					else {
+						cookie_value = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
+						strcpy(cookie_value, subtoken);
+					}
+				}
+
+				BSON_APPEND_UTF8 (&bc, cookie_name, cookie_value);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", cookie_name, cookie_value);
+			}
 		}
 	}
 	else
@@ -434,7 +467,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *meta_file, ngx_http_requ
 			meta_file->upload_date = statbuf.st_mtime;
 	}
 
-	if (session->if_modified_since == meta_file->upload_date) {
+	if (session->if_modified_since >= meta_file->upload_date) {
 		if (close(fd) < 0) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", meta_file->file, path, errno);
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -564,7 +597,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *meta_file, ngx_http_re
 	// TODO: partial response if Range request header was set
 	b->pos = meta_file->data;
 	b->last = meta_file->data + meta_file->length;
-	b->memory = 1; 
+	b->mmap = 1; 
 	b->last_buf = 1; 
 
 	// ----- SERVE CONTENT ----- //

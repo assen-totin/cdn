@@ -74,8 +74,7 @@ typedef struct {
 	char *auth_resp;
 	char *hdr_authorisation;
 	char *hdr_if_none_match;
-	char *hdr_if_modified_since;
-	time_t if_modified_since;
+	time_t hdr_if_modified_since;
 } session_t;
 
 // Prototypes
