@@ -12,7 +12,7 @@
 static void* ngx_http_medicloud_create_loc_conf(ngx_conf_t* cf) {
 	ngx_http_medicloud_loc_conf_t* loc_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_medicloud_loc_conf_t));
 	if (loc_conf == NULL) {
-		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to allocate memory for Medicloud location config.");
+		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to allocate %l bytes for location config.", sizeof(ngx_http_medicloud_loc_conf_t));
 		return NGX_CONF_ERROR;
 	}
 
@@ -79,6 +79,11 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 
 	// Set some defaults (to be used if no corresponding field is found)
 	metadata = ngx_pcalloc(r->pool, sizeof(medicloud_file_t));
+	if (metadata == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(medicloud_file_t));
+		return NGX_ERROR;
+	}
+
 	metadata->etag = NULL;
 	metadata->file = NULL;
 	metadata->filename = NULL;
@@ -117,9 +122,14 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		s1 = strchr(session.hdr_if_none_match, '"');
 		s2 = strrchr(session.hdr_if_none_match, '"');
 		if ((s1 == session.hdr_if_none_match) && (s2 == session.hdr_if_none_match + strlen(session.hdr_if_none_match) - 1)) {
-			char *no_quotes = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1);
-			strncpy(no_quotes, session.hdr_if_none_match + 1, strlen(session.hdr_if_none_match) - 2);
-			session.hdr_if_none_match = no_quotes;
+			s0 = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1);
+			if (s0 == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_if_none_match.", strlen(session.hdr_if_none_match) - 1);
+				return NGX_ERROR;
+			}
+
+			strncpy(s0, session.hdr_if_none_match + 1, strlen(session.hdr_if_none_match) - 2);
+			session.hdr_if_none_match = s0;
 		}
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session.hdr_if_none_match);
 	}
@@ -157,6 +167,10 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 				s1 = strchr(token, ';');
 				if (s1 == token + strlen(token) - 1) {
 					s2 = ngx_pcalloc(r->pool, strlen(token));
+					if (s2 == NULL) {
+						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie token.", strlen(token));
+						return NGX_ERROR;
+					}
 					strncpy(s2, token, strlen(token) - 1);
 				}
 				else
@@ -169,10 +183,18 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 
 					if (i == 0) {
 						cookie_name = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
+						if (cookie_name == NULL) {
+							ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie_name.", strlen(subtoken) + 1);
+							return NGX_ERROR;
+						}
 						strcpy(cookie_name, subtoken);
 					}
 					else if (i == 1) {
 						cookie_value = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
+						if (cookie_value == NULL) {
+							ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie_value.", strlen(subtoken) + 1);
+							return NGX_ERROR;
+						}
 						strcpy(cookie_value, subtoken);
 					}
 					else
@@ -213,10 +235,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	// Send the file
 	ret = send_file(&session, metadata, r);
 
-	//FIXME: Unmapping here kills the download midway
-	// Unmap memory mapped for sending the file
-//	if (munmap(metadata->data, metadata->length) < 0)
-//		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", metadata->file, errno);
+	// NB: The mapped file will be unmapped by the cleanup handler once data is sent to client
 
 	return NGX_OK;
 }
@@ -261,6 +280,11 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 	// Await reponse
 	auth_resp_pos = 0;
 	session->auth_resp = malloc(AUTH_BUFFER_CHUNK);
+	if (session->auth_resp == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_resp.", AUTH_BUFFER_CHUNK);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
 	auth_resp_len = AUTH_BUFFER_CHUNK;
 	memset(session->auth_resp, '\0', auth_resp_len);
 
@@ -279,6 +303,10 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 				// We read some more data, append it  (but expand buffer before that if necessary)
 				if (auth_resp_pos + bytes_in > auth_resp_len - 1) {
 					session->auth_resp = realloc(session->auth_resp, auth_resp_len + AUTH_BUFFER_CHUNK);
+					if (session->auth_resp == NULL) {
+						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to reallocate %l bytes for auth_resp.", auth_resp_len + AUTH_BUFFER_CHUNK);
+						return NGX_HTTP_INTERNAL_SERVER_ERROR;
+					}
 				}
 
 				memcpy(session->auth_resp + auth_resp_pos, &msg_in[0], bytes_in);
@@ -328,6 +356,10 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		if ((! strcmp(bson_key, "file")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
 			metadata->file = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->file == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata file.", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
 			strcpy(metadata->file, bson_val_char);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata file: %s", metadata->file);
 		}
@@ -335,6 +367,10 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		else if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
 			metadata->filename = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->filename == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
 			strcpy(metadata->filename, bson_val_char);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata filename: %s", metadata->filename);
 		}
@@ -343,6 +379,10 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
 			if (strlen(bson_val_char)) {
 				metadata->error = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+				if (metadata->error == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata error.", strlen(bson_val_char) + 1);
+					return NGX_HTTP_INTERNAL_SERVER_ERROR;
+				}
 				strcpy(metadata->error, bson_val_char);
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata error: %s", metadata->error);
 			}
@@ -351,6 +391,10 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		else if ((! strcmp(bson_key, "content_type")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
 			metadata->content_type = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->content_type == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
 			strcpy(metadata->content_type, bson_val_char);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_type: %s", metadata->content_type);
 		}
@@ -358,6 +402,10 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		else if ((! strcmp(bson_key, "content_disposition")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
 			metadata->content_disposition = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->content_disposition == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
 			strcpy(metadata->content_disposition, bson_val_char);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_disposition: %s", metadata->content_disposition);
 		}
@@ -365,6 +413,10 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		else if ((! strcmp(bson_key, "etag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			bson_val_char = bson_iter_utf8 (&iter, NULL);
 			metadata->etag = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->etag == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
 			strcpy(metadata->etag, bson_val_char);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata etag: %s", metadata->etag);
 		}
@@ -388,6 +440,16 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		}
 	}
 
+	// Check for error
+	if (metadata->error) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
+		if (metadata->status < 0) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %s", metadata->status);
+			return metadata->status;
+		}
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
 	// Check if we have all the fields
 	if (! metadata->file) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Filename not received, aborting request.");
@@ -396,34 +458,46 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 
 	if (! metadata->filename) {
 		metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1);
+		if (metadata->filename == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(metadata->file) + 1);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
 		strcpy(metadata->filename, metadata->file);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file, metadata->file);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file, metadata->file);
 	}
 
 	if (! metadata->content_type) {
 		metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
+		if (metadata->content_type == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(DEFAULT_CONTENT_TYPE) + 1);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
 		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file, DEFAULT_CONTENT_TYPE);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file, DEFAULT_CONTENT_TYPE);
 	}
 
 	if (! metadata->content_disposition)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file);
 
 	if (! metadata->etag) {
 		metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
+		if (metadata->etag == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(DEFAULT_ETAG) + 1);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
 		strcpy(metadata->etag, DEFAULT_ETAG);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
 	}
 
 	if (metadata->length < 0)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s length not found, will use stat() to determine it", metadata->file);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s length not found, will use stat() to determine it", metadata->file);
 
 	if (metadata->upload_date < 0)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", metadata->file);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", metadata->file);
 
 	if (metadata->status < 0) {
 		metadata->status = DEFAULT_HTTP_CODE;
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s status not found, using default %s", metadata->file, DEFAULT_HTTP_CODE);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %s", metadata->file, DEFAULT_HTTP_CODE);
 	}
 
 	// Return 304 in certain cases
@@ -447,6 +521,10 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 
 	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
 	path = ngx_pcalloc(r->pool, len);
+	if (path == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
 	memset(path, '\0', len);
 
 	memcpy(path, session->fs_root, strlen(session->fs_root));
@@ -499,6 +577,10 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 
 	// Set cleanup handler to unmap the file
 	c = ngx_pcalloc(r->pool, sizeof(ngx_http_cleanup_t));
+	if (c == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cleanup.", sizeof(ngx_http_cleanup_t));
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
 	c->handler = ngx_http_medicloud_cleanup;
 	c->data = r;
 	r->cleanup = c;
@@ -520,7 +602,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 	bool curl_encoded = false;
 	CURL *curl;
     ngx_buf_t *b;
-    ngx_chain_t *out = ngx_alloc_chain_link(r->pool);
+    ngx_chain_t *out;
 
 	// ----- PREPARE THE HEADERS ----- //
 
@@ -603,10 +685,17 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 */
 	// ----- PREPARE THE BODY ----- //
 
+	// Prepare output chain
+	out = ngx_alloc_chain_link(r->pool);
+	if (out == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for buffer chain.", sizeof(ngx_chain_t));
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
 	// Prepare output buffer
 	b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
 	if (b == NULL) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to allocate response buffer");
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -640,7 +729,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
  */
 static void ngx_http_medicloud_cleanup(void *a) {
     ngx_http_request_t *r = (ngx_http_request_t *)a;
-    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "ngx_http_medicloud_cleanup");
+    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Running connection cleanup.");
 
     medicloud_file_t *metadata;
     metadata = ngx_http_get_module_ctx(r, ngx_http_medicloud_module);
@@ -656,8 +745,11 @@ char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 			return NULL;
 
 		char *ret = ngx_pcalloc(pool, ngx_str.len + 1);
+		if (ret == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
+			return NULL;
+		}
 		memcpy(ret, ngx_str.data, ngx_str.len);
 		return ret;
 }
-
 
