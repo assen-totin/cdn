@@ -148,7 +148,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	if (session.hdr_if_none_match)
 		BSON_APPEND_UTF8 (&bh, "if_none_match", session.hdr_if_none_match);
 	if (session.hdr_authorisation)
-		BSON_APPEND_UTF8 (&bh, "authorisation", session.hdr_authorisation);
+		BSON_APPEND_UTF8 (&bh, "authorization", session.hdr_authorisation);
 	bson_append_document_end (&b, &bh);
 
 	// Append cookies

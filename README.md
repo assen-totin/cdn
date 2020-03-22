@@ -20,7 +20,7 @@ Request: (all members of "headers" and "cookies" are optional)
 	"headers" : {
 		"if_none_match": "00000000000000000000000000000000", // eTag
 		"if_modified_since": 1234567890,	// Unix timestamp of the header value
-		"authorisation": "Bearer abcdefgh123456",
+		"authorization": "Bearer abcdefgh123456",
 	},
 	"cookies" : {
 		"some_cookie_name": "some_cookie_value",
