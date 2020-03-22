@@ -27,7 +27,7 @@ static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* cf, void* void_parent
 	ngx_http_medicloud_loc_conf_t *child = void_child;
 
 	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, FS_DEFAULT_ROOT);
-	ngx_conf_merge_uint_value(child->fs_depth, parent->fs_depth, FS_DEFAULT_DEPTH);
+	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, FS_DEFAULT_DEPTH);
 	ngx_conf_merge_str_value(child->auth_socket, parent->auth_socket, AUTH_DEFAULT_SOCKET);
 
 	return NGX_CONF_OK;
@@ -51,26 +51,31 @@ static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *c
 static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
 	ngx_int_t ret;
+	ngx_table_elt_t **elts;
 	medicloud_file_t metadata;
-	bson_t b, bc, bh;
+	bson_t bc, bh;
 	int i;
 	char *s0, *s1, *s2;
 	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
 	char *cookie_delim = " ", *cookie_subdelim = "=";
 	char *cookie_name = NULL, *cookie_value = NULL;
-
+	struct tm ltm;
 
 	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
 
+	// Check if we should serve this request
+	if (!(r->method & (NGX_HTTP_GET|NGX_HTTP_HEAD))) {
+		return NGX_DECLINED;
+	}
+
 	// Prepare session management data
 	session_t session;
-	session.fs_depth = medicloud_loc_conf->fs_depth;
+	session.fs_depth = atoi(from_ngx_str(r->pool, medicloud_loc_conf->fs_depth));
 	session.fs_root = from_ngx_str(r->pool, medicloud_loc_conf->fs_root);
 	session.auth_socket = from_ngx_str(r->pool, medicloud_loc_conf->auth_socket);
 	session.hdr_authorisation = NULL;
 	session.hdr_if_none_match = NULL;
 	session.hdr_if_modified_since = -1;
-	session.if_modified_since = -1;
 
 	// Set some defaults (to be used if no corresponding field is found)
 	metadata.etag = NULL;
@@ -96,7 +101,6 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Modified-Since: %s", s1);
 
-		struct tm ltm;
 		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
 			session.hdr_if_modified_since = mktime(&ltm);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session.hdr_if_modified_since);
@@ -120,12 +124,12 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
 
 	// Prepare outbound message to auth server in session->auth_req
-	b = BSON_INITIALIZER;
+	bson_t b = BSON_INITIALIZER;
 	BSON_APPEND_UTF8 (&b, "uri", session.uri);
 
 	// Append headers
 	BSON_APPEND_DOCUMENT_BEGIN(&b, "headers", &bh);
-	if (session.hdr_if_modified_since)
+	if (session.hdr_if_modified_since > 0)
 		BSON_APPEND_INT32 (&bh, "if_modified_since", session.hdr_if_modified_since);
 	if (session.hdr_if_none_match)
 		BSON_APPEND_UTF8 (&bh, "if_none_match", session.hdr_if_none_match);
@@ -137,7 +141,8 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	BSON_APPEND_DOCUMENT_BEGIN(&b, "cookies", &bc);
 	if (r->headers_in.cookies.nelts) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
-		ngx_table_elt_t **elt = r->headers_in.cookies.elts;
+		elts = r->headers_in.cookies.elts;
+
 		for (i=0; i<r->headers_in.cookies.nelts; i++) {
 			s0 = from_ngx_str(r->pool, elts[i]->value);
 			for (str1 = s0; ; str1 = NULL) {
@@ -204,9 +209,10 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	// Send the file
 	ret = send_file(&session, &metadata, r);
 
+	//FIXME: Unmapping here kills the download midway
 	// Unmap memory mapped for sending the file
-	if (munmap(metadata.data, metadata.length) < 0)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", session.file, errno);
+//	if (munmap(metadata.data, metadata.length) < 0)
+//		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", metadata.file, errno);
 
 	return NGX_OK;
 }
@@ -386,7 +392,7 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 
 	if (! metadata->filename) {
 		metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1);
-		strcpy(metadata->filename, meta->file);
+		strcpy(metadata->filename, metadata->file);
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file, metadata->file);
 	}
 
@@ -502,7 +508,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 	bool curl_encoded = false;
 	CURL *curl;
     ngx_buf_t *b;
-    ngx_chain_t out;
+    ngx_chain_t *out = ngx_alloc_chain_link(r->pool);
 
 	// ----- PREPARE THE HEADERS ----- //
 
@@ -593,8 +599,8 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 	}
 
 	// Prepare output chain; hook the buffer
-	out.buf = b;
-	out.next = NULL; 
+	out->buf = b;
+	out->next = NULL; 
 
 	// Set the buffer
 	// TODO: partial response if Range request header was set
@@ -609,7 +615,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 	ngx_http_send_header(r); 
 
 	// Send the body, and return the status code of the output filter chain.
-	ngx_int_t ret = ngx_http_output_filter(r, &out);
+	ngx_int_t ret = ngx_http_output_filter(r, out);
 
 	// ----- ADDITIONAL (TIME CONSUMING) TASKS AFTER SERVING THE CONTENT ----- //
 	// Nothing so far

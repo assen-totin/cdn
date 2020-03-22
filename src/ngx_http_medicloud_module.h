@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 // Definitions
+#define DEFAULT_ENABLE 1
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
 #define DEFAULT_ETAG "00000000000000000000000000000000"
 #define DEFAULT_HTTP_CODE 500
@@ -32,7 +33,7 @@
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_CONTENT_DISPOSITION "Content-Disposition"
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
-#define FS_DEFAULT_DEPTH 4
+#define FS_DEFAULT_DEPTH "4"
 #define FS_DEFAULT_ROOT "/usr/share/curaden/fs"
 #define ERROR_MESSAGE_LENGTH 1024
 #define AUTH_DEFAULT_SOCKET "/tmp/auth.socket"
@@ -47,7 +48,7 @@ typedef struct {
 typedef struct {
 	ngx_str_t auth_socket;
 	ngx_str_t fs_root;
-	uint fs_depth;
+	ngx_str_t fs_depth;
 } ngx_http_medicloud_loc_conf_t;
 
 typedef struct {
@@ -94,7 +95,7 @@ static ngx_command_t ngx_http_medicloud_commands[] = {
 		ngx_string("medicloud"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_NOARGS,
 		ngx_http_medicloud_init,
-		NGX_HTTP_LOC_CONF_OFFSET,
+		0,
 		0,
 		NULL
 	},
@@ -109,7 +110,7 @@ static ngx_command_t ngx_http_medicloud_commands[] = {
 	{
 		ngx_string("fs_depth"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-		ngx_conf_set_num_slot,
+		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_medicloud_loc_conf_t, fs_depth),
 		NULL
