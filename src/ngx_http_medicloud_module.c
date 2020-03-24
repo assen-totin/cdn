@@ -441,21 +441,24 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 	}
 
 	// Check for error
-	if (metadata->error) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
-		if (metadata->status < 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %s", metadata->status);
-			return metadata->status;
-		}
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	if ((metadata->status > 0) && (metadata->status != NGX_HTTP_OK)) {
+		if (metadata->error)
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
+		return metadata->status;
 	}
 
-	// Check if we have all the fields
+	// Log an error if such was returned (with status 200 or no status)
+	if (metadata->error)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
+
+	// Check if we have the file name ro serve and returnerror if we don't have it
 	if (! metadata->file) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Filename not received, aborting request.");
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
+	// Check if we have the end user's file name and use the CDN filename if missing
 	if (! metadata->filename) {
 		metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1);
 		if (metadata->filename == NULL) {
@@ -466,6 +469,7 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file, metadata->file);
 	}
 
+	// Check if we have the content type and use the default one if missing
 	if (! metadata->content_type) {
 		metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
 		if (metadata->content_type == NULL) {
@@ -476,9 +480,11 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file, DEFAULT_CONTENT_TYPE);
 	}
 
+	// Check if we have the content disposition and use the default one if missing
 	if (! metadata->content_disposition)
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file);
 
+	// Check if we have the eTag and use the default one if missing
 	if (! metadata->etag) {
 		metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
 		if (metadata->etag == NULL) {
@@ -489,22 +495,25 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
 	}
 
+	// Check if we have the file length specified
 	if (metadata->length < 0)
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s length not found, will use stat() to determine it", metadata->file);
 
+	// Check if we have the upload date specified
 	if (metadata->upload_date < 0)
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", metadata->file);
 
+	// Check if we have the HTTP response code and use the default one if missing
 	if (metadata->status < 0) {
 		metadata->status = DEFAULT_HTTP_CODE;
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %s", metadata->file, DEFAULT_HTTP_CODE);
 	}
 
 	// Return 304 in certain cases
-	if (session->hdr_if_none_match && metadata->etag && ! strcmp(session->hdr_if_none_match, metadata->etag)) {
+	if (session->hdr_if_none_match && metadata->etag && ! strcmp(session->hdr_if_none_match, metadata->etag))
 		return NGX_HTTP_NOT_MODIFIED;
-	}
 
+	// Return OK
 	return (metadata->status == NGX_HTTP_OK) ? 0 : metadata->status;
 }
 
