@@ -84,11 +84,12 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		return NGX_ERROR;
 	}
 
-	metadata->etag = NULL;
 	metadata->file = NULL;
 	metadata->filename = NULL;
+	metadata->path = NULL;
 	metadata->content_type = NULL;
 	metadata->content_disposition = NULL;
+	metadata->etag = NULL;
 	metadata->data = NULL;
 	metadata->length = -1;
 	metadata->upload_date = -1;
@@ -100,6 +101,38 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	// URI
 	session.uri = from_ngx_str(r->pool, r->uri);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", session.uri);
+
+	// Check for new format URI
+	str1 = strtok_r(session.uri, "/", &saveptr1);
+	if (str1 == NULL)
+		return NGX_HTTP_BAD_REQUEST;
+
+	if (! strcmp(str1, URL_CDN_PREFIX)) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found new format URI");
+
+		str2 = strtok_r(NULL, "/", &saveptr1);
+		if (str2 == NULL)
+			return NGX_HTTP_BAD_REQUEST;
+
+		metadata->file = ngx_pnalloc(r->pool, strlen(str2)+ 1 );
+		if (metadata->file == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str2) + 1);
+			return NGX_ERROR;
+		}
+		strcpy(metadata->file, str2);
+
+		// Get path
+		ret = get_path(&session, metadata, r);
+		if (ret)
+			return ret;
+
+		// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
+		if ((metadata->length < 0) || (metadata->upload_date < 0)) {
+			ret = get_stat(metadata, r);
+			if (ret)
+				return ret;
+		}
+	}
 
 	// Headers
 	if (r->headers_in.authorization) {
@@ -522,65 +555,38 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
  * Read file from Filesystem
  */
 ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
-	// Get path
-	int i, len, pos=0, fd;
-	char *path;
-	struct stat statbuf;
+	int fd, ret;
 	ngx_http_cleanup_t *c;
 
-	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
-	path = ngx_pcalloc(r->pool, len);
-	if (path == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-	memset(path, '\0', len);
-
-	memcpy(path, session->fs_root, strlen(session->fs_root));
-	pos += strlen(session->fs_root);
-
-	memcpy(path + pos, "/", 1);
-	pos ++;
-
-	for (i=0; i < session->fs_depth; i++) {
-		memcpy(path + pos, metadata->file + i, 1);
-		pos ++;
-		memcpy(path + pos, "/", 1);
-		pos ++;
+	// Get path if not set so far
+	if (! metadata->path) {
+		ret = get_path(session, metadata, r);
+		if (ret)
+			return ret;
 	}
 
-	memcpy(path + pos, metadata->file, strlen(metadata->file));
+	// Get stat if not set
+	if ((metadata->length < 0) || (metadata->upload_date < 0)) {
+		ret = get_stat(metadata, r);
+		if (ret)
+			return ret;
+	}
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, path);
+	// If file unmodifed, return 304
+	if (session->hdr_if_modified_since >= metadata->upload_date)
+		return NGX_HTTP_NOT_MODIFIED;
 
 	// Read the file: use mmap to map the physical file to memory
-	if ((fd = open(path, O_RDONLY)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %u", metadata->file, path, errno);
+	if ((fd = open(metadata->path, O_RDONLY)) < 0) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %s", metadata->file, metadata->path, strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	// Fill-in any missing info from actual file
-	if ((metadata->length < 0) || (metadata->upload_date < 0)) {
-		fstat(fd, &statbuf);
-		if (metadata->length < 0)
-			metadata->length = statbuf.st_size;
-		if (metadata->upload_date < 0)
-			metadata->upload_date = statbuf.st_mtime;
-	}
-
-	if (session->hdr_if_modified_since >= metadata->upload_date) {
-		if (close(fd) < 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", metadata->file, path, errno);
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
-		}
-		return NGX_HTTP_NOT_MODIFIED;
 	}
 
 	// Map the physical file to memory
 	if ((metadata->data = mmap(NULL, metadata->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %u", metadata->file, path, errno);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %s", metadata->file, metadata->path, strerror(errno));
 		if (close(fd) < 0)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", metadata->file, path, errno);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -595,7 +601,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 	r->cleanup = c;
 
 	if (close(fd) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %u", metadata->file, path, errno);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -743,13 +749,76 @@ static void ngx_http_medicloud_cleanup(void *a) {
     medicloud_file_t *metadata;
     metadata = ngx_http_get_module_ctx(r, ngx_http_medicloud_module);
     if (munmap(metadata->data, metadata->length) < 0)
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %u", metadata->file, errno);
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file, strerror(errno));
+}
+
+/**
+ * Helper: get the full path from a file name
+ */
+static ngx_int_t get_path(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
+	int i, len, pos=0;
+
+	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
+	metadata->path = ngx_pcalloc(r->pool, len);
+	if (metadata->path == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
+		return NGX_ERROR;
+	}
+	memset(metadata->path, '\0', len);
+
+	memcpy(metadata->path, session->fs_root, strlen(session->fs_root));
+	pos += strlen(session->fs_root);
+
+	memcpy(metadata->path + pos, "/", 1);
+	pos ++;
+
+	for (i=0; i < session->fs_depth; i++) {
+		memcpy(metadata->path + pos, metadata->file + i, 1);
+		pos ++;
+		memcpy(metadata->path + pos, "/", 1);
+		pos ++;
+	}
+
+	memcpy(metadata->path + pos, metadata->file, strlen(metadata->file));
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, metadata->path);
+
+	return 0;
+}
+
+/**
+ * Helper: get stat of a file
+ */
+static ngx_int_t get_stat(medicloud_file_t *metadata, ngx_http_request_t *r) {
+	struct stat statbuf;
+	int fd;
+
+	// Open file
+	if ((fd = open(metadata->path, O_RDONLY)) < 0) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %s", metadata->file, metadata->path, strerror(errno));
+		if (errno == ENOENT)
+			return NGX_HTTP_NOT_FOUND;
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	fstat(fd, &statbuf);
+	if (metadata->length < 0) 
+		metadata->length = statbuf.st_size;
+	if (metadata->upload_date < 0)
+		metadata->upload_date = statbuf.st_mtime;
+
+	if (close(fd) < 0) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	return 0;
 }
 
 /**
  * Helper: convert Nginx string to normal
  */
-char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
+static char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 		if (! ngx_str.len)
 			return NULL;
 

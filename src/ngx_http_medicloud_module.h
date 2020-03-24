@@ -39,6 +39,7 @@
 #define AUTH_DEFAULT_SOCKET "/tmp/auth.socket"
 #define AUTH_BUFFER_CHUNK 1024
 #define AUTH_SOCKET_TYPE SOCK_STREAM
+#define URL_CDN_PREFIX "cdn"
 
 // Structures
 typedef struct {
@@ -52,11 +53,12 @@ typedef struct {
 } ngx_http_medicloud_loc_conf_t;
 
 typedef struct {
-	char *etag;
 	char *file;
 	char *filename;
+	char *path;
 	char *content_type;
 	char *content_disposition;
+	char *etag;
 	char *error;
 	u_char *data;
 	time_t upload_date; 
@@ -88,7 +90,9 @@ static ngx_int_t process_metadata(session_t *session, medicloud_file_t *meta_fil
 static ngx_int_t read_fs(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
 static ngx_int_t send_file(session_t *session, medicloud_file_t *dnld_file, ngx_http_request_t *r);
 static void ngx_http_medicloud_cleanup(void *a);
-char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
+static char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
+static ngx_int_t get_path(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r);
+static ngx_int_t get_stat(medicloud_file_t *metadata, ngx_http_request_t *r);
 
 // Globals: array to specify how to handle configuration directives.
 static ngx_command_t ngx_http_medicloud_commands[] = {
