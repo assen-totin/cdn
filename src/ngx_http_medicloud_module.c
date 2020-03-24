@@ -54,7 +54,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	ngx_table_elt_t **elts;
 	medicloud_file_t *metadata;
 	bson_t bc, bh;
-	int i;
+	int i, j;
 	char *s0, *s1, *s2;
 	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
 	char *cookie_delim = " ", *cookie_subdelim = "=";
@@ -176,12 +176,12 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 				else
 					s2 = token;
 
-				for (i=0, str2 = s2; ; i++, str2 = NULL) {
+				for (j=0, str2 = s2; ; j++, str2 = NULL) {
 					subtoken = strtok_r(str2, cookie_subdelim, &saveptr2);
 					if (subtoken == NULL)
 						break;
 
-					if (i == 0) {
+					if (j == 0) {
 						cookie_name = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
 						if (cookie_name == NULL) {
 							ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie_name.", strlen(subtoken) + 1);
@@ -189,7 +189,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 						}
 						strcpy(cookie_name, subtoken);
 					}
-					else if (i == 1) {
+					else if (j == 1) {
 						cookie_value = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
 						if (cookie_value == NULL) {
 							ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie_value.", strlen(subtoken) + 1);
@@ -201,7 +201,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 						ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Malformed cookie %s", s0);
 				}
 
-				if (i == 1) {
+				if (j == 2) {
 					BSON_APPEND_UTF8 (&bc, cookie_name, cookie_value);
 					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", cookie_name, cookie_value);
 				}
