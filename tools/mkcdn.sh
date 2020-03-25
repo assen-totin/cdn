@@ -35,7 +35,7 @@ while [ "$1" != "" ]; do
 			;;
 		* )   
 			echo "Unknown argument $1."
-			echo "Usage: ./$0 [--depth N] [--root /some/path]"
+			echo "Usage: $0 [--depth N] [--root /some/path]"
 			echo "Default values: depth $DEFAULT_DEPTH, root $DEFAULT_ROOT"
 			exit 1
 			;;
