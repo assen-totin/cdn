@@ -103,7 +103,8 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", session.uri);
 
 	// Check for new format URI
-	str1 = strtok_r(session.uri, "/", &saveptr1);
+	s0 = from_ngx_str(r->pool, r->uri);
+	str1 = strtok_r(s0, "/", &saveptr1);
 	if (str1 == NULL)
 		return NGX_HTTP_BAD_REQUEST;
 
