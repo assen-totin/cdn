@@ -8,7 +8,7 @@ location /abc/xyz
 	auth_socket /path/to/some.sock;
 ```
 
-To create a blank filesystem storage, copy the tools/mkfs.sh to the top level directory and run it from there; remove it once done.
+To create a blank filesystem storage, use tools/mkcdn.sh.
 
 Unix socket protocol:
 

@@ -36,19 +36,21 @@ cp -r ${RPM_SOURCE_DIR}/support-files/nginx/modules/* $RPM_BUILD_ROOT/usr/share/
 mkdir -p $RPM_BUILD_ROOT/usr/lib64/nginx/modules
 cp -r ${RPM_SOURCE_DIR}/lib/* $RPM_BUILD_ROOT/usr/lib64/nginx/modules
 
+mkdir -p $RPM_BUILD_ROOT/usr/bin
+cp -r ${RPM_SOURCE_DIR}/tools/* $RPM_BUILD_ROOT/usr/bin
+
 %clean
 rm -rf $RPM_BUILD_ROOT $RPM_BUILD_DIR
 
 %files
 %defattr(-, root, root)
+/usr/bin/*
 /usr/share/nginx/modules/*
 /usr/lib64/nginx/modules/*
 
 %pre
 
 %post
-# Dono trestart Nginx as this module requries manual configuration
-#systemctl restart nginx
 
 %preun
 

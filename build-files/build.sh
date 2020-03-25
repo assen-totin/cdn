@@ -59,6 +59,7 @@ popd
 # Copy files
 cp -r $CHECKOUT_DIR/lib $RPM_HOME/SOURCES
 cp -r $CHECKOUT_DIR/support-files $RPM_HOME/SOURCES
+cp -r $CHECKOUT_DIR/tools $RPM_HOME/SOURCES
 
 # Copy the appropriate spec file for the build
 copy_spec_file
