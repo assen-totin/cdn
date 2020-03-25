@@ -44,9 +44,11 @@ rm -rf $RPM_BUILD_ROOT $RPM_BUILD_DIR
 
 %files
 %defattr(-, root, root)
-/usr/bin/*
 /usr/share/nginx/modules/*
 /usr/lib64/nginx/modules/*
+
+%defattr(755, root, root)
+/usr/bin/*
 
 %pre
 
