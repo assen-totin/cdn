@@ -51,7 +51,7 @@ static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *c
 static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
 	ngx_int_t ret;
-	ngx_table_elt_t **elts;
+	ngx_table_elt_t **elts, *h;
 	medicloud_file_t *metadata;
 	bson_t bc, bh;
 	int i, j;
@@ -64,7 +64,12 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
 
 	// CORS handling
-	if (!(r->method & (NGX_HTTP_OPTIONS))) {
+	if (r->method & (NGX_HTTP_OPTIONS)) {
+		// There will be no body
+		r->header_only = 1;
+		r->allow_ranges = 0;
+
+		// Status
 		r->headers_out.status = NGX_HTTP_OK;
 
 		// Content-Length
@@ -101,11 +106,7 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 		ngx_str_set(&h->value, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
 
 		// Send headers
-		ret = ngx_http_send_header(r);
-		if (ret == NGX_ERROR || ret > NGX_OK)
-			return ret;
-
-		return NGX_HTTP_OK;
+		return ngx_http_send_header(r);
 	}
 
 	// Check if we should serve this request
@@ -628,23 +629,25 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	// Map the physical file to memory
-	if ((metadata->data = mmap(NULL, metadata->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %s", metadata->file, metadata->path, strerror(errno));
-		if (close(fd) < 0)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
+	if (r->method & (NGX_HTTP_GET)) {
+		// Map the physical file to memory
+		if ((metadata->data = mmap(NULL, metadata->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %s", metadata->file, metadata->path, strerror(errno));
+			if (close(fd) < 0)
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
 
-	// Set cleanup handler to unmap the file
-	c = ngx_pcalloc(r->pool, sizeof(ngx_http_cleanup_t));
-	if (c == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cleanup.", sizeof(ngx_http_cleanup_t));
-		return NGX_ERROR;
+		// Set cleanup handler to unmap the file
+		c = ngx_pcalloc(r->pool, sizeof(ngx_http_cleanup_t));
+		if (c == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cleanup.", sizeof(ngx_http_cleanup_t));
+			return NGX_ERROR;
+		}
+		c->handler = ngx_http_medicloud_cleanup;
+		c->data = r;
+		r->cleanup = c;
 	}
-	c->handler = ngx_http_medicloud_cleanup;
-	c->data = r;
-	r->cleanup = c;
 
 	if (close(fd) < 0) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
@@ -659,18 +662,23 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
  */
 ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
 	int b1_len, b2_len;
-	char *encoded = NULL, b2 = NULL;
+	char *encoded = NULL;
 	bool curl_encoded = false;
 	CURL *curl;
-    ngx_buf_t *b, b1;
-    ngx_chain_t *out;
+    ngx_buf_t *b, *b1, *b2;
+    ngx_chain_t *out = NULL;
 	ngx_table_elt_t *h;
+	ngx_int_t ret;
 
 	// HTTP status
 	r->headers_out.status = NGX_HTTP_OK;
 
 	// Content-Length
-	r->headers_out.content_length_n = metadata->length;
+	// NB: Nginx violates RFC 2616 and mandates the return of 0 in case of HEAD, otherwise the response in never completes
+	if (r->method & (NGX_HTTP_GET))
+		r->headers_out.content_length_n = metadata->length;
+	else
+		r->headers_out.content_length_n = 0;
 
 	// Content-Type 
 	r->headers_out.content_type.len = strlen(metadata->content_type);
@@ -696,7 +704,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 	r->headers_out.etag->value.data = b1->start;
 
 	// Attachment: if file will be an attachment
-	if (metadata->content_disposition && strcmp(metadata->content_disposition, CONTENT_DISPOSITION_ATTACHMENT)) {
+	if (metadata->content_disposition && ! strcmp(metadata->content_disposition, CONTENT_DISPOSITION_ATTACHMENT)) {
 		// URI-encode the file name?
 		curl = curl_easy_init();
 		if (curl) {
@@ -721,18 +729,19 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header.");
 		    return NGX_ERROR;
 		}
+		h->hash = 1;
 
-		b2_len = 23 + strlen(encoded) ;
-		b2 = ngx_pcalloc(r->pool, b2_len + 1);
+		ngx_str_set(&h->key, HEADER_CONTENT_DISPOSITION);
+
+		b2_len = 23 + strlen(encoded);
+		b2 = ngx_create_temp_buf(r->pool, b2_len);
 		if (b2 == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for content disposition header.", b2_len + 1);
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate buffer for Content-Disposition header.");
 			return NGX_ERROR;
 		}
-		snprintf(b2, b2_len, "attachment; filename=\"%s\"", encoded);
-
-		h->hash = 1;
-		ngx_str_set(&h->key, HEADER_CONTENT_DISPOSITION);
-		ngx_str_set(&h->value, b2);
+		b2->last = ngx_sprintf(b2->last, "attachment; filename=\"%s\"", encoded);
+		h->value.len = b2_len;
+		h->value.data = b2->start;
 
 		if (curl) {
 			if (curl_encoded)
@@ -789,7 +798,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 
 	// Send the body, and return the status code of the output filter chain
 	if (r->method & (NGX_HTTP_GET))
-		ngx_int_t ret = ngx_http_output_filter(r, out);
+		ret = ngx_http_output_filter(r, out);
 
 	return ret;
 } 
@@ -799,7 +808,7 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
  */
 static void ngx_http_medicloud_cleanup(void *a) {
     ngx_http_request_t *r = (ngx_http_request_t *)a;
-    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Running connection cleanup.");
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
 
     medicloud_file_t *metadata;
     metadata = ngx_http_get_module_ctx(r, ngx_http_medicloud_module);
