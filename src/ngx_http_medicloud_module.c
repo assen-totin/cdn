@@ -63,8 +63,53 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 
 	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
 
+	// CORS handling
+	if (!(r->method & (NGX_HTTP_OPTIONS))) {
+		r->headers_out.status = NGX_HTTP_OK;
+
+		// Content-Length
+		r->headers_out.content_length_n = 0;
+
+		// Add Access-Control-Allow-Origin header
+		h = ngx_list_push(&r->headers_out.headers);
+		if (h == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
+			return NGX_ERROR;
+		}
+		h->hash = 1;
+		ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
+		ngx_str_set(&h->value, DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN);
+
+		// Add Access-Control-Allow-Methods header
+		h = ngx_list_push(&r->headers_out.headers);
+		if (h == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_METHODS);
+			return NGX_ERROR;
+		}
+		h->hash = 1;
+		ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_METHODS);
+		ngx_str_set(&h->value, DEFAULT_ACCESS_CONTROL_ALLOW_METHODS);
+
+		// Add Access-Control-Allow-Headers header
+		h = ngx_list_push(&r->headers_out.headers);
+		if (h == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_HEADERS);
+			return NGX_ERROR;
+		}
+		h->hash = 1;
+		ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_HEADERS);
+		ngx_str_set(&h->value, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
+
+		// Send headers
+		ret = ngx_http_send_header(r);
+		if (ret == NGX_ERROR || ret > NGX_OK)
+			return ret;
+
+		return NGX_HTTP_OK;
+	}
+
 	// Check if we should serve this request
-	if (!(r->method & (NGX_HTTP_GET|NGX_HTTP_HEAD))) {
+	if (!(r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD))) {
 		return NGX_DECLINED;
 	}
 
@@ -595,7 +640,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 	c = ngx_pcalloc(r->pool, sizeof(ngx_http_cleanup_t));
 	if (c == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cleanup.", sizeof(ngx_http_cleanup_t));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		return NGX_ERROR;
 	}
 	c->handler = ngx_http_medicloud_cleanup;
 	c->data = r;
@@ -614,13 +659,12 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
  */
 ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
 	int b1_len, b2_len;
-	char *encoded = NULL;
+	char *encoded = NULL, b2 = NULL;
 	bool curl_encoded = false;
 	CURL *curl;
-    ngx_buf_t *b;
+    ngx_buf_t *b, b1;
     ngx_chain_t *out;
-
-	// ----- PREPARE THE HEADERS ----- //
+	ngx_table_elt_t *h;
 
 	// HTTP status
 	r->headers_out.status = NGX_HTTP_OK;
@@ -637,7 +681,11 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 
 	// ETag
 	b1_len = strlen(metadata->etag) + 2;
-	ngx_buf_t *b1 = ngx_create_temp_buf(r->pool, b1_len);
+	b1 = ngx_create_temp_buf(r->pool, b1_len);
+	if (b1 == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate bufer for etag header.");
+	    return NGX_ERROR;
+	}
 	b1->last = ngx_sprintf(b1->last, "\"%s\"", metadata->etag);
 
 	r->headers_out.etag = ngx_list_push(&r->headers_out.headers);
@@ -662,23 +710,29 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 				encoded = metadata->filename;
 			}
 		}
-		else {
+		else 
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to init curl for URI-encoding", metadata->file);
-		}
 
 		// Add Content-Disposition header
-		// NB: We reuse the low of an existing, but unused standard header
-		//headers['Content-Disposition'] = 'attachment; filename="' + encodeURIComponent(this.file.filename) + '";'
-		b2_len = 23 + strlen(encoded);
-		ngx_buf_t *b2 = ngx_create_temp_buf(r->pool, b2_len);
-		b2->last = ngx_sprintf(b2->last, "attachment; filename=\"%s\"", encoded);
+		// headers['Content-Disposition'] = 'attachment; filename="' + encodeURIComponent(this.file.filename) + '";'
+		// NB: It is not in the standard Nginx header table, so add it as custom header
+		h = ngx_list_push(&r->headers_out.headers);
+		if (h == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header.");
+		    return NGX_ERROR;
+		}
 
-		r->headers_out.www_authenticate = ngx_list_push(&r->headers_out.headers);
-		r->headers_out.www_authenticate->hash = 1;
-		r->headers_out.www_authenticate->key.len = sizeof(HEADER_CONTENT_DISPOSITION) - 1;
-		r->headers_out.www_authenticate->key.data = (u_char*)HEADER_CONTENT_DISPOSITION;
-		r->headers_out.www_authenticate->value.len = b2_len;
-		r->headers_out.www_authenticate->value.data = b2->start;
+		b2_len = 23 + strlen(encoded) ;
+		b2 = ngx_pcalloc(r->pool, b2_len + 1);
+		if (b2 == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for content disposition header.", b2_len + 1);
+			return NGX_ERROR;
+		}
+		snprintf(b2, b2_len, "attachment; filename=\"%s\"", encoded);
+
+		h->hash = 1;
+		ngx_str_set(&h->key, HEADER_CONTENT_DISPOSITION);
+		ngx_str_set(&h->value, b2);
 
 		if (curl) {
 			if (curl_encoded)
@@ -699,43 +753,43 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 	r->headers_out.accept_ranges->value.len = sizeof("none") - 1;
 	r->headers_out.accept_ranges->value.data = (u_char*)"none";
 */
-	// ----- PREPARE THE BODY ----- //
-
-	// Prepare output chain
-	out = ngx_alloc_chain_link(r->pool);
-	if (out == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for buffer chain.", sizeof(ngx_chain_t));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	// Prepare output buffer
-	b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
-	if (b == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	// Prepare output chain; hook the buffer
-	out->buf = b;
-	out->next = NULL; 
-
-	// Set the buffer
-	// TODO: partial response if Range request header was set
-	b->pos = metadata->data;
-	b->last = metadata->data + metadata->length;
-	b->mmap = 1; 
-	b->last_buf = 1; 
-
-	// ----- SERVE CONTENT ----- //
 
 	// Send headers
-	ngx_http_send_header(r); 
+	ret = ngx_http_send_header(r);
+	if (ret == NGX_ERROR || ret > NGX_OK)
+		return ret;
 
-	// Send the body, and return the status code of the output filter chain.
-	ngx_int_t ret = ngx_http_output_filter(r, out);
+	// Map the file we are going to serve in the body
+	if (r->method & (NGX_HTTP_GET)) {
+		// Prepare output chain
+		out = ngx_alloc_chain_link(r->pool);
+		if (out == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for buffer chain.", sizeof(ngx_chain_t));
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
 
-	// ----- ADDITIONAL (TIME CONSUMING) TASKS AFTER SERVING THE CONTENT ----- //
-	// Nothing so far
+		// Prepare output buffer
+		b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+		if (b == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		// Prepare output chain; hook the buffer
+		out->buf = b;
+		out->next = NULL; 
+
+		// Set the buffer
+		// TODO: partial response if Range request header was set
+		b->pos = metadata->data;
+		b->last = metadata->data + metadata->length;
+		b->mmap = 1; 
+		b->last_buf = 1; 
+	}
+
+	// Send the body, and return the status code of the output filter chain
+	if (r->method & (NGX_HTTP_GET))
+		ngx_int_t ret = ngx_http_output_filter(r, out);
 
 	return ret;
 } 

@@ -27,11 +27,17 @@
 #define DEFAULT_ENABLE 1
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
 #define DEFAULT_ETAG "00000000000000000000000000000000"
+#define DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN "*"
+#define DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS "If-None-Match, If-Modified-Since"
+#define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, OPTIONS"
 #define DEFAULT_HTTP_CODE 500
 #define HEADER_ETAG "ETag"
-#define HEADER_AUTHORIZATION "Authorization"
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
+#define HEADER_AUTHORIZATION "Authorization"
 #define HEADER_CONTENT_DISPOSITION "Content-Disposition"
+#define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
+#define HEADER_ACCESS_CONTROL_ALLOW_HEADERS "Access-Control-Allow-Headers"
+#define HEADER_ACCESS_CONTROL_ALLOW_METHODS "Access-Control-Allow-Methods"
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
 #define FS_DEFAULT_DEPTH "4"
 #define FS_DEFAULT_ROOT "/usr/share/curaden/fs"
