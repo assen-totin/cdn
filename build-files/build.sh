@@ -13,7 +13,7 @@ CMDL_JOB_FLAG+=(1)
 CMDL_JOB_HELP+=("The version of Nginx to build for")
 
 # Package-specific constants
-RPM_PACKAGE="medicloud-nginx-cdn"
+RPM_PACKAGE="curaden-medicloud-cdn-nginx"
 
 # Find build-common.sh and source it
 CURR_DIR=`pwd`

@@ -6,7 +6,7 @@
 %{!?_curaden_release:%define _curaden_release 0}
 
 Summary: Medicloud CDN Nginx module
-Name: medicloud-nginx-cdn
+Name: curaden-medicloud-cdn-nginx
 Version: %{_curaden_version}
 %if "%{?dist:%{dist}}%{!?dist:0}" == ".rel"
 Release: %{_curaden_release}%{?dist}.el%{rhel}
