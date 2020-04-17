@@ -1,18 +1,18 @@
 /**
- * Nginx media serving module for Medicloud.
+ * Nginx CDN module
  *
- * @author: Assen Totin assen.totin@curaden.ch
+ * @author: Assen Totin assen.totin@gmail.com
  */
 
-#include "ngx_http_medicloud_module.h"
+#include "ngx_http_cdn_module.h"
 
 /**
  * Create location configuration
  */
-static void* ngx_http_medicloud_create_loc_conf(ngx_conf_t* cf) {
-	ngx_http_medicloud_loc_conf_t* loc_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_medicloud_loc_conf_t));
+static void* ngx_http_cdn_create_loc_conf(ngx_conf_t* cf) {
+	ngx_http_cdn_loc_conf_t* loc_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_cdn_loc_conf_t));
 	if (loc_conf == NULL) {
-		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to allocate %l bytes for location config.", sizeof(ngx_http_medicloud_loc_conf_t));
+		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to allocate %l bytes for location config.", sizeof(ngx_http_cdn_loc_conf_t));
 		return NGX_CONF_ERROR;
 	}
 
@@ -22,13 +22,14 @@ static void* ngx_http_medicloud_create_loc_conf(ngx_conf_t* cf) {
 /**
  * Merge location configuration
  */
-static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_child) {
-	ngx_http_medicloud_loc_conf_t *parent = void_parent;
-	ngx_http_medicloud_loc_conf_t *child = void_child;
+static char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_child) {
+	ngx_http_cdn_loc_conf_t *parent = void_parent;
+	ngx_http_cdn_loc_conf_t *child = void_child;
 
-	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, FS_DEFAULT_ROOT);
-	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, FS_DEFAULT_DEPTH);
-	ngx_conf_merge_str_value(child->auth_socket, parent->auth_socket, AUTH_DEFAULT_SOCKET);
+	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, DEFAULT_FS_ROOT);
+	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
+	ngx_conf_merge_str_value(child->request_type, parent->fs_depth, DEFAULT_REQUEST_TYPE);
+	ngx_conf_merge_str_value(child->auth_socket, parent->auth_socket, DEFAULT_AUTH_SOCKET);
 
 	return NGX_CONF_OK;
 }
@@ -36,11 +37,11 @@ static char* ngx_http_medicloud_merge_loc_conf(ngx_conf_t* cf, void* void_parent
 /**
  * Init module and set handler
  */
-static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+static char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
     ngx_http_core_loc_conf_t  *clcf;
 
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-    clcf->handler = ngx_http_medicloud_handler;
+    clcf->handler = ngx_http_cdn_handler;
 
     return NGX_CONF_OK;
 }
@@ -48,20 +49,17 @@ static char *ngx_http_medicloud_init(ngx_conf_t *cf, ngx_command_t *cmd, void *c
 /**
  * Content handler
  */
-static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
-	ngx_http_medicloud_loc_conf_t *medicloud_loc_conf;
+static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
+	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	ngx_int_t ret;
-	ngx_table_elt_t **elts, *h;
-	medicloud_file_t *metadata;
-	bson_t bc, bh;
+	ngx_table_elt_t *h;
+	cdn_file_t *metadata;
 	int i, j;
 	char *s0, *s1, *s2;
 	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
-	char *cookie_delim = " ", *cookie_subdelim = "=";
-	char *cookie_name = NULL, *cookie_value = NULL;
 	struct tm ltm;
 
-	medicloud_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_medicloud_module);
+	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
 	// CORS handling
 	if (r->method & (NGX_HTTP_OPTIONS)) {
@@ -116,17 +114,21 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 
 	// Prepare session management data
 	session_t session;
-	session.fs_depth = atoi(from_ngx_str(r->pool, medicloud_loc_conf->fs_depth));
-	session.fs_root = from_ngx_str(r->pool, medicloud_loc_conf->fs_root);
-	session.auth_socket = from_ngx_str(r->pool, medicloud_loc_conf->auth_socket);
-	session.hdr_authorisation = NULL;
+	session.fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
+	session.fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
+	session.headers = NULL;
+	session.headers_count = 0;
+	session.cookies = NULL;
+	session.cookies_count = 0;
+
+	session.auth_socket = from_ngx_str(r->pool, cdn_loc_conf->auth_socket);
 	session.hdr_if_none_match = NULL;
 	session.hdr_if_modified_since = -1;
 
 	// Set some defaults (to be used if no corresponding field is found)
-	metadata = ngx_pcalloc(r->pool, sizeof(medicloud_file_t));
+	metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t));
 	if (metadata == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(medicloud_file_t));
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(cdn_file_t));
 		return NGX_ERROR;
 	}
 
@@ -142,62 +144,65 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	metadata->status = -1;
 
 	// Attach metadata to request for further use
-	ngx_http_set_ctx(r, metadata, ngx_http_medicloud_module);
+	ngx_http_set_ctx(r, metadata, ngx_http_cdn_module);
 
 	// URI
 	session.uri = from_ngx_str(r->pool, r->uri);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", session.uri);
 
-	// Check for new format URI
+	// Extract file ID
+	// URL format: http://cdn.example.com/some-file-id
 	s0 = from_ngx_str(r->pool, r->uri);
 	str1 = strtok_r(s0, "/", &saveptr1);
 	if (str1 == NULL)
 		return NGX_HTTP_BAD_REQUEST;
 
-	if (! strcmp(str1, URL_CDN_PREFIX)) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found new format URI");
+	str2 = strtok_r(NULL, "/", &saveptr1);
+	if (str2 == NULL)
+		return NGX_HTTP_BAD_REQUEST;
 
-		str2 = strtok_r(NULL, "/", &saveptr1);
-		if (str2 == NULL)
-			return NGX_HTTP_BAD_REQUEST;
+	metadata->file = ngx_pnalloc(r->pool, strlen(str2)+ 1 );
+	if (metadata->file == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str2) + 1);
+		return NGX_ERROR;
+	}
+	strcpy(metadata->file, str2);
 
-		metadata->file = ngx_pnalloc(r->pool, strlen(str2)+ 1 );
-		if (metadata->file == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str2) + 1);
-			return NGX_ERROR;
-		}
-		strcpy(metadata->file, str2);
+	// Get path
+	ret = get_path(&session, metadata, r);
+	if (ret)
+		return ret;
 
-		// Get path
-		ret = get_path(&session, metadata, r);
+	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
+	if ((metadata->length < 0) || (metadata->upload_date < 0)) {
+		ret = get_stat(metadata, r);
 		if (ret)
 			return ret;
-
-		// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
-		if ((metadata->length < 0) || (metadata->upload_date < 0)) {
-			ret = get_stat(metadata, r);
-			if (ret)
-				return ret;
-		}
 	}
 
-	// Headers
-	if (r->headers_in.authorization) {
-		session.hdr_authorisation = from_ngx_str(r->pool, r->headers_in.authorization->value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header Authorization: %s", session.hdr_authorisation);
+	// Extract common headers: Authorisation, If-Modified-Since, If-None-Match
+	if (r->headers_in.authorization)
+		if (get_header(session, r, HEADER_AUTHORIZATION, r->headers_in.authorization->value))
+			return NGX_ERROR;
 	}
-	if (r->headers_in.if_modified_since) {
+
+	if (r->headers_in.if_modified_since)
+		if (get_header(session, r, HEADER_IF_MODIFIED_SINCE, r->headers_in.if_modified_since->value))
+			return NGX_ERROR;
+
 		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Modified-Since: %s", s1);
-
 		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
 			session.hdr_if_modified_since = mktime(&ltm);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session.hdr_if_modified_since);
 		}
 		else
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
 	}
-	if (r->headers_in.if_none_match) {
+
+	if (r->headers_in.if_none_match)
+		if (get_header(session, r, HEADER_IF_NONE_MATCH, r->headers_in.if_none_match->value))
+			return NGX_ERROR;
+
 		session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
 		s1 = strchr(session.hdr_if_none_match, '"');
 		s2 = strrchr(session.hdr_if_none_match, '"');
@@ -217,86 +222,26 @@ static ngx_int_t ngx_http_medicloud_handler(ngx_http_request_t *r) {
 	// TODO: support Range incoming header
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
 
-	// Prepare outbound message to auth server in session->auth_req
-	bson_t b = BSON_INITIALIZER;
-	BSON_APPEND_UTF8 (&b, "uri", session.uri);
+	// TODO: Extract custom headers if requested
 
-	// Append headers
-	BSON_APPEND_DOCUMENT_BEGIN(&b, "headers", &bh);
-	if (session.hdr_if_modified_since > 0)
-		BSON_APPEND_INT32 (&bh, "if_modified_since", session.hdr_if_modified_since);
-	if (session.hdr_if_none_match)
-		BSON_APPEND_UTF8 (&bh, "if_none_match", session.hdr_if_none_match);
-	if (session.hdr_authorisation)
-		BSON_APPEND_UTF8 (&bh, "authorization", session.hdr_authorisation);
-	bson_append_document_end (&b, &bh);
 
-	// Append cookies
-	BSON_APPEND_DOCUMENT_BEGIN(&b, "cookies", &bc);
-	if (r->headers_in.cookies.nelts) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
-		elts = r->headers_in.cookies.elts;
 
-		for (i=0; i<r->headers_in.cookies.nelts; i++) {
-			s0 = from_ngx_str(r->pool, elts[i]->value);
-			for (str1 = s0; ; str1 = NULL) {
-				token = strtok_r(str1, cookie_delim, &saveptr1);
-				if (token == NULL)
-					break;
+	// FIXME: TO PREPARE JSON REQUEST, CALL 
+	// ret = prepare_json(&session, r);
+	//if (ret)
+	//	return ret;
 
-				s1 = strchr(token, ';');
-				if (s1 == token + strlen(token) - 1) {
-					s2 = ngx_pcalloc(r->pool, strlen(token));
-					if (s2 == NULL) {
-						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie token.", strlen(token));
-						return NGX_ERROR;
-					}
-					strncpy(s2, token, strlen(token) - 1);
-				}
-				else
-					s2 = token;
 
-				for (j=0, str2 = s2; ; j++, str2 = NULL) {
-					subtoken = strtok_r(str2, cookie_subdelim, &saveptr2);
-					if (subtoken == NULL)
-						break;
 
-					if (j == 0) {
-						cookie_name = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
-						if (cookie_name == NULL) {
-							ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie_name.", strlen(subtoken) + 1);
-							return NGX_ERROR;
-						}
-						strcpy(cookie_name, subtoken);
-					}
-					else if (j == 1) {
-						cookie_value = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
-						if (cookie_value == NULL) {
-							ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie_value.", strlen(subtoken) + 1);
-							return NGX_ERROR;
-						}
-						strcpy(cookie_value, subtoken);
-					}
-					else
-						ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Malformed cookie %s", s0);
-				}
 
-				if (j == 2) {
-					BSON_APPEND_UTF8 (&bc, cookie_name, cookie_value);
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", cookie_name, cookie_value);
-				}
-			}
-		}
-	}
-	else
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No cookies found");
 
-	bson_append_document_end (&b, &bc);
 
-	session.auth_req = bson_as_json (&b, NULL);
+
+
 
 	// Query for metadata here over the Unix socket
 	ret = get_metadata(&session, r);
+	// FIXME: Make this "if (request_json)"
 	bson_free(session.auth_req);
 	if (ret)
 		return ret;
@@ -411,7 +356,7 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 /**
  * Process file metadata
  */
-ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t process_metadata(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	bson_t doc;
 	bson_error_t error;
 	bson_iter_t iter;
@@ -601,7 +546,7 @@ ngx_int_t process_metadata(session_t *session, medicloud_file_t *metadata, ngx_h
 /**
  * Read file from Filesystem
  */
-ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t read_fs(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	int fd, ret;
 	ngx_http_cleanup_t *c;
 
@@ -644,7 +589,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cleanup.", sizeof(ngx_http_cleanup_t));
 			return NGX_ERROR;
 		}
-		c->handler = ngx_http_medicloud_cleanup;
+		c->handler = ngx_http_cdn_cleanup;
 		c->data = r;
 		r->cleanup = c;
 	}
@@ -660,7 +605,7 @@ ngx_int_t read_fs(session_t *session, medicloud_file_t *metadata, ngx_http_reque
 /**
  * Send file to client
  */
-ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	int b1_len, b2_len;
 	char *encoded = NULL;
 	bool curl_encoded = false;
@@ -806,20 +751,195 @@ ngx_int_t send_file(session_t *session, medicloud_file_t *metadata, ngx_http_req
 /**
  * Cleanup (unmap mapped file after serving)
  */
-static void ngx_http_medicloud_cleanup(void *a) {
+static void ngx_http_cdn_cleanup(void *a) {
     ngx_http_request_t *r = (ngx_http_request_t *)a;
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
 
-    medicloud_file_t *metadata;
-    metadata = ngx_http_get_module_ctx(r, ngx_http_medicloud_module);
+    cdn_file_t *metadata;
+    metadata = ngx_http_get_module_ctx(r, ngx_http_cdn_module);
     if (munmap(metadata->data, metadata->length) < 0)
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file, strerror(errno));
 }
 
 /**
+ * Extract a header
+ */
+static ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_str_t ngx_str) {
+	cdn_kvp_t *headers;
+
+	// NB: Nginx pool does not have realloc, so we need to emulate it
+
+	// Always allocate memory
+	headers = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * (session->headers_count + 1));
+	if (headers == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l headers KVP.", sizeof(cdn_kvp_t) * (session->headers_count + 1), session->headers_count + 1);
+		return NGX_ERROR;
+	}
+
+	// If we have previous values, copy them
+	if (session->headers_count)
+		memcpy(headers, session->headers, sizeof(cdn_kvp_t) * session->headers_count);
+	session->headers = headers;
+
+	// Save header name
+	session->headers[session->headers_count].value = ngx_pcalloc(r->pool, strlen(name) + 1);
+	strcpy(session->headers[session->headers_count].value, name);
+
+	// Extract header value
+	session->headers[session->headers_count].value = from_ngx_str(r->pool, value);
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header %s: %s", name, session->headers[session->headers_count].value);
+
+	session->headers_count ++;
+
+	return 0;
+}
+
+/**
+ * Extract all cookies from headers
+ */
+static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r) {
+	int i, j, cookie_index = -1;
+	char *s0, *s1, *s2;
+	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
+	char *cookie_delim = " ", *cookie_subdelim = "=";
+	char *cookie_name = NULL, *cookie_value = NULL;
+	ngx_table_elt_t **elts;
+	cdn_kvp_t *cookies;
+
+	if (! r->headers_in.cookies.nelts) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No cookies found");
+		return 0;
+	}
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
+	elts = r->headers_in.cookies.elts;
+	session->cookies_count = r->headers_in.cookies.nelts;
+
+	// Allocate initial memory we have at least r->headers_in.cookies.nelts, but may be more)
+	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * r->headers_in.cookies.nelts);
+	if (session->cookies == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * r->headers_in.cookies.nelts, r->headers_in.cookies.nelts);
+		return NGX_ERROR;
+	}
+
+	for (i=0; i<r->headers_in.cookies.nelts; i++) {
+		s0 = from_ngx_str(r->pool, elts[i]->value);
+		for (str1 = s0; ; str1 = NULL) {
+			token = strtok_r(str1, cookie_delim, &saveptr1);
+			if (token == NULL)
+				break;
+
+			s1 = strchr(token, ';');
+			if (s1 == token + strlen(token) - 1) {
+				s2 = ngx_pcalloc(r->pool, strlen(token));
+				if (s2 == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie token.", strlen(token));
+					return NGX_ERROR;
+				}
+				strncpy(s2, token, strlen(token) - 1);
+			}
+			else
+				s2 = token;
+
+			// Check to see if we have space to accommodate the cookie
+			cookie_index ++;
+			if (cookie_index == session->cookies_count) {
+				cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * (session->cookies_count + 1));
+				if (session->cookies == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * (session->cookies_count + 1), session->cookies_count + 1);
+					return NGX_ERROR;
+				}
+				memcpy(cookies, session->cookies, sizeof(cdn_kvp_t) * session->cookies_count);
+				session->cookies = cookies;
+			}
+			session->cookies_count ++;
+
+			// Extract the cookie
+			for (j=0, str2 = s2; ; j++, str2 = NULL) {
+				subtoken = strtok_r(str2, cookie_subdelim, &saveptr2);
+				if (subtoken == NULL)
+					break;
+
+				if (j == 0) {
+					session->cookies[cookie_index].name = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
+					if (session->cookies[cookie_index].name == NULL) {
+						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie name.", strlen(subtoken) + 1);
+						return NGX_ERROR;
+					}
+					strcpy(session->cookies[cookie_index].name, subtoken);
+				}
+				else if (j == 1) {
+					session->cookies[cookie_index].value = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
+					if (session->cookies[cookie_index].value == NULL) {
+						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie value.", strlen(subtoken) + 1);
+						return NGX_ERROR;
+					}
+					strcpy(session->cookies[cookie_index].value, subtoken);
+				}
+				else
+					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Malformed cookie %s", s0);
+			}
+
+			if (j == 2) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", session->cookies[cookie_index].name, session->cookies[cookie_index].value);
+			}
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * Prepare JSON request
+ */
+static ngx_int_t prepare_json(session_t *session, ngx_http_request_t *r) {
+	int i;
+	char s[8];
+	bson_t b, bc, bh, bel;
+
+	// Init a BSON
+	bson_init (&b);
+
+	// Add the URI
+	BSON_APPEND_UTF8 (&b, "uri", session->uri);
+
+	// Headers: make an array of objects with name and value
+	BSON_APPEND_ARRAY_BEGIN(&b, "headers", &bh);
+	for (i=0; i < session->headers_count; i++) {
+		sprintf(&s[0],"%d", i);
+		BSON_APPEND_DOCUMENT_BEGIN(&bh, &s[0], &bel);
+		BSON_APPEND_UTF8 (&bel, "name", session->headers[i].name);
+		BSON_APPEND_UTF8 (&bel, "value", session->headers[i].value);
+		bson_append_document_end (&bh, &bel);
+	}
+	bson_append_array_end (&b, &bh);
+
+	// Extract all cookies
+	ret = get_cookies(session_t *session, ngx_http_request_t *r);
+	if (ret)
+		return ret;
+
+	// Cookies: make an array of objects with name and value
+	BSON_APPEND_ARRAY_BEGIN(&b, "cookies", &bc);
+	for (i=0; i < session->cookies_count; i++) {
+		sprintf(&s[0],"%d", i);
+		BSON_APPEND_DOCUMENT_BEGIN(&bc, &s[0], &bel);
+		BSON_APPEND_UTF8 (&bel, "name", session->cookies[i].name);
+		BSON_APPEND_UTF8 (&bel, "value", session->cookies[i].value);
+		bson_append_document_end (&bc, &bel);
+	}
+	bson_append_array_end (&b, &bc);
+
+	session->auth_req = bson_as_json (&b, NULL);
+
+	bson_destroy(&b);
+}
+
+/**
  * Helper: get the full path from a file name
  */
-static ngx_int_t get_path(session_t *session, medicloud_file_t *metadata, ngx_http_request_t *r) {
+static ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	int i, len, pos=0;
 
 	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
@@ -853,7 +973,7 @@ static ngx_int_t get_path(session_t *session, medicloud_file_t *metadata, ngx_ht
 /**
  * Helper: get stat of a file
  */
-static ngx_int_t get_stat(medicloud_file_t *metadata, ngx_http_request_t *r) {
+static ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r) {
 	struct stat statbuf;
 	int fd;
 

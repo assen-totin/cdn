@@ -2,34 +2,48 @@ Nginx configuration directives:
 
 ```
 location /abc/xyz
-	medicloud;
-	fs_root /usr/share/curaden/fs;
-	fs_depth 4;
-	auth_socket /path/to/some.sock;
+	cdn;
+	cdn_fs_root /usr/share/curaden/fs;
+	cdn_fs_depth 4;
+	cdn_request_type json;
+	cdn_auth_socket /path/to/some.sock;
 ```
 
 To create a blank filesystem storage, use tools/mkcdn.sh.
 
-Unix socket protocol:
-
-Request: (all members of "headers" and "cookies" are optional)
+Request type JSON: (all members of "headers" and "cookies" are optional)
 
 ```
 {
-	"uri" : "/test123/lala",
-	"headers" : {
-		"if_none_match": "00000000000000000000000000000000", // eTag
-		"if_modified_since": 1234567890,	// Unix timestamp of the header value
-		"authorization": "Bearer abcdefgh123456",
-	},
-	"cookies" : {
-		"some_cookie_name": "some_cookie_value",
-		"other_cookie_name": "other_cookie_value"
-	}
+	"uri" : "/some-file-id",
+	"headers" : [
+		{
+			"name": "If-None-Match",
+			"value": "00000000000000000000000000000000"
+		},
+		{
+			"name": "If-Modified-Since",
+			"value": "Wed, 21 Oct 2015 07:28:00 GMT"
+		},
+		{
+			"name": "Authorization",
+			"value": "Bearer abcdefgh123456"
+		}
+	],
+	"cookies": [
+		{
+			"name": "some_cookie_name",
+			"value": "some_cookie_value"
+		},
+		{
+			"name": "other_cookie_name",
+			"value": "other_cookie_value"
+		}
+	]
 }
 ```
 
-Response
+Response type JSON
 
 ```
 {
@@ -70,7 +84,7 @@ CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/ng
 make modules
 
 # Copy our module to Nginx tree
-cp objs/ngx_http_medicloud_module.so /usr/lib64/nginx/modules
+cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
 # Configure Nginx location
 
