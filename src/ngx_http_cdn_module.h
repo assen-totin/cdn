@@ -1,16 +1,16 @@
 /**
- * Nginx media serving module for cdn.
+ * Nginx CDN module
  *
- * @author: Assen Totin assen.totin@curaden.ch
+ * @author: Assen Totin assen.totin@gmail.com
  */
 
 #define __USE_XOPEN
 #define _GNU_SOURCE
 
 // Includes
-#include <bson/bson.h>
 #include <curl/curl.h>
 #include <errno.h>
+	#include <features.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -23,6 +23,21 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+// RHEL 7 or newer
+#if __GLIBC_MINOR__ == 17
+	#define RHEL7
+#elif __GLIBC_MINOR__ == 28
+	#define RHEL8
+#endif
+
+#ifdef RHEL7
+	#include <bson.h>
+#else
+	#ifdef RHEL8
+		#include <bson/bson.h>
+	#endif
+#endif
+
 // Definitions
 #define DEFAULT_ENABLE 1
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
@@ -32,9 +47,11 @@
 #define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, OPTIONS"
 #define DEFAULT_HTTP_CODE 500
 #define DEFAULT_FS_DEPTH "4"
-#define DEFAULT_FS_ROOT "/usr/share/curaden/fs"
+#define DEFAULT_FS_ROOT "/opt/cdn"
 #define DEFAULT_AUTH_SOCKET "/tmp/auth.socket"
 #define DEFAULT_REQUEST_TYPE "json"
+#define DEFAULT_TRANSPORT_TYPE "unix"
+
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
 #define HEADER_ACCESS_CONTROL_ALLOW_HEADERS "Access-Control-Allow-Headers"
@@ -44,11 +61,13 @@
 #define HEADER_ETAG "ETag"
 #define HEADER_IF_MODIFIED_SINCE "If-Modified-Since"
 #define HEADER_IF_NONE_MATCH "If-None-Match"
+
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
 #define ERROR_MESSAGE_LENGTH 1024
 #define AUTH_BUFFER_CHUNK 1024
 #define AUTH_SOCKET_TYPE SOCK_STREAM
-#define URL_CDN_PREFIX "cdn"
+#define REQUEST_TYPE_JSON "json"
+#define TRANSPORT_TYPE_UNIX "unix" 
 
 // Structures
 typedef struct {
@@ -60,6 +79,7 @@ typedef struct {
 	ngx_str_t fs_root;
 	ngx_str_t fs_depth;
 	ngx_str_t request_type;
+	ngx_str_t transport_type;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -86,6 +106,8 @@ typedef struct {
 	char *uri;
 	uint fs_depth;
 	char *fs_root;
+	char *request_type;
+	char *transport_type;
 	cdn_kvp_t *headers;
 	int headers_count;
 	cdn_kvp_t *cookies;
@@ -104,8 +126,6 @@ static void* ngx_http_cdn_create_loc_conf(ngx_conf_t* directive);
 static char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* directive, void* parent, void* child);
 static char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t* request);
-static ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r);
-static ngx_int_t process_metadata(session_t *session, cdn_file_t *meta_file, ngx_http_request_t *r);
 static ngx_int_t read_fs(session_t *session, cdn_file_t *dnld_file, ngx_http_request_t *r);
 static ngx_int_t send_file(session_t *session, cdn_file_t *dnld_file, ngx_http_request_t *r);
 static void ngx_http_cdn_cleanup(void *a);
@@ -114,7 +134,11 @@ static ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *nam
 static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r);
 static ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r);
 static ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r);
-static ngx_int_t prepare_json(session_t *session, ngx_http_request_t *r);
+static ngx_int_t request_json(session_t *session, ngx_http_request_t *r);
+static ngx_int_t response_json(session_t *session, cdn_file_t *meta_file, ngx_http_request_t *r);
+static ngx_int_t metadata_unix(session_t *session, ngx_http_request_t *r);
+static ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r);
+static void cleanup(cdn_file_t *metadata, ngx_http_request_t *r);
 
 // Globals: array to specify how to handle configuration directives.
 static ngx_command_t ngx_http_cdn_commands[] = {
@@ -148,6 +172,14 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, request_type),
+		NULL
+	},
+	{
+		ngx_string("cdn_ttransport_type"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, transport_type),
 		NULL
 	},
 	{

@@ -6,6 +6,7 @@ location /abc/xyz
 	cdn_fs_root /usr/share/curaden/fs;
 	cdn_fs_depth 4;
 	cdn_request_type json;
+	cdn_transport_type unix;
 	cdn_auth_socket /path/to/some.sock;
 ```
 

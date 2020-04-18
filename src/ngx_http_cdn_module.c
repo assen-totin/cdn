@@ -28,7 +28,8 @@ static char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void
 
 	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, DEFAULT_FS_ROOT);
 	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
-	ngx_conf_merge_str_value(child->request_type, parent->fs_depth, DEFAULT_REQUEST_TYPE);
+	ngx_conf_merge_str_value(child->request_type, parent->request_type, DEFAULT_REQUEST_TYPE);
+	ngx_conf_merge_str_value(child->transport_type, parent->transport_type, DEFAULT_TRANSPORT_TYPE);
 	ngx_conf_merge_str_value(child->auth_socket, parent->auth_socket, DEFAULT_AUTH_SOCKET);
 
 	return NGX_CONF_OK;
@@ -54,9 +55,8 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_int_t ret;
 	ngx_table_elt_t *h;
 	cdn_file_t *metadata;
-	int i, j;
 	char *s0, *s1, *s2;
-	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
+	char *str1, *str2, *saveptr1;
 	struct tm ltm;
 
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
@@ -116,6 +116,8 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session_t session;
 	session.fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
 	session.fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
+	session.request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
+	session.transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
 	session.headers = NULL;
 	session.headers_count = 0;
 	session.cookies = NULL;
@@ -125,7 +127,7 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.hdr_if_none_match = NULL;
 	session.hdr_if_modified_since = -1;
 
-	// Set some defaults (to be used if no corresponding field is found)
+	// Init file metadata
 	metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t));
 	if (metadata == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(cdn_file_t));
@@ -181,13 +183,13 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	}
 
 	// Extract common headers: Authorisation, If-Modified-Since, If-None-Match
-	if (r->headers_in.authorization)
-		if (get_header(session, r, HEADER_AUTHORIZATION, r->headers_in.authorization->value))
+	if (r->headers_in.authorization) {
+		if (get_header(&session, r, HEADER_AUTHORIZATION, r->headers_in.authorization->value))
 			return NGX_ERROR;
 	}
 
-	if (r->headers_in.if_modified_since)
-		if (get_header(session, r, HEADER_IF_MODIFIED_SINCE, r->headers_in.if_modified_since->value))
+	if (r->headers_in.if_modified_since) {
+		if (get_header(&session, r, HEADER_IF_MODIFIED_SINCE, r->headers_in.if_modified_since->value))
 			return NGX_ERROR;
 
 		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
@@ -199,8 +201,8 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
 	}
 
-	if (r->headers_in.if_none_match)
-		if (get_header(session, r, HEADER_IF_NONE_MATCH, r->headers_in.if_none_match->value))
+	if (r->headers_in.if_none_match) {
+		if (get_header(&session, r, HEADER_IF_NONE_MATCH, r->headers_in.if_none_match->value))
 			return NGX_ERROR;
 
 		session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
@@ -224,31 +226,31 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 
 	// TODO: Extract custom headers if requested
 
+	// Prepare request (as per the configured request type)
+	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
+		ret = request_json(&session, r);
+	//FIXME: Fill more methods here
+	if (ret)
+		return ret;
 
-
-	// FIXME: TO PREPARE JSON REQUEST, CALL 
-	// ret = prepare_json(&session, r);
-	//if (ret)
-	//	return ret;
-
-
-
-
-
-
-
-
-
-	// Query for metadata here over the Unix socket
-	ret = get_metadata(&session, r);
-	// FIXME: Make this "if (request_json)"
+	// Query for metadata
+	if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
+		ret = metadata_unix(&session, r);
+	//FIXME: Fill more methods here
 	bson_free(session.auth_req);
 	if (ret)
 		return ret;
 
-	// Process metadata
-	ret = process_metadata(&session, metadata, r);
+	// Process response (as per the configured request type)
+	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
+		ret = response_json(&session, metadata, r);
+	//FIXME: Fill more methods here
 	free(session.auth_resp);
+	if (ret)
+		return ret;
+
+	// Check metadata
+	ret = metadata_check(&session, metadata, r);
 	if (ret)
 		return ret;
 
@@ -259,6 +261,10 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 
 	// Send the file
 	ret = send_file(&session, metadata, r);
+	if (ret) {
+		cleanup(metadata, r);
+		return ret;
+	}
 
 	// NB: The mapped file will be unmapped by the cleanup handler once data is sent to client
 
@@ -269,7 +275,7 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 /**
  * Get file metadata
  */
-ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
+ngx_int_t metadata_unix(session_t *session, ngx_http_request_t *r) {
 	// Socket variables
 	struct sockaddr_un remote_un;
 	int unix_socket, addr_len_un, bytes_in, auth_resp_len, auth_resp_pos;
@@ -349,202 +355,11 @@ ngx_int_t get_metadata(session_t *session, ngx_http_request_t *r) {
 	close(unix_socket);
 	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth server response: %s", session->auth_resp);
 
-	return 0;
+	return NGX_OK;
 }
 
-
 /**
- * Process file metadata
- */
-ngx_int_t process_metadata(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
-	bson_t doc;
-	bson_error_t error;
-	bson_iter_t iter;
-	const char *bson_key;
-	const char *bson_val_char;
-
-	// Walk around the JSON which we received from the authentication servier, session->auth_resp
-	if (! bson_init_from_json(&doc, session->auth_resp, strlen(session->auth_resp), &error)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->auth_resp);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	if (! bson_iter_init (&iter, &doc)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to initialise BSON iterator");
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	while(bson_iter_next(&iter)) {
-		bson_key = bson_iter_key (&iter);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
-
-		if ((! strcmp(bson_key, "file")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->file = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->file == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata file.", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->file, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata file: %s", metadata->file);
-		}
-
-		else if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->filename = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->filename == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->filename, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata filename: %s", metadata->filename);
-		}
-
-		else if ((! strcmp(bson_key, "error")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			if (strlen(bson_val_char)) {
-				metadata->error = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-				if (metadata->error == NULL) {
-					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata error.", strlen(bson_val_char) + 1);
-					return NGX_HTTP_INTERNAL_SERVER_ERROR;
-				}
-				strcpy(metadata->error, bson_val_char);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata error: %s", metadata->error);
-			}
-		}
-
-		else if ((! strcmp(bson_key, "content_type")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->content_type = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->content_type == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->content_type, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_type: %s", metadata->content_type);
-		}
-
-		else if ((! strcmp(bson_key, "content_disposition")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->content_disposition = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->content_disposition == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->content_disposition, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_disposition: %s", metadata->content_disposition);
-		}
-
-		else if ((! strcmp(bson_key, "etag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->etag = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->etag == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->etag, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata etag: %s", metadata->etag);
-		}
-
-		else if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
-			metadata->status = bson_iter_int32 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
-		}
-
-		else if (! strcmp(bson_key, "length")) {
-			if (bson_iter_type(&iter) == BSON_TYPE_INT32)
-				metadata->length = bson_iter_int32 (&iter);
-			else if (bson_iter_type(&iter) == BSON_TYPE_INT64)
-				metadata->length = bson_iter_int64 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
-		}
-
-		else if ((! strcmp(bson_key, "upload_date")) && (bson_iter_type(&iter) == BSON_TYPE_DATE_TIME)) {
-			metadata->upload_date = bson_iter_date_time (&iter) / 1000;
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
-		}
-	}
-
-	// Check for error
-	if ((metadata->status > 0) && (metadata->status != NGX_HTTP_OK)) {
-		if (metadata->error)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
-		return metadata->status;
-	}
-
-	// Log an error if such was returned (with status 200 or no status)
-	if (metadata->error)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
-
-	// Check if we have the file name ro serve and returnerror if we don't have it
-	if (! metadata->file) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Filename not received, aborting request.");
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	// Check if we have the end user's file name and use the CDN filename if missing
-	if (! metadata->filename) {
-		metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1);
-		if (metadata->filename == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(metadata->file) + 1);
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
-		}
-		strcpy(metadata->filename, metadata->file);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file, metadata->file);
-	}
-
-	// Check if we have the content type and use the default one if missing
-	if (! metadata->content_type) {
-		metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
-		if (metadata->content_type == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(DEFAULT_CONTENT_TYPE) + 1);
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
-		}
-		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file, DEFAULT_CONTENT_TYPE);
-	}
-
-	// Check if we have the content disposition and use the default one if missing
-	if (! metadata->content_disposition)
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file);
-
-	// Check if we have the eTag and use the default one if missing
-	if (! metadata->etag) {
-		metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
-		if (metadata->etag == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(DEFAULT_ETAG) + 1);
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
-		}
-		strcpy(metadata->etag, DEFAULT_ETAG);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
-	}
-
-	// Check if we have the file length specified
-	if (metadata->length < 0)
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s length not found, will use stat() to determine it", metadata->file);
-
-	// Check if we have the upload date specified
-	if (metadata->upload_date < 0)
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", metadata->file);
-
-	// Check if we have the HTTP response code and use the default one if missing
-	if (metadata->status < 0) {
-		metadata->status = DEFAULT_HTTP_CODE;
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %s", metadata->file, DEFAULT_HTTP_CODE);
-	}
-
-	// Return 304 in certain cases
-	if (session->hdr_if_none_match && metadata->etag && ! strcmp(session->hdr_if_none_match, metadata->etag))
-		return NGX_HTTP_NOT_MODIFIED;
-
-	// Return OK
-	return (metadata->status == NGX_HTTP_OK) ? 0 : metadata->status;
-}
-
-
-/**
- * Read file from Filesystem
+ * Read file
  */
 ngx_int_t read_fs(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	int fd, ret;
@@ -599,7 +414,7 @@ ngx_int_t read_fs(session_t *session, cdn_file_t *metadata, ngx_http_request_t *
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	return 0;
+	return NGX_OK;
 }
 
 /**
@@ -751,20 +566,26 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 /**
  * Cleanup (unmap mapped file after serving)
  */
+static void cleanup(cdn_file_t *metadata, ngx_http_request_t *r) {
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
+    
+    if (metadata->data && (munmap(metadata->data, metadata->length) < 0))
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file, strerror(errno));
+}
+
+/**
+ * Cleanup (unmap mapped file after serving)
+ */
 static void ngx_http_cdn_cleanup(void *a) {
     ngx_http_request_t *r = (ngx_http_request_t *)a;
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
-
-    cdn_file_t *metadata;
-    metadata = ngx_http_get_module_ctx(r, ngx_http_cdn_module);
-    if (munmap(metadata->data, metadata->length) < 0)
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file, strerror(errno));
+    cdn_file_t *metadata = ngx_http_get_module_ctx(r, ngx_http_cdn_module);
+	cleanup(metadata, r);
 }
 
 /**
  * Extract a header
  */
-static ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_str_t ngx_str) {
+static ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_str_t value) {
 	cdn_kvp_t *headers;
 
 	// NB: Nginx pool does not have realloc, so we need to emulate it
@@ -792,7 +613,7 @@ static ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *nam
 
 	session->headers_count ++;
 
-	return 0;
+	return NGX_OK;
 }
 
 /**
@@ -803,13 +624,12 @@ static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r) {
 	char *s0, *s1, *s2;
 	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
 	char *cookie_delim = " ", *cookie_subdelim = "=";
-	char *cookie_name = NULL, *cookie_value = NULL;
 	ngx_table_elt_t **elts;
 	cdn_kvp_t *cookies;
 
 	if (! r->headers_in.cookies.nelts) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No cookies found");
-		return 0;
+		return NGX_OK;
 	}
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
@@ -887,16 +707,17 @@ static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r) {
 		}
 	}
 
-	return 0;
+	return NGX_OK;
 }
 
 /**
  * Prepare JSON request
  */
-static ngx_int_t prepare_json(session_t *session, ngx_http_request_t *r) {
+static ngx_int_t request_json(session_t *session, ngx_http_request_t *r) {
 	int i;
-	char s[8];
+	char s[11];
 	bson_t b, bc, bh, bel;
+	ngx_int_t ret;
 
 	// Init a BSON
 	bson_init (&b);
@@ -916,7 +737,7 @@ static ngx_int_t prepare_json(session_t *session, ngx_http_request_t *r) {
 	bson_append_array_end (&b, &bh);
 
 	// Extract all cookies
-	ret = get_cookies(session_t *session, ngx_http_request_t *r);
+	ret = get_cookies(session, r);
 	if (ret)
 		return ret;
 
@@ -934,7 +755,208 @@ static ngx_int_t prepare_json(session_t *session, ngx_http_request_t *r) {
 	session->auth_req = bson_as_json (&b, NULL);
 
 	bson_destroy(&b);
+
+	return NGX_OK;
 }
+
+/**
+ * Process JSON response
+ */
+ngx_int_t response_json(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+	bson_t doc;
+	bson_error_t error;
+	bson_iter_t iter;
+	const char *bson_key;
+	const char *bson_val_char;
+
+	// Walk around the JSON which we received from the authentication servier, session->auth_resp
+	if (! bson_init_from_json(&doc, session->auth_resp, strlen(session->auth_resp), &error)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->auth_resp);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	if (! bson_iter_init (&iter, &doc)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to initialise BSON iterator");
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	while(bson_iter_next(&iter)) {
+		bson_key = bson_iter_key (&iter);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
+
+		if ((! strcmp(bson_key, "file")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			metadata->file = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->file == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata file.", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+			strcpy(metadata->file, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata file: %s", metadata->file);
+		}
+
+		else if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			metadata->filename = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->filename == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+			strcpy(metadata->filename, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata filename: %s", metadata->filename);
+		}
+
+		else if ((! strcmp(bson_key, "error")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			if (strlen(bson_val_char)) {
+				metadata->error = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+				if (metadata->error == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata error.", strlen(bson_val_char) + 1);
+					return NGX_HTTP_INTERNAL_SERVER_ERROR;
+				}
+				strcpy(metadata->error, bson_val_char);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata error: %s", metadata->error);
+			}
+		}
+
+		else if ((! strcmp(bson_key, "content_type")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			metadata->content_type = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->content_type == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+			strcpy(metadata->content_type, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_type: %s", metadata->content_type);
+		}
+
+		else if ((! strcmp(bson_key, "content_disposition")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			metadata->content_disposition = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->content_disposition == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+			strcpy(metadata->content_disposition, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_disposition: %s", metadata->content_disposition);
+		}
+
+		else if ((! strcmp(bson_key, "etag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			bson_val_char = bson_iter_utf8 (&iter, NULL);
+			metadata->etag = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
+			if (metadata->etag == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(bson_val_char) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+			strcpy(metadata->etag, bson_val_char);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata etag: %s", metadata->etag);
+		}
+
+		else if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
+			metadata->status = bson_iter_int32 (&iter);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+		}
+
+		else if (! strcmp(bson_key, "length")) {
+			if (bson_iter_type(&iter) == BSON_TYPE_INT32)
+				metadata->length = bson_iter_int32 (&iter);
+			else if (bson_iter_type(&iter) == BSON_TYPE_INT64)
+				metadata->length = bson_iter_int64 (&iter);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
+		}
+
+		else if ((! strcmp(bson_key, "upload_date")) && (bson_iter_type(&iter) == BSON_TYPE_DATE_TIME)) {
+			metadata->upload_date = bson_iter_date_time (&iter) / 1000;
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
+		}
+	}
+
+	bson_destroy(&doc);
+
+	return NGX_OK;
+}
+
+/**
+ * Check metdata for errors
+ */
+static ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+	// Metadata: check for error
+	if ((metadata->status > 0) && (metadata->status != NGX_HTTP_OK)) {
+		if (metadata->error)
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
+		return metadata->status;
+	}
+
+	// Log an error if such was returned (with status 200 or no status)
+	if (metadata->error)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
+
+	// Check if we have the file name ro serve and returnerror if we don't have it
+	if (! metadata->file) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Filename not received, aborting request.");
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Check if we have the end user's file name and use the CDN filename if missing
+	if (! metadata->filename) {
+		metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1);
+		if (metadata->filename == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(metadata->file) + 1);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+		strcpy(metadata->filename, metadata->file);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file, metadata->file);
+	}
+
+	// Check if we have the content type and use the default one if missing
+	if (! metadata->content_type) {
+		metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
+		if (metadata->content_type == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(DEFAULT_CONTENT_TYPE) + 1);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file, DEFAULT_CONTENT_TYPE);
+	}
+
+	// Check if we have the content disposition and use the default one if missing
+	if (! metadata->content_disposition)
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file);
+
+	// Check if we have the eTag and use the default one if missing
+	if (! metadata->etag) {
+		metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
+		if (metadata->etag == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(DEFAULT_ETAG) + 1);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+		strcpy(metadata->etag, DEFAULT_ETAG);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
+	}
+
+	// Check if we have the file length specified
+	if (metadata->length < 0)
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s length not found, will use stat() to determine it", metadata->file);
+
+	// Check if we have the upload date specified
+	if (metadata->upload_date < 0)
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", metadata->file);
+
+	// Check if we have the HTTP response code and use the default one if missing
+	if (metadata->status < 0) {
+		metadata->status = DEFAULT_HTTP_CODE;
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %s", metadata->file, DEFAULT_HTTP_CODE);
+	}
+
+	// Return 304 in certain cases
+	if (session->hdr_if_none_match && metadata->etag && ! strcmp(session->hdr_if_none_match, metadata->etag))
+		return NGX_HTTP_NOT_MODIFIED;
+
+	// Return OK
+	return (metadata->status == NGX_HTTP_OK) ? 0 : metadata->status;
+}
+
 
 /**
  * Helper: get the full path from a file name
@@ -967,7 +989,7 @@ static ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_req
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, metadata->path);
 
-	return 0;
+	return NGX_OK;
 }
 
 /**
@@ -996,7 +1018,7 @@ static ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r) {
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	return 0;
+	return NGX_OK;
 }
 
 /**
