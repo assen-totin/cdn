@@ -30,10 +30,14 @@ static char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void
 	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
 	ngx_conf_merge_str_value(child->request_type, parent->request_type, DEFAULT_REQUEST_TYPE);
 	ngx_conf_merge_str_value(child->transport_type, parent->transport_type, DEFAULT_TRANSPORT_TYPE);
-	ngx_conf_merge_str_value(child->auth_socket, parent->auth_socket, DEFAULT_AUTH_SOCKET);
+	ngx_conf_merge_str_value(child->unix_socket, parent->unix_socket, DEFAULT_unix_socket);
 	ngx_conf_merge_str_value(child->jwt_cookie, parent->jwt_cookie, DEFAULT_JWT_COOKIE);
+	ngx_conf_merge_str_value(child->jwt_header, parent->jwt_header, DEFAULT_JWT_HEADER);
 	ngx_conf_merge_str_value(child->jwt_key, parent->jwt_key, DEFAULT_JWT_KEY);
 	ngx_conf_merge_str_value(child->jwt_field, parent->jwt_field, DEFAULT_JWT_FIELD);
+	ngx_conf_merge_str_value(child->json_extended, parent->json_extended, DEFAULT_JSON_EXTENDED);
+	ngx_conf_merge_str_value(child->sql_dsn, parent->sql_dsn, DEFAULT_SQL_DSN);
+	ngx_conf_merge_str_value(child->sql_query, parent->sql_query, DEFAULT_SQL_QUERY);
 
 	return NGX_CONF_OK;
 }
@@ -59,7 +63,7 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_table_elt_t *h;
 	cdn_file_t *metadata;
 	char *s0, *s1, *s2;
-	char *str1, *str2, *saveptr1;
+	char *str1, *saveptr1;
 	struct tm ltm;
 
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
@@ -121,12 +125,16 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
 	session.request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
 	session.transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
-	session.auth_socket = from_ngx_str(r->pool, cdn_loc_conf->auth_socket);
+	session.unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
 	session.jwt_cookie = from_ngx_str(r->pool, cdn_loc_conf->jwt_cookie);
+	session.jwt_header = from_ngx_str(r->pool, cdn_loc_conf->jwt_header);
 	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
 	session.jwt_json = NULL;
 	session.jwt_field = NULL;
 	session.jwt_value = NULL;
+	session.json_extended = from_ngx_str(r->pool, cdn_loc_conf->json_extended);
+	session.sql_dsn = from_ngx_str(r->pool, cdn_loc_conf->sql_dsn);
+	session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_query);
 	session.headers = NULL;
 	session.headers_count = 0;
 	session.cookies = NULL;
@@ -166,16 +174,12 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	if (str1 == NULL)
 		return NGX_HTTP_BAD_REQUEST;
 
-	str2 = strtok_r(NULL, "/", &saveptr1);
-	if (str2 == NULL)
-		return NGX_HTTP_BAD_REQUEST;
-
-	metadata->file = ngx_pnalloc(r->pool, strlen(str2)+ 1 );
+	metadata->file = ngx_pnalloc(r->pool, strlen(str1)+ 1 );
 	if (metadata->file == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str2) + 1);
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str1) + 1);
 		return NGX_ERROR;
 	}
-	strcpy(metadata->file, str2);
+	strcpy(metadata->file, str1);
 
 	// Get path
 	ret = get_path(&session, metadata, r);
@@ -301,7 +305,7 @@ ngx_int_t metadata_unix(session_t *session, ngx_http_request_t *r) {
 	char msg_in[AUTH_BUFFER_CHUNK];
 
 	// Init the Unix socket
-	if ((unix_socket = socket(AF_UNIX, AUTH_SOCKET_TYPE, 0)) < 0) {
+	if ((unix_socket = socket(AF_UNIX, unix_socket_TYPE, 0)) < 0) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to create socket: %s", strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
@@ -309,18 +313,18 @@ ngx_int_t metadata_unix(session_t *session, ngx_http_request_t *r) {
 	// Zero the structure, set socket type and path
 	memset(&remote_un, '\0', sizeof(struct sockaddr_un));
 	remote_un.sun_family = AF_UNIX;						
-	strcpy(remote_un.sun_path, session->auth_socket);
+	strcpy(remote_un.sun_path, session->unix_socket);
 	addr_len_un = strlen(remote_un.sun_path) + sizeof(remote_un.sun_family);
 
 	// Connect to the authorisation service
 	if (connect(unix_socket, (struct sockaddr *)&remote_un, addr_len_un) == -1) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to connect to Unix socket %s: %s", session->auth_socket, strerror(errno));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to connect to Unix socket %s: %s", session->unix_socket, strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	// Send the message over the socket
 	if (send(unix_socket, session->auth_req, strlen(session->auth_req), 0) == -1) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to write to Unix socket %s: %s", session->auth_socket, strerror(errno));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to write to Unix socket %s: %s", session->unix_socket, strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -344,7 +348,7 @@ ngx_int_t metadata_unix(session_t *session, ngx_http_request_t *r) {
 		// Blocking read till we get a response
 		if ((bytes_in = read(unix_socket, &msg_in[0], sizeof(msg_in)-1)) == -1) {
 			free(session->auth_resp);
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to read from Unix socket %s: %s", session->auth_socket, strerror(errno));
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to read from Unix socket %s: %s", session->unix_socket, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		else {
@@ -735,8 +739,12 @@ static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r) {
 static ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
 	time_t exp;
 	char *hdr_authorization;
+	bool match = false;
+	int i, j;
 	ngx_int_t ret;
 	ngx_str_t cookie_name, cookie_value;
+	ngx_table_elt_t *h;
+	ngx_list_part_t *part;
 
 	// Try to find JWT in Authorization header
 	if (r->headers_in.authorization) {
@@ -746,6 +754,27 @@ static ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
 			session->jwt_json = ngx_pcalloc(r->pool, strlen(hdr_authorization) + 1);
 			strncpy(session->jwt_json, hdr_authorization + 7, strlen(hdr_authorization) - 7);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "JWT found in Authorization header: %s", session->jwt_json);
+		}
+	}
+
+	// Try to find JWT in a custom header
+	if (strcmp(session->jwt_header, DEFAULT_JWT_HEADER)) {
+		part = &r->headers_in.headers.part;
+		for (i=0; i < r->headers_in.headers.nalloc; i++) {
+			h = part->elts;
+			for (j=0; j < part->nelts; j++) {
+				if (! ngx_strncasecmp( h[j].key.data, (u_char *) session->jwt_header, h[j].key.len)) {
+					session->jwt_json = from_ngx_str(r->pool, h[j].value);
+					match = true;
+					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "JWT found in header %s: %s", session->jwt_header, session->jwt_json);
+					break;
+				}
+			}
+
+			if (match)
+				break;
+
+			part = part->next;
 		}
 	}
 
@@ -762,8 +791,6 @@ static ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
 			session->jwt_json = from_ngx_str(r->pool, cookie_value);
 		}
 	}
-
-	// FIXME: Find JWT in custom header?
 
 	// If neither cookie nor header was given or JWT not found, give up
 	if (! session->jwt_json) {
@@ -824,32 +851,38 @@ static ngx_int_t request_json(session_t *session, ngx_http_request_t *r) {
 	// Add the URI
 	BSON_APPEND_UTF8 (&b, "uri", session->uri);
 
+	// Add the authorisation key as extracted from JWT
+	if (session->jwt_value)
+		BSON_APPEND_UTF8 (&b, "jwt_value", session->jwt_value);
+
 	// Headers: make an array of objects with name and value
-	BSON_APPEND_ARRAY_BEGIN(&b, "headers", &bh);
-	for (i=0; i < session->headers_count; i++) {
-		sprintf(&s[0],"%d", i);
-		BSON_APPEND_DOCUMENT_BEGIN(&bh, &s[0], &bel);
-		BSON_APPEND_UTF8 (&bel, "name", session->headers[i].name);
-		BSON_APPEND_UTF8 (&bel, "value", session->headers[i].value);
-		bson_append_document_end (&bh, &bel);
-	}
-	bson_append_array_end (&b, &bh);
+	if (! strcmp(session->json_extended, "yes")) {
+		BSON_APPEND_ARRAY_BEGIN(&b, "headers", &bh);
+		for (i=0; i < session->headers_count; i++) {
+			sprintf(&s[0],"%d", i);
+			BSON_APPEND_DOCUMENT_BEGIN(&bh, &s[0], &bel);
+			BSON_APPEND_UTF8 (&bel, "name", session->headers[i].name);
+			BSON_APPEND_UTF8 (&bel, "value", session->headers[i].value);
+			bson_append_document_end (&bh, &bel);
+		}
+		bson_append_array_end (&b, &bh);
 
-	// Extract all cookies
-	ret = get_cookies(session, r);
-	if (ret)
-		return ret;
+		// Extract all cookies
+		ret = get_cookies(session, r);
+		if (ret)
+			return ret;
 
-	// Cookies: make an array of objects with name and value
-	BSON_APPEND_ARRAY_BEGIN(&b, "cookies", &bc);
-	for (i=0; i < session->cookies_count; i++) {
-		sprintf(&s[0],"%d", i);
-		BSON_APPEND_DOCUMENT_BEGIN(&bc, &s[0], &bel);
-		BSON_APPEND_UTF8 (&bel, "name", session->cookies[i].name);
-		BSON_APPEND_UTF8 (&bel, "value", session->cookies[i].value);
-		bson_append_document_end (&bc, &bel);
+		// Cookies: make an array of objects with name and value
+		BSON_APPEND_ARRAY_BEGIN(&b, "cookies", &bc);
+		for (i=0; i < session->cookies_count; i++) {
+			sprintf(&s[0],"%d", i);
+			BSON_APPEND_DOCUMENT_BEGIN(&bc, &s[0], &bel);
+			BSON_APPEND_UTF8 (&bel, "name", session->cookies[i].name);
+			BSON_APPEND_UTF8 (&bel, "value", session->cookies[i].value);
+			bson_append_document_end (&bc, &bel);
+		}
+		bson_append_array_end (&b, &bc);
 	}
-	bson_append_array_end (&b, &bc);
 
 	session->auth_req = bson_as_json (&b, NULL);
 

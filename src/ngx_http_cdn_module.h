@@ -48,12 +48,16 @@
 #define DEFAULT_HTTP_CODE 500
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
-#define DEFAULT_AUTH_SOCKET "/tmp/auth.socket"
+#define DEFAULT_unix_socket "/tmp/auth.socket"
 #define DEFAULT_REQUEST_TYPE "json"
 #define DEFAULT_TRANSPORT_TYPE "unix"
 #define DEFAULT_JWT_COOKIE "none"
+#define DEFAULT_JWT_HEADER "none"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
+#define DEFAULT_JSON_EXTENDED "no"
+#define DEFAULT_SQL_DSN "none"
+#define DEFAULT_SQL_QUERY "none"
 
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
@@ -68,7 +72,7 @@
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
 #define ERROR_MESSAGE_LENGTH 1024
 #define AUTH_BUFFER_CHUNK 1024
-#define AUTH_SOCKET_TYPE SOCK_STREAM
+#define unix_socket_TYPE SOCK_STREAM
 #define REQUEST_TYPE_JSON "json"
 #define TRANSPORT_TYPE_UNIX "unix" 
 
@@ -82,10 +86,14 @@ typedef struct {
 	ngx_str_t fs_depth;
 	ngx_str_t request_type;
 	ngx_str_t transport_type;
-	ngx_str_t auth_socket;
+	ngx_str_t unix_socket;
 	ngx_str_t jwt_cookie;
+	ngx_str_t jwt_header;
 	ngx_str_t jwt_key;
 	ngx_str_t jwt_field;
+	ngx_str_t json_extended;
+	ngx_str_t sql_dsn;
+	ngx_str_t sql_query;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -114,21 +122,23 @@ typedef struct {
 	char *fs_root;
 	char *request_type;
 	char *transport_type;
+	char *json_extended;
 	cdn_kvp_t *headers;
 	int headers_count;
 	cdn_kvp_t *cookies;
 	int cookies_count;
 	char *jwt_cookie;
+	char *jwt_header;
 	char *jwt_key;
 	char *jwt_json;
 	jwt_t *jwt;
 	char *jwt_field;
 	const char *jwt_value;
+	char *sql_dsn;
+	char *sql_query;
 	char *auth_req;
 	char *auth_resp;
-
-	char *auth_socket;
-
+	char *unix_socket;
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
 } session_t;
@@ -196,11 +206,11 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
-		ngx_string("cdn_auth_socket"),
+		ngx_string("cdn_unix_socket"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, auth_socket),
+		offsetof(ngx_http_cdn_loc_conf_t, unix_socket),
 		NULL
 	},
 	{
@@ -209,6 +219,14 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, jwt_cookie),
+		NULL
+	},
+	{
+		ngx_string("cdn_jwt_header"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, jwt_header),
 		NULL
 	},
 	{
@@ -225,6 +243,30 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, jwt_field),
+		NULL
+	},
+	{
+		ngx_string("cdn_json_extended"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, json_extended),
+		NULL
+	},
+	{
+		ngx_string("cdn_sql_dsn"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, sql_dsn),
+		NULL
+	},
+	{
+		ngx_string("cdn_sql_query"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, sql_query),
 		NULL
 	},
 	ngx_null_command

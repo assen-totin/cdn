@@ -1,4 +1,21 @@
-Nginx configuration directives:
+# Concept
+
+The module implements an optimised, custom delivery of authorised content (e.g., user files etc.). 
+
+The module only serves files. Their upload must be handled separately; it is quite easy, though - see UPLOAD.md
+
+Each file request must be authorised before served. Authorisation is handled by an external body to which the module connects. 
+
+The business logic for authorisation consists of two main elements:
+
+- Request type: specifies the format of the request that will be sent to the external authorisation body.
+- Transport type: specifies how ot connect to the external authorisation body. 
+
+# Initialise
+
+To create a blank filesystem storage, use tools/mkcdn.sh.
+
+# Nginx configuration directives:
 
 ```
 location /abc/xyz
@@ -7,19 +24,54 @@ location /abc/xyz
 	cdn_fs_depth 4;							// CDN tree depth
 	cdn_request_type json;					// Type of authorisation request to perform: "json"
 	cdn_transport_type unix;				// Type of transport for authorisation: "unix" 
-	cdn_auth_socket /path/to/some.sock;		// Path to the Unix socket
+	cdn_unix_socket /path/to/some.sock;		// Path to the Unix socket
 	cdn_jwt_key 0123456789ABCDEF;			// JWT validation key
 	cdn_jwt_cookie my_auth_cookie;			// Cookie which contains the JWT
 	cdn_jwt_field uid;						// Field in JWT used for authtorisation
+	cdn_json_extended no;					// Send extended JSON in request (with headers and cookies)
+	cdn_header_auth X-Custom-JWT			// Custom headfer to search for JWT
 ```
 
-To create a blank filesystem storage, use tools/mkcdn.sh.
+# Usage scenarios and configuration
 
-Request type JSON: (all members of "headers" and "cookies" are optional)
+## Authorisation by JWT
+
+This is the prefererred and more common scenario. In this case a JWT is extracted to find the value for an authorisation field, which is then passed to the authorisation backend. 
+
+To use this scenario, set the JWT signature verification key in configuration option "cdn_jwt_key".
+
+Specify the JWT paylod field to use for authorisation in configuration option "cdn_jwt_field".
+
+JWT can be supplied in:
+
+- Authorization header, as Bearer (default)
+- In custom header: set its name in configuration otion "cdn_jwt_header"
+- In a cookie: set its name in configuration option "cdn_jwt_cookie"
+
+## Offloaded authorisation
+
+In this case selected headers and all cookies are sent to the authorisation body. To have them sent, set the configuration option "cdn_json_extended" to "yes". 
+
+The three headers that are included if available are Authorization, If-None-Match and If-Modified-Since. Extra header may be specfified in configuration option "FIXME". 
+
+This case typically uses JSON request type and Unix socket transport.
+
+# Request types
+
+## JSON
+
+This request type is usually used with transport type set to "unix" (Unix socket).
+
+### Request format
+
+Fields "headers" and "cookies" are only included if configuration option "cdn_json_extended" is set to "yes". 
+
+The field "jwt_value" from JWT token is included only if configuration options "cdn_jwt_key" and "cdn_jwt_field" are set.
 
 ```
 {
 	"uri" : "/some-file-id",
+	"jwt_value" : "12345"
 	"headers" : [
 		{
 			"name": "If-None-Match",
@@ -47,7 +99,7 @@ Request type JSON: (all members of "headers" and "cookies" are optional)
 }
 ```
 
-Response type JSON
+### Response format
 
 ```
 {
@@ -63,7 +115,29 @@ Response type JSON
 }
 ```
 
-Dev environment setup hints:
+## SQL
+
+Set the SQL query to run in the configuration option "cnd_sql_query". Use "%s" as placeholder for the value, extracted from the JWT payload.
+
+Hint: for complex queris, create a stored procedure and use stanza like "CALL my_procedure(%s)".
+
+# Transport types
+
+## Unix socket
+
+Set the path to the Unix socket in configuratin option "cdn_unix_socket". Note that socket must be writable by the Nginx user. 
+
+This transport is usually used whet request type is "json" (JSON exchange).
+
+The Unix socket must be of type "stream". The module will half-close the connection once it has written its JSON and will then expect the response JSON, followed by full connection close by the authorisation body. 
+
+## SQL
+
+Set the actual SQL connection engine to use in configuration option "cnd_sql_dsn" (default is "mysql").
+
+Set the DSN in the configuration option "cnd_sql_dsn". 
+
+# Dev environment setup
 
 ```
 # Go to checkout dir
