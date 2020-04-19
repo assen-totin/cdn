@@ -10,7 +10,8 @@
 // Includes
 #include <curl/curl.h>
 #include <errno.h>
-	#include <features.h>
+#include <features.h>
+#include <jwt.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -32,10 +33,9 @@
 
 #ifdef RHEL7
 	#include <bson.h>
-#else
-	#ifdef RHEL8
-		#include <bson/bson.h>
-	#endif
+#endif
+#ifdef RHEL8
+	#include <bson/bson.h>
 #endif
 
 // Definitions
@@ -51,6 +51,9 @@
 #define DEFAULT_AUTH_SOCKET "/tmp/auth.socket"
 #define DEFAULT_REQUEST_TYPE "json"
 #define DEFAULT_TRANSPORT_TYPE "unix"
+#define DEFAULT_JWT_COOKIE "none"
+#define DEFAULT_JWT_KEY "none"
+#define DEFAULT_JWT_FIELD "none"
 
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
@@ -75,11 +78,14 @@ typedef struct {
 } ngx_http_cdn_main_conf_t;
 
 typedef struct {
-	ngx_str_t auth_socket;
 	ngx_str_t fs_root;
 	ngx_str_t fs_depth;
 	ngx_str_t request_type;
 	ngx_str_t transport_type;
+	ngx_str_t auth_socket;
+	ngx_str_t jwt_cookie;
+	ngx_str_t jwt_key;
+	ngx_str_t jwt_field;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -112,6 +118,12 @@ typedef struct {
 	int headers_count;
 	cdn_kvp_t *cookies;
 	int cookies_count;
+	char *jwt_cookie;
+	char *jwt_key;
+	char *jwt_json;
+	jwt_t *jwt;
+	char *jwt_field;
+	const char *jwt_value;
 	char *auth_req;
 	char *auth_resp;
 
@@ -132,6 +144,7 @@ static void ngx_http_cdn_cleanup(void *a);
 static char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
 static ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_str_t ngx_str);
 static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r);
+static ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r);
 static ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r);
 static ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r);
 static ngx_int_t request_json(session_t *session, ngx_http_request_t *r);
@@ -175,7 +188,7 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
-		ngx_string("cdn_ttransport_type"),
+		ngx_string("cdn_transport_type"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
@@ -188,6 +201,30 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, auth_socket),
+		NULL
+	},
+	{
+		ngx_string("cdn_jwt_cookie"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, jwt_cookie),
+		NULL
+	},
+	{
+		ngx_string("cdn_jwt_key"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, jwt_key),
+		NULL
+	},
+	{
+		ngx_string("cdn_jwt_field"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, jwt_field),
 		NULL
 	},
 	ngx_null_command

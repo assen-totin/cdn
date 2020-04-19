@@ -31,6 +31,9 @@ static char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void
 	ngx_conf_merge_str_value(child->request_type, parent->request_type, DEFAULT_REQUEST_TYPE);
 	ngx_conf_merge_str_value(child->transport_type, parent->transport_type, DEFAULT_TRANSPORT_TYPE);
 	ngx_conf_merge_str_value(child->auth_socket, parent->auth_socket, DEFAULT_AUTH_SOCKET);
+	ngx_conf_merge_str_value(child->jwt_cookie, parent->jwt_cookie, DEFAULT_JWT_COOKIE);
+	ngx_conf_merge_str_value(child->jwt_key, parent->jwt_key, DEFAULT_JWT_KEY);
+	ngx_conf_merge_str_value(child->jwt_field, parent->jwt_field, DEFAULT_JWT_FIELD);
 
 	return NGX_CONF_OK;
 }
@@ -118,12 +121,16 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
 	session.request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
 	session.transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
+	session.auth_socket = from_ngx_str(r->pool, cdn_loc_conf->auth_socket);
+	session.jwt_cookie = from_ngx_str(r->pool, cdn_loc_conf->jwt_cookie);
+	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
+	session.jwt_json = NULL;
+	session.jwt_field = NULL;
+	session.jwt_value = NULL;
 	session.headers = NULL;
 	session.headers_count = 0;
 	session.cookies = NULL;
 	session.cookies_count = 0;
-
-	session.auth_socket = from_ngx_str(r->pool, cdn_loc_conf->auth_socket);
 	session.hdr_if_none_match = NULL;
 	session.hdr_if_modified_since = -1;
 
@@ -225,6 +232,18 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
 
 	// TODO: Extract custom headers if requested
+
+
+
+
+	// Extract JWT if specified (i.e. if we have a validation key specified in config)
+	if (strcmp(session.jwt_key, DEFAULT_JWT_KEY)) {
+		ret = get_jwt(&session, r);
+		if (ret)
+			return ret;
+	}
+
+
 
 	// Prepare request (as per the configured request type)
 	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
@@ -705,6 +724,86 @@ static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r) {
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", session->cookies[cookie_index].name, session->cookies[cookie_index].value);
 			}
 		}
+	}
+
+	return NGX_OK;
+}
+
+/**
+ * Extract JWT
+ */
+static ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
+	time_t exp;
+	char *hdr_authorization;
+	ngx_int_t ret;
+	ngx_str_t cookie_name, cookie_value;
+
+	// Try to find JWT in Authorization header
+	if (r->headers_in.authorization) {
+		hdr_authorization = from_ngx_str(r->pool, r->headers_in.authorization->value);
+
+		if (strstr(hdr_authorization, "Bearer")) {
+			session->jwt_json = ngx_pcalloc(r->pool, strlen(hdr_authorization) + 1);
+			strncpy(session->jwt_json, hdr_authorization + 7, strlen(hdr_authorization) - 7);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "JWT found in Authorization header: %s", session->jwt_json);
+		}
+	}
+
+	// If cookie name given in config, try to find the cookie and to extract JWT from it
+	if (strcmp(session->jwt_cookie, DEFAULT_JWT_COOKIE)) {
+		cookie_name.len = strlen(session->jwt_cookie);
+		cookie_name.data = (u_char *) session->jwt_cookie;
+
+		ret = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, &cookie_value);
+		if (ret == NGX_DECLINED) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Cookie %s for JWT not found", session->jwt_cookie);
+		}
+		else {
+			session->jwt_json = from_ngx_str(r->pool, cookie_value);
+		}
+	}
+
+	// FIXME: Find JWT in custom header?
+
+	// If neither cookie nor header was given or JWT not found, give up
+	if (! session->jwt_json) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "JWT not found, declining request");
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	// Validate and extract the token
+	if ((ret = jwt_decode(&session->jwt, session->jwt_json, (unsigned char*)session->jwt_key, strlen(session->jwt_key)))) {
+		if (ret == EINVAL) {
+			// Invalid signature
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s invalid signature", session->jwt_json);
+			return NGX_HTTP_UNAUTHORIZED;
+		}
+		else {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s system error %u while decoding", session->jwt_json, ret);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+	}
+
+	// Check expiration
+	exp = jwt_get_grant_int(session->jwt, "exp");
+	if (errno == ENOENT) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim EXP", session->jwt_json);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim EXP %l", session->jwt_json, exp);
+	if (exp < time(NULL)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s has expired: EXP is %l, now is %l", session->jwt_json, exp, time(NULL));
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	// Extract the value from payload that we'll use in authentication
+	session->jwt_value = jwt_get_grant(session->jwt, session->jwt_field);
+	if (session->jwt_value) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim %s %s", session->jwt_json, session->jwt_field, session->jwt_value);
+	}
+	else {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim %s", session->jwt_json, session->jwt_field);
+		return NGX_HTTP_UNAUTHORIZED;
 	}
 
 	return NGX_OK;

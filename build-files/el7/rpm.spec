@@ -19,12 +19,12 @@ Group: Applications
 License: Proprietary
 BuildArch: x86_64
 BuildRequires: libbson-devel, libcurl-devel
+BuildRequires: libjwt-devel
 #BuildRequires: mariadb-devel
-#BuildRequires: libjwt-devel
 #BuildRequires: ocilib-devel
 Requires: nginx, libcurl, libbson
+Requires: libjwt
 #Requires: mariadb-libs
-#Requires: libjwt
 #Requires: ocilib
 
 %description
