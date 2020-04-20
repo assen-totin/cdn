@@ -4,12 +4,42 @@
  * @author: Assen Totin assen.totin@gmail.com
  */
 
+#include "common.h"
 #include "ngx_http_cdn_module.h"
+#include "request_json.h"
+#include "request_mysql.h"
+#include "request_sql.h"
+#include "transport_mysql.h"
+#include "transport_unix.h"
+#include "utils.h"
+
+/**
+ * Module initialisation
+ */
+
+ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
+	int ret; 
+
+	if ((ret = mysql_library_init(0, NULL, NULL)) > 0) {
+		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init MySQL library: error %l.", ret);
+		return NGX_ERROR;
+	}
+
+	return NGX_OK;
+}
+
+/**
+ * Module termination
+ */
+
+void ngx_http_cdn_module_end (ngx_cycle_t *cycle) {
+	mysql_library_end();
+}
 
 /**
  * Create location configuration
  */
-static void* ngx_http_cdn_create_loc_conf(ngx_conf_t* cf) {
+void* ngx_http_cdn_create_loc_conf(ngx_conf_t* cf) {
 	ngx_http_cdn_loc_conf_t* loc_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_cdn_loc_conf_t));
 	if (loc_conf == NULL) {
 		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to allocate %l bytes for location config.", sizeof(ngx_http_cdn_loc_conf_t));
@@ -22,7 +52,7 @@ static void* ngx_http_cdn_create_loc_conf(ngx_conf_t* cf) {
 /**
  * Merge location configuration
  */
-static char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_child) {
+char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_child) {
 	ngx_http_cdn_loc_conf_t *parent = void_parent;
 	ngx_http_cdn_loc_conf_t *child = void_child;
 
@@ -45,7 +75,7 @@ static char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void
 /**
  * Init module and set handler
  */
-static char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
     ngx_http_core_loc_conf_t  *clcf;
 
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
@@ -57,7 +87,7 @@ static char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
 /**
  * Content handler
  */
-static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
+ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	ngx_int_t ret;
 	ngx_table_elt_t *h;
@@ -125,7 +155,6 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
 	session.request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
 	session.transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
-	session.unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
 	session.jwt_cookie = from_ngx_str(r->pool, cdn_loc_conf->jwt_cookie);
 	session.jwt_header = from_ngx_str(r->pool, cdn_loc_conf->jwt_header);
 	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
@@ -141,6 +170,9 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.cookies_count = 0;
 	session.hdr_if_none_match = NULL;
 	session.hdr_if_modified_since = -1;
+	session.unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
+	session.unix_request = NULL;
+	session.unix_response = NULL;
 
 	// Init file metadata
 	metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t));
@@ -149,7 +181,6 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		return NGX_ERROR;
 	}
 
-	metadata->file = NULL;
 	metadata->filename = NULL;
 	metadata->path = NULL;
 	metadata->content_type = NULL;
@@ -174,7 +205,7 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	if (str1 == NULL)
 		return NGX_HTTP_BAD_REQUEST;
 
-	metadata->file = ngx_pnalloc(r->pool, strlen(str1)+ 1 );
+	metadata->file = ngx_pnalloc(r->pool, strlen(str1) + 1);
 	if (metadata->file == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str1) + 1);
 		return NGX_ERROR;
@@ -247,28 +278,38 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 			return ret;
 	}
 
-
-
 	// Prepare request (as per the configured request type)
 	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
 		ret = request_json(&session, r);
-	//FIXME: Fill more methods here
+	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
+		ret = request_sql(&session, r);
 	if (ret)
 		return ret;
 
 	// Query for metadata
-	if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
-		ret = metadata_unix(&session, r);
-	//FIXME: Fill more methods here
-	bson_free(session.auth_req);
+	if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX)) {
+		ret = transport_unix(&session, r);
+		if (session.unix_request)
+			bson_free(session.unix_request);
+	}
+	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
+		ret = transport_mysql(&session, r);
+
 	if (ret)
 		return ret;
 
 	// Process response (as per the configured request type)
-	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
+	if (! strcmp(session.request_type, REQUEST_TYPE_JSON)) {
 		ret = response_json(&session, metadata, r);
-	//FIXME: Fill more methods here
-	free(session.auth_resp);
+		if (session.unix_response)
+			free(session.unix_response);
+	}
+	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL)) {
+		ret = response_json(&session, metadata, r);
+		if (session.mysql_result)
+			mysql_free_result(session.mysql_result);
+	}
+
 	if (ret)
 		return ret;
 
@@ -290,93 +331,6 @@ static ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	}
 
 	// NB: The mapped file will be unmapped by the cleanup handler once data is sent to client
-
-	return NGX_OK;
-}
-
-
-/**
- * Get file metadata
- */
-ngx_int_t metadata_unix(session_t *session, ngx_http_request_t *r) {
-	// Socket variables
-	struct sockaddr_un remote_un;
-	int unix_socket, addr_len_un, bytes_in, auth_resp_len, auth_resp_pos;
-	char msg_in[AUTH_BUFFER_CHUNK];
-
-	// Init the Unix socket
-	if ((unix_socket = socket(AF_UNIX, unix_socket_TYPE, 0)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to create socket: %s", strerror(errno));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	// Zero the structure, set socket type and path
-	memset(&remote_un, '\0', sizeof(struct sockaddr_un));
-	remote_un.sun_family = AF_UNIX;						
-	strcpy(remote_un.sun_path, session->unix_socket);
-	addr_len_un = strlen(remote_un.sun_path) + sizeof(remote_un.sun_family);
-
-	// Connect to the authorisation service
-	if (connect(unix_socket, (struct sockaddr *)&remote_un, addr_len_un) == -1) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to connect to Unix socket %s: %s", session->unix_socket, strerror(errno));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	// Send the message over the socket
-	if (send(unix_socket, session->auth_req, strlen(session->auth_req), 0) == -1) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to write to Unix socket %s: %s", session->unix_socket, strerror(errno));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	// Signal we are done
-	shutdown(unix_socket, SHUT_WR);
-
-	// Await reponse
-	auth_resp_pos = 0;
-	session->auth_resp = malloc(AUTH_BUFFER_CHUNK);
-	if (session->auth_resp == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_resp.", AUTH_BUFFER_CHUNK);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	auth_resp_len = AUTH_BUFFER_CHUNK;
-	memset(session->auth_resp, '\0', auth_resp_len);
-
-	memset(&msg_in[0], '\0', sizeof(msg_in));
-
-	while(1) {
-		// Blocking read till we get a response
-		if ((bytes_in = read(unix_socket, &msg_in[0], sizeof(msg_in)-1)) == -1) {
-			free(session->auth_resp);
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to read from Unix socket %s: %s", session->unix_socket, strerror(errno));
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
-		}
-		else {
-			printf("Received %u bytes over Unix socket\n", bytes_in);
-			if (bytes_in) {
-				// We read some more data, append it  (but expand buffer before that if necessary)
-				if (auth_resp_pos + bytes_in > auth_resp_len - 1) {
-					session->auth_resp = realloc(session->auth_resp, auth_resp_len + AUTH_BUFFER_CHUNK);
-					if (session->auth_resp == NULL) {
-						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to reallocate %l bytes for auth_resp.", auth_resp_len + AUTH_BUFFER_CHUNK);
-						return NGX_HTTP_INTERNAL_SERVER_ERROR;
-					}
-				}
-
-				memcpy(session->auth_resp + auth_resp_pos, &msg_in[0], bytes_in);
-				auth_resp_pos += bytes_in;
-			}
-			else {
-				// NULL_terminate the incoming buffer and exit the loop
-				memset(session->auth_resp + auth_resp_pos, '\0', 1);
-				break;
-			}
-		}
-	}
-
-	// Clean up, log, return
-	close(unix_socket);
-	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth server response: %s", session->auth_resp);
 
 	return NGX_OK;
 }
@@ -589,7 +543,7 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 /**
  * Cleanup (unmap mapped file after serving)
  */
-static void cleanup(cdn_file_t *metadata, ngx_http_request_t *r) {
+void cleanup(cdn_file_t *metadata, ngx_http_request_t *r) {
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
     
     if (metadata->data && (munmap(metadata->data, metadata->length) < 0))
@@ -599,7 +553,7 @@ static void cleanup(cdn_file_t *metadata, ngx_http_request_t *r) {
 /**
  * Cleanup (unmap mapped file after serving)
  */
-static void ngx_http_cdn_cleanup(void *a) {
+void ngx_http_cdn_cleanup(void *a) {
     ngx_http_request_t *r = (ngx_http_request_t *)a;
     cdn_file_t *metadata = ngx_http_get_module_ctx(r, ngx_http_cdn_module);
 	cleanup(metadata, r);
@@ -608,7 +562,7 @@ static void ngx_http_cdn_cleanup(void *a) {
 /**
  * Extract a header
  */
-static ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_str_t value) {
+ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_str_t value) {
 	cdn_kvp_t *headers;
 
 	// NB: Nginx pool does not have realloc, so we need to emulate it
@@ -640,103 +594,9 @@ static ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *nam
 }
 
 /**
- * Extract all cookies from headers
- */
-static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r) {
-	int i, j, cookie_index = -1;
-	char *s0, *s1, *s2;
-	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
-	char *cookie_delim = " ", *cookie_subdelim = "=";
-	ngx_table_elt_t **elts;
-	cdn_kvp_t *cookies;
-
-	if (! r->headers_in.cookies.nelts) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No cookies found");
-		return NGX_OK;
-	}
-
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
-	elts = r->headers_in.cookies.elts;
-	session->cookies_count = r->headers_in.cookies.nelts;
-
-	// Allocate initial memory we have at least r->headers_in.cookies.nelts, but may be more)
-	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * r->headers_in.cookies.nelts);
-	if (session->cookies == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * r->headers_in.cookies.nelts, r->headers_in.cookies.nelts);
-		return NGX_ERROR;
-	}
-
-	for (i=0; i<r->headers_in.cookies.nelts; i++) {
-		s0 = from_ngx_str(r->pool, elts[i]->value);
-		for (str1 = s0; ; str1 = NULL) {
-			token = strtok_r(str1, cookie_delim, &saveptr1);
-			if (token == NULL)
-				break;
-
-			s1 = strchr(token, ';');
-			if (s1 == token + strlen(token) - 1) {
-				s2 = ngx_pcalloc(r->pool, strlen(token));
-				if (s2 == NULL) {
-					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie token.", strlen(token));
-					return NGX_ERROR;
-				}
-				strncpy(s2, token, strlen(token) - 1);
-			}
-			else
-				s2 = token;
-
-			// Check to see if we have space to accommodate the cookie
-			cookie_index ++;
-			if (cookie_index == session->cookies_count) {
-				cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * (session->cookies_count + 1));
-				if (session->cookies == NULL) {
-					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * (session->cookies_count + 1), session->cookies_count + 1);
-					return NGX_ERROR;
-				}
-				memcpy(cookies, session->cookies, sizeof(cdn_kvp_t) * session->cookies_count);
-				session->cookies = cookies;
-			}
-			session->cookies_count ++;
-
-			// Extract the cookie
-			for (j=0, str2 = s2; ; j++, str2 = NULL) {
-				subtoken = strtok_r(str2, cookie_subdelim, &saveptr2);
-				if (subtoken == NULL)
-					break;
-
-				if (j == 0) {
-					session->cookies[cookie_index].name = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
-					if (session->cookies[cookie_index].name == NULL) {
-						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie name.", strlen(subtoken) + 1);
-						return NGX_ERROR;
-					}
-					strcpy(session->cookies[cookie_index].name, subtoken);
-				}
-				else if (j == 1) {
-					session->cookies[cookie_index].value = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
-					if (session->cookies[cookie_index].value == NULL) {
-						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie value.", strlen(subtoken) + 1);
-						return NGX_ERROR;
-					}
-					strcpy(session->cookies[cookie_index].value, subtoken);
-				}
-				else
-					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Malformed cookie %s", s0);
-			}
-
-			if (j == 2) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", session->cookies[cookie_index].name, session->cookies[cookie_index].value);
-			}
-		}
-	}
-
-	return NGX_OK;
-}
-
-/**
  * Extract JWT
  */
-static ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
+ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
 	time_t exp;
 	char *hdr_authorization;
 	bool match = false;
@@ -837,181 +697,9 @@ static ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
 }
 
 /**
- * Prepare JSON request
- */
-static ngx_int_t request_json(session_t *session, ngx_http_request_t *r) {
-	int i;
-	char s[11];
-	bson_t b, bc, bh, bel;
-	ngx_int_t ret;
-
-	// Init a BSON
-	bson_init (&b);
-
-	// Add the URI
-	BSON_APPEND_UTF8 (&b, "uri", session->uri);
-
-	// Add the authorisation key as extracted from JWT
-	if (session->jwt_value)
-		BSON_APPEND_UTF8 (&b, "jwt_value", session->jwt_value);
-
-	// Headers: make an array of objects with name and value
-	if (! strcmp(session->json_extended, "yes")) {
-		BSON_APPEND_ARRAY_BEGIN(&b, "headers", &bh);
-		for (i=0; i < session->headers_count; i++) {
-			sprintf(&s[0],"%d", i);
-			BSON_APPEND_DOCUMENT_BEGIN(&bh, &s[0], &bel);
-			BSON_APPEND_UTF8 (&bel, "name", session->headers[i].name);
-			BSON_APPEND_UTF8 (&bel, "value", session->headers[i].value);
-			bson_append_document_end (&bh, &bel);
-		}
-		bson_append_array_end (&b, &bh);
-
-		// Extract all cookies
-		ret = get_cookies(session, r);
-		if (ret)
-			return ret;
-
-		// Cookies: make an array of objects with name and value
-		BSON_APPEND_ARRAY_BEGIN(&b, "cookies", &bc);
-		for (i=0; i < session->cookies_count; i++) {
-			sprintf(&s[0],"%d", i);
-			BSON_APPEND_DOCUMENT_BEGIN(&bc, &s[0], &bel);
-			BSON_APPEND_UTF8 (&bel, "name", session->cookies[i].name);
-			BSON_APPEND_UTF8 (&bel, "value", session->cookies[i].value);
-			bson_append_document_end (&bc, &bel);
-		}
-		bson_append_array_end (&b, &bc);
-	}
-
-	session->auth_req = bson_as_json (&b, NULL);
-
-	bson_destroy(&b);
-
-	return NGX_OK;
-}
-
-/**
- * Process JSON response
- */
-ngx_int_t response_json(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
-	bson_t doc;
-	bson_error_t error;
-	bson_iter_t iter;
-	const char *bson_key;
-	const char *bson_val_char;
-
-	// Walk around the JSON which we received from the authentication servier, session->auth_resp
-	if (! bson_init_from_json(&doc, session->auth_resp, strlen(session->auth_resp), &error)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->auth_resp);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	if (! bson_iter_init (&iter, &doc)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to initialise BSON iterator");
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	while(bson_iter_next(&iter)) {
-		bson_key = bson_iter_key (&iter);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
-
-		if ((! strcmp(bson_key, "file")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->file = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->file == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata file.", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->file, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata file: %s", metadata->file);
-		}
-
-		else if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->filename = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->filename == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->filename, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata filename: %s", metadata->filename);
-		}
-
-		else if ((! strcmp(bson_key, "error")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			if (strlen(bson_val_char)) {
-				metadata->error = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-				if (metadata->error == NULL) {
-					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata error.", strlen(bson_val_char) + 1);
-					return NGX_HTTP_INTERNAL_SERVER_ERROR;
-				}
-				strcpy(metadata->error, bson_val_char);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata error: %s", metadata->error);
-			}
-		}
-
-		else if ((! strcmp(bson_key, "content_type")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->content_type = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->content_type == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->content_type, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_type: %s", metadata->content_type);
-		}
-
-		else if ((! strcmp(bson_key, "content_disposition")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->content_disposition = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->content_disposition == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->content_disposition, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata content_disposition: %s", metadata->content_disposition);
-		}
-
-		else if ((! strcmp(bson_key, "etag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			bson_val_char = bson_iter_utf8 (&iter, NULL);
-			metadata->etag = ngx_pcalloc(r->pool, strlen(bson_val_char) + 1);
-			if (metadata->etag == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(bson_val_char) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-			strcpy(metadata->etag, bson_val_char);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata etag: %s", metadata->etag);
-		}
-
-		else if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
-			metadata->status = bson_iter_int32 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
-		}
-
-		else if (! strcmp(bson_key, "length")) {
-			if (bson_iter_type(&iter) == BSON_TYPE_INT32)
-				metadata->length = bson_iter_int32 (&iter);
-			else if (bson_iter_type(&iter) == BSON_TYPE_INT64)
-				metadata->length = bson_iter_int64 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
-		}
-
-		else if ((! strcmp(bson_key, "upload_date")) && (bson_iter_type(&iter) == BSON_TYPE_DATE_TIME)) {
-			metadata->upload_date = bson_iter_date_time (&iter) / 1000;
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
-		}
-	}
-
-	bson_destroy(&doc);
-
-	return NGX_OK;
-}
-
-/**
  * Check metdata for errors
  */
-static ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	// Metadata: check for error
 	if ((metadata->status > 0) && (metadata->status != NGX_HTTP_OK)) {
 		if (metadata->error)
@@ -1093,7 +781,7 @@ static ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_ht
 /**
  * Helper: get the full path from a file name
  */
-static ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	int i, len, pos=0;
 
 	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
@@ -1127,7 +815,7 @@ static ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_req
 /**
  * Helper: get stat of a file
  */
-static ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r) {
 	struct stat statbuf;
 	int fd;
 
@@ -1151,21 +839,5 @@ static ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r) {
 	}
 
 	return NGX_OK;
-}
-
-/**
- * Helper: convert Nginx string to normal
- */
-static char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
-		if (! ngx_str.len)
-			return NULL;
-
-		char *ret = ngx_pcalloc(pool, ngx_str.len + 1);
-		if (ret == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
-			return NULL;
-		}
-		memcpy(ret, ngx_str.data, ngx_str.len);
-		return ret;
 }
 

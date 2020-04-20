@@ -103,7 +103,6 @@ The field "jwt_value" from JWT token is included only if configuration options "
 
 ```
 {
-	"file": string, mandatory, the CDN file name (path is not needed as it is inclided in the filename)
 	"status": int, optional, http code; use 200, 304, 404, 500; if missing, file will be served if found (unless 304 can be returned), else 404
 	"filename": string, optional, the file name to give the user; the value of "file" will be used if missing
 	"content_type": string, optional, "application/octet-stream" will be used if missing
@@ -131,7 +130,7 @@ This transport is usually used whet request type is "json" (JSON exchange).
 
 The Unix socket must be of type "stream". The module will half-close the connection once it has written its JSON and will then expect the response JSON, followed by full connection close by the authorisation body. 
 
-## SQL
+## MySQL
 
 Set the actual SQL connection engine to use in configuration option "cnd_sql_dsn" (default is "mysql").
 
