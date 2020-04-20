@@ -9,11 +9,11 @@ Each file request must be authorised before served. Authorisation is handled by 
 The business logic for authorisation consists of two main elements:
 
 - Request type: specifies the format of the request that will be sent to the external authorisation body.
-- Transport type: specifies how ot connect to the external authorisation body. 
+- Transport type: specifies how to connect to the external authorisation body. 
 
 # Initialise
 
-To create a blank filesystem storage, use tools/mkcdn.sh.
+To create a blank filesystem storage, use `tools/mkcdn.sh`.
 
 # Nginx configuration directives:
 
@@ -38,21 +38,21 @@ location /abc/xyz
 
 This is the preferred and more common scenario. In this case a JWT is extracted to find the value for an authorisation field, which is then passed to the authorisation backend. 
 
-To use this scenario, set the JWT signature verification key in configuration option "cdn_jwt_key".
+To use this scenario, set the JWT signature verification key in configuration option `cdn_jwt_key`.
 
-Specify the JWT paylod field to use for authorisation in configuration option "cdn_jwt_field".
+Specify the JWT paylod field to use for authorisation in configuration option `cdn_jwt_field`.
 
 JWT can be supplied in:
 
-- Authorization header, as Bearer (default)
-- In custom header: set its name in configuration otion "cdn_jwt_header"
-- In a cookie: set its name in configuration option "cdn_jwt_cookie"
+- Authorization header, as `Bearer <token>` (default)
+- In custom header: set its name in configuration option `cdn_jwt_header`
+- In a cookie: set its name in configuration option `cdn_jwt_cookie`
 
 ## Offloaded authorisation
 
-In this case selected headers and all cookies are sent to the authorisation body. To have them sent, set the configuration option "cdn_json_extended" to "yes". 
+In this case selected headers and all cookies are sent to the authorisation body. To have them sent, set the configuration option `cdn_json_extended` to `yes`. 
 
-The three headers that are included if available are Authorization, If-None-Match and If-Modified-Since. Extra header may be specified in configuration option "FIXME" (coming soon). 
+The three headers that are included if available are `Authorization`, `If-None-Match` and `If-Modified-Since`. Extra header may be specified in configuration option `FIXME` (coming soon). 
 
 This case typically uses JSON request type and Unix socket transport.
 
@@ -60,13 +60,13 @@ This case typically uses JSON request type and Unix socket transport.
 
 ## JSON
 
-This request type is usually used with transport type set to "unix" (Unix socket).
+This request type is usually used with transport type set to `unix` (Unix socket).
 
 ### Request format
 
-Fields "headers" and "cookies" are only included if configuration option "cdn_json_extended" is set to "yes". 
+Fields `headers` and `cookies` are only included if configuration option `cdn_json_extended` is set to `yes`. 
 
-The field "jwt_value" from JWT token is included only if configuration options "cdn_jwt_key" and "cdn_jwt_field" are set.
+The field `jwt_value` from JWT token is included only if configuration options `cdn_jwt_key` and `cdn_jwt_field` are set.
 
 ```
 {
@@ -106,7 +106,7 @@ The field "jwt_value" from JWT token is included only if configuration options "
 	"status": int, optional, http code; use 200, 304, 404, 500; if missing, file will be served if found (unless 304 can be returned), else 404
 	"filename": string, optional, the file name to give the user; the value of "file" will be used if missing
 	"content_type": string, optional, "application/octet-stream" will be used if missing
-	"content_dispostion": string, optional, if set to "attachment" or missing, "attachment wil be used"; any other value will unset Content-Disposition
+	"content_dispostion": string, optional, if set to "attachment", "attachment" will be used; else file will be served inline (default)
 	"etag": string, optional, "00000000000000000000000000000000" will be used if missing
 	"length": int, optional, stat() wil be used if missing
 	"upload_date": int, optional, Unix timestamp of mtime; stat() wil be used if missing
@@ -116,27 +116,25 @@ The field "jwt_value" from JWT token is included only if configuration options "
 
 ## SQL
 
-Set the SQL query to run in the configuration option "cnd_sql_query". Use "%s" as placeholder for the value, extracted from the JWT payload.
+Set the SQL query to run in the configuration option `cnd_sql_query`. Use `%s` as placeholder for the value, extracted from the JWT payload.
 
 The SQL query should return a single row with column names matching the keys in the JSON response above.
 
-Hint: for complex queries, create a stored procedure and use stanza like "CALL my_procedure(%s)".
+Hint: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s)`.
 
 # Transport types
 
 ## Unix socket
 
-Set the path to the Unix socket in configuration option "cdn_unix_socket". Note that socket must be writable by the Nginx user. 
+Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writable by the Nginx user. 
 
-This transport is usually used whet request type is "json" (JSON exchange).
+This transport is usually used whet request type is `json` (JSON exchange).
 
-The Unix socket must be of type "stream". The module will half-close the connection once it has written its JSON and will then expect the response JSON, followed by full connection close by the authorisation body. 
+The Unix socket must be of type `stream`. The module will half-close the connection once it has written its JSON and will then expect the response JSON, followed by full connection close by the authorisation body. 
 
 ## MySQL
 
-Set the actual SQL connection engine to use in configuration option "cnd_sql_dsn" (default is "mysql").
-
-Set the DSN in the configuration option "cnd_sql_dsn" using the following syntax: "host:port:username:password:database". If you host is localhost, you may put the full path to the Unix socket instead of port number.
+Set the DSN in the configuration option `cnd_sql_dsn` using the following syntax: `host:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number.
 
 # Dev environment setup
 
@@ -191,10 +189,10 @@ Here is the workflow to upload a file to the CDN:
 
 Write them to the metadata storage which will be used by CDN for authorisation (e.g., to the MySQL database).
 
-- Original file name. Will be used when serving the file with Attachment disposition. 
-- Upload timestamp. Will be compared to If-None-Match, If-Modified-Since.
-- Etag: will be used for Etag.
-- MIME type. Will be used as Content-Type.
+- Original file name. Will be used when serving the file with `Attachment` disposition. 
+- Upload timestamp. Will be compared to `If-Modified-Since` request header.
+- Etag: will be used for `Etag` response header and compared to `If-None-Match` request header.
+- MIME type. Will be used as `Content-Type`.
 - Content disposition – serve inline or as attachment.
 - Size: file size in bytes.
 
