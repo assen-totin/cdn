@@ -8,11 +8,10 @@
 #define _GNU_SOURCE
 
 // Includes
+#include "modules.h"
 #include <curl/curl.h>
 #include <errno.h>
 #include <features.h>
-#include <jwt.h>
-#include <mysql.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -24,6 +23,16 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#ifdef CDN_AUTH_JWT
+#include <jwt.h>
+#endif
+#ifdef CDN_TRANSPORT_MYSQL
+#include <mysql.h>
+#endif
+#ifdef CDN_TRANSPORT_ORACLE
+#include <ocilib.h>
+#endif
 
 // RHEL 7 or newer
 #if __GLIBC_MINOR__ == 17
@@ -78,9 +87,11 @@
 
 #define REQUEST_TYPE_JSON "json"
 #define REQUEST_TYPE_MYSQL "mysql"
+#define REQUEST_TYPE_ORACLE "oracle"
 
-#define TRANSPORT_TYPE_UNIX "unix" 
-#define TRANSPORT_TYPE_MYSQL "mysql" 
+#define TRANSPORT_TYPE_UNIX "unix"
+#define TRANSPORT_TYPE_MYSQL "mysql"
+#define TRANSPORT_TYPE_ORACLE "oracle"
 
 // Structures
 typedef struct {
@@ -137,7 +148,6 @@ typedef struct {
 	char *jwt_header;
 	char *jwt_key;
 	char *jwt_json;
-	jwt_t *jwt;
 	char *jwt_field;
 	const char *jwt_value;
 	char *sql_dsn;
@@ -147,7 +157,17 @@ typedef struct {
 	char *unix_socket;
 	char *unix_request;
 	char *unix_response;
+#ifdef CDN_AUTH_JWT
+	jwt_t *jwt;
+#endif
+#ifdef CDN_TRANSPORT_MYSQL
 	MYSQL_RES *mysql_result;
+#endif
+#ifdef CDN_TRANSPORT_ORACLE
+    OCI_Connection *oracle_connection;
+    OCI_Statement *oracle_statement;
+	OCI_Resultset *oracle_result;
+#endif
 } session_t;
 
 typedef struct {

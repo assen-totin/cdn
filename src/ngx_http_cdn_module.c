@@ -8,8 +8,10 @@
 #include "ngx_http_cdn_module.h"
 #include "request_json.h"
 #include "request_mysql.h"
+#include "request_oracle.h"
 #include "request_sql.h"
 #include "transport_mysql.h"
+#include "transport_oracle.h"
 #include "transport_unix.h"
 #include "utils.h"
 
@@ -20,10 +22,19 @@
 ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	int ret; 
 
+#ifdef CDN_TRANSPORT_MYSQL
 	if ((ret = mysql_library_init(0, NULL, NULL)) > 0) {
 		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init MySQL library: error %l.", ret);
 		return NGX_ERROR;
 	}
+#endif
+#ifdef CDN_TRANSPORT_ORACLE
+	// Init Oracle
+	if (! OCI_Initialize(NULL, NULL, OCI_ENV_DEFAULT | OCI_ENV_CONTEXT | OCI_ENV_THREADED)) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init Oracle OCI library: %s", OCI_ErrorGetString(OCI_GetLastError()));
+		return NGX_ERROR;
+	}
+#endif
 
 	return NGX_OK;
 }
@@ -33,7 +44,12 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
  */
 
 void ngx_http_cdn_module_end (ngx_cycle_t *cycle) {
+#ifdef CDN_TRANSPORT_MYSQL
 	mysql_library_end();
+#endif
+#ifdef CDN_TRANSPORT_ORACLE
+	OCI_Cleanup();
+#endif
 }
 
 /**
@@ -283,6 +299,9 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		ret = request_json(&session, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
 		ret = request_sql(&session, r);
+	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))
+		ret = request_sql(&session, r);
+
 	if (ret)
 		return ret;
 
@@ -293,6 +312,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 			bson_free(session.unix_request);
 	}
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
+		ret = transport_mysql(&session, r);
+	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_mysql(&session, r);
 
 	if (ret)
@@ -305,9 +326,16 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 			free(session.unix_response);
 	}
 	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL)) {
-		ret = response_json(&session, metadata, r);
+		ret = response_mysql(&session, metadata, r);
 		if (session.mysql_result)
 			mysql_free_result(session.mysql_result);
+	}
+	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE)) {
+		ret = response_oracle(&session, metadata, r);
+		if (session.oracle_statement)
+			OCI_StatementFree(session.oracle_statement);
+		if (session.oracle_connection)
+			OCI_API OCI_ConnectionFree(session.oracle_connection);
 	}
 
 	if (ret)
@@ -597,6 +625,7 @@ ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_
  * Extract JWT
  */
 ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
+#ifdef CDN_AUTH_JWT
 	time_t exp;
 	char *hdr_authorization;
 	bool match = false;
@@ -692,6 +721,7 @@ ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim %s", session->jwt_json, session->jwt_field);
 		return NGX_HTTP_UNAUTHORIZED;
 	}
+#endif
 
 	return NGX_OK;
 }

@@ -2,25 +2,6 @@
 #include "utils.h"
 
 /**
- * Helper: Set metadata field from JSON value
- */
-static inline ngx_int_t set_metadata_json (ngx_http_request_t *r, char **field, char *field_name, const char *value) {
-	char *f;
-
-	f = ngx_pcalloc(r->pool, strlen(value) + 1);
-	if (f == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata %s.", field_name, strlen(value) + 1);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-	strcpy(f, value);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata %s: %s", field_name, f);
-
-	*field = f;
-
-	return NGX_OK;
-}
-
-/**
  * Extract all cookies from headers
  */
 static ngx_int_t get_cookies(session_t *session, ngx_http_request_t *r) {
@@ -195,27 +176,27 @@ ngx_int_t response_json(session_t *session, cdn_file_t *metadata, ngx_http_reque
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
 
 		if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			if ((ret = set_metadata_json(r, &metadata->filename, "filename", bson_iter_utf8 (&iter, NULL))) > 0)
+			if ((ret = set_metadata_field(r, &metadata->filename, "filename", bson_iter_utf8 (&iter, NULL))) > 0)
 				return ret;
 		}
 
 		else if ((! strcmp(bson_key, "error")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			if ((ret = set_metadata_json(r, &metadata->error, "error", bson_iter_utf8 (&iter, NULL))) > 0)
+			if ((ret = set_metadata_field(r, &metadata->error, "error", bson_iter_utf8 (&iter, NULL))) > 0)
 				return ret;
 		}
 
 		else if ((! strcmp(bson_key, "content_type")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			if ((ret = set_metadata_json(r, &metadata->content_type, "content_type", bson_iter_utf8 (&iter, NULL))) > 0)
+			if ((ret = set_metadata_field(r, &metadata->content_type, "content_type", bson_iter_utf8 (&iter, NULL))) > 0)
 				return ret;
 		}
 
 		else if ((! strcmp(bson_key, "content_disposition")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			if ((ret = set_metadata_json(r, &metadata->content_disposition, "content_disposition", bson_iter_utf8 (&iter, NULL))) > 0)
+			if ((ret = set_metadata_field(r, &metadata->content_disposition, "content_disposition", bson_iter_utf8 (&iter, NULL))) > 0)
 				return ret;
 		}
 
 		else if ((! strcmp(bson_key, "etag")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
-			if ((ret = set_metadata_json(r, &metadata->etag, "etag", bson_iter_utf8 (&iter, NULL))) > 0)
+			if ((ret = set_metadata_field(r, &metadata->etag, "etag", bson_iter_utf8 (&iter, NULL))) > 0)
 				return ret;
 		}
 

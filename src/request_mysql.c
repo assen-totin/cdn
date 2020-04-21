@@ -1,29 +1,11 @@
 #include "common.h"
-
-/**
- * Helper: Set metadata field from MySQL value
- */
-static inline ngx_int_t set_metadata_mysql (ngx_http_request_t *r, char **field, char *field_name, char *value) {
-	char *f;
-
-	f = ngx_pcalloc(r->pool, strlen(value) + 1);
-	if (f == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata %s.", field_name, strlen(value) + 1);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	strcpy(f, value);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata %s: %s", field_name, f);
-
-	*field = f;
-
-	return NGX_OK;
-}
+#include "utils.h"
 
 /**
  * Process MySQL response
  */
 ngx_int_t response_mysql(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+#ifdef CDN_TRANSPORT_MYSQL
 	int i, fields_num;
 	MYSQL_FIELD *fields;
 	MYSQL_ROW mysql_row;
@@ -42,27 +24,27 @@ ngx_int_t response_mysql(session_t *session, cdn_file_t *metadata, ngx_http_requ
 			continue;
 
 		if (! strcmp(fields[i].name, "filename")) {
-			if ((ret = set_metadata_mysql(r, &metadata->filename, "filename", mysql_row[i])) > 0)
+			if ((ret = set_metadata_field(r, &metadata->filename, "filename", mysql_row[i])) > 0)
 				return ret;
 		}
 
 		else if (! strcmp(fields[i].name, "error"))  {
-			if ((ret = set_metadata_mysql(r, &metadata->error, "error", mysql_row[i])) > 0)
+			if ((ret = set_metadata_field(r, &metadata->error, "error", mysql_row[i])) > 0)
 				return ret;
 		}
 
 		else if (! strcmp(fields[i].name, "content_type"))  {
-			if ((ret = set_metadata_mysql(r, &metadata->content_type, "content_type", mysql_row[i])) > 0)
+			if ((ret = set_metadata_field(r, &metadata->content_type, "content_type", mysql_row[i])) > 0)
 				return ret;
 		}
 
 		else if (! strcmp(fields[i].name, "content_disposition"))  {
-			if ((ret = set_metadata_mysql(r, &metadata->content_disposition, "content_disposition", mysql_row[i])) > 0)
+			if ((ret = set_metadata_field(r, &metadata->content_disposition, "content_disposition", mysql_row[i])) > 0)
 				return ret;
 		}
 
 		else if (! strcmp(fields[i].name, "etag"))  {
-			if ((ret = set_metadata_mysql(r, &metadata->etag, "etag", mysql_row[i])) > 0)
+			if ((ret = set_metadata_field(r, &metadata->etag, "etag", mysql_row[i])) > 0)
 				return ret;
 		}
 
@@ -81,6 +63,7 @@ ngx_int_t response_mysql(session_t *session, cdn_file_t *metadata, ngx_http_requ
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
 		}
 	}
+#endif
 
 	return NGX_OK;
 }

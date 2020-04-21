@@ -15,7 +15,7 @@ The business logic for authorisation consists of two main elements:
 
 To create a blank filesystem storage, use `tools/mkcdn.sh`.
 
-# Nginx configuration directives:
+# Nginx configuration
 
 ```
 location /abc/xyz
@@ -31,8 +31,11 @@ location /abc/xyz
 	cdn_json_extended no;					// Send extended JSON in request (with headers and cookies)
 	cdn_header_auth X-Custom-JWT			// Custom headfer to search for JWT
 ```
+# Build configuration
 
-# Usage scenarios and configuration
+To enable/disable MySQL and Oracle support, edit src/modules.h (comment/uncomment the respective line). Also there you can toggle JWT support in the same way.
+
+# Usage scenarios
 
 ## Authorisation by JWT
 
@@ -47,6 +50,8 @@ JWT can be supplied in:
 - Authorization header, as `Bearer <token>` (default)
 - In custom header: set its name in configuration option `cdn_jwt_header`
 - In a cookie: set its name in configuration option `cdn_jwt_cookie`
+
+For JWT you'll need the JWT decoding library: https://github.com/benmcollins/libjwt
 
 ## Offloaded authorisation
 
@@ -136,6 +141,14 @@ The Unix socket must be of type `stream`. The module will half-close the connect
 
 Set the DSN in the configuration option `cnd_sql_dsn` using the following syntax: `host:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number.
 
+## Oracle
+
+Set the DSN in the configuration option `cnd_sql_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service` fields `port` and `database` are ignored.
+
+You'll need to manually install Oracle Instant Client library; make sure you have a version which knows how to talk to your Oracle server.
+
+You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the ORACLE_HOME variable.
+
 # Dev environment setup
 
 NB: This is for RHEL-8 and derivatives. RHEL-7 has some differences in packages and in the configure command. 
@@ -145,9 +158,15 @@ NB: This is for RHEL-8 and derivatives. RHEL-7 has some differences in packages 
 
 # Install build deps
 yum groupinstall -y 'Development Tools'
-yum install -y nginx libbson-devel libcurl-devel pcre-devel libxml2-devel libxml-devel libxslt-devel gd-devel mariadb-connector-c-devel perl-ExtUtils-Embed
+yum install -y nginx libbson-devel libcurl-devel pcre-devel libxml2-devel libxml-devel libxslt-devel gd-devel gperftools-devel mariadb-connector-c-devel perl-ExtUtils-Embed
 
 # Install libjwt from https://github.com/benmcollins/libjwt
+
+# To have Oracle support, install Oracle Instant Client and the OCI library from wget https://github.com/vrogier/ocilib/releases/download/v4.6.3/ocilib-4.6.3-gnu.tar.gz
+# OCIlib needs toknow where to find Oracle Instant Client, so export ORACLE_HOME for it, e.g.:
+# export ORACLE_HOME=/ora01/app/oracle/product/11.2.0/dbhome_1
+
+# To enable/disable MySQL and Oracle support, edit src/modules.h. Also there you can toggle JWT support.
 
 # Copy our module config
 cp support-files/nginx/modules/* /usr/share/nginx/modules

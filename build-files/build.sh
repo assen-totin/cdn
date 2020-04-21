@@ -48,10 +48,21 @@ git_checkout
 pushd $CHECKOUT_DIR
 
 # Extra libraries needed by this modules
-EXTRA_LIBS="-lbson-1.0 -lcurl -ljwt -lmysqlclient"
-#EXTRA_LIBS="$EXTRA_LIBS -locilib"
-
-EXTRA_INCLUDES="-I /usr/include/libbson-1.0 -I /usr/include/mysql"
+EXTRA_LIBS="-lbson-1.0 -lcurl"
+EXTRA_INCLUDES="-I /usr/include/libbson-1.0"
+if [ x$ARG_CND_ENABLE_JWT != 'x' ] ; then
+	EXTRA_LIBS="$EXTRA_LIBS -ljwt"
+	sed -i 's|^.*CDN_AUTH_JWT.*$|#define CDN_AUTH_JWT|' src/modules.h
+fi
+if [ x$ARG_CND_ENABLE_MYSQL != 'x' ] ; then
+	EXTRA_LIBS="$EXTRA_LIBS -lmysqlclient"
+	EXTRA_INCLUDES="$EXTRA_INCLUDES -I /usr/include/mysql"
+	sed -i 's|^.*CDN_TRANSPORT_MYSQL.*$|#define CDN_TRANSPORT_MYSQL|' src/modules.h
+fi
+if [ x$ARG_CND_ENABLE_ORACLE != 'x' ] ; then
+	EXTRA_LIBS="$EXTRA_LIBS -locilib"
+	sed -i 's|^.*CDN_TRANSPORT_ORACLE.*$|#define CDN_TRANSPORT_ORACLE|' src/modules.h
+fi
 
 # Download the Nginx source
 wget http://nginx.org/download/nginx-$ARG_NGINX_VERSION.tar.gz
@@ -62,7 +73,7 @@ tar xf nginx-$ARG_NGINX_VERSION.tar
 mkdir lib
 cd nginx-$ARG_NGINX_VERSION
 
-if [ xEL_VERSION == 'x8' ] ; then
+if [ xEL_VERSION == 'x7' ] ; then
 	CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/run/nginx.pid --lock-path=/run/lock/subsys/nginx --user=nginx --group=nginx --with-file-aio --with-ipv6 --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-stream_ssl_preread_module --with-http_addition_module --with-http_xslt_module=dynamic --with-http_image_filter_module=dynamic --with-http_sub_module --with-http_dav_module --with-http_flv_module --with-http_mp4_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_random_index_module --with-http_secure_link_module --with-http_degradation_module --with-http_slice_module --with-http_stub_status_module --with-http_perl_module=dynamic --with-http_auth_request_module --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-google_perftools_module --with-debug --with-cc-opt="-O2 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector-strong --param=ssp-buffer-size=4 -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -m64 -mtune=generic $EXTRA_INCLUDES" --with-ld-opt="-Wl,-z,relro -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E $EXTRA_LIBS"
 fi
 
@@ -87,6 +98,26 @@ cp -r $CHECKOUT_DIR/tools $RPM_HOME/SOURCES
 
 # Copy the appropriate spec file for the build
 copy_spec_file
+
+# Update RPM dependencies
+if [ x$ARG_CND_ENABLE_JWT != 'x' ] ; then
+	sed -i 's|^.*libjwt-devel.*$|BuildRequires: libjwt-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	sed -i 's|^.*libjwt$|Requires: libjwt|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+fi
+if [ x$ARG_CND_ENABLE_MYSQL != 'x' ] ; then
+	if [ x$EL_VERSION == 'x7' ] ; then
+		sed -i 's|^.*mariadb-devel.*$|BuildRequires: mariadb-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+		sed -i 's|^.*mariadb-libs.*$|Requires: mariadb-libs|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	fi
+	if [ x$EL_VERSION == 'x8' ] ; then
+		sed -i 's|^.*BuildRequires: mariadb-connector-c-devel.*$|BuildRequires: mariadb-connector-c-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+		sed -i 's|^.*Requires: mariadb-connector-c-devel.*$|Requires: mariadb-connector-c-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	fi
+fi
+if [ x$ARG_CND_ENABLE_ORACLE != 'x' ] ; then
+	sed -i 's|^.*ocilib-devel.*$|BuildRequires: ocilib-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	sed -i 's|^.*ocilib$|Requires: ocilib|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+fi
 
 # Build the RPM and SRPM
 build_rpms
