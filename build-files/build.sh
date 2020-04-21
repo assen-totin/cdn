@@ -24,6 +24,10 @@ CMDL_JOB_NAME+=("--cdn-enable-oracle")
 CMDL_JOB_FLAG+=(0)
 CMDL_JOB_HELP+=("Link against Oracle wrapper liboci.so")
 
+CMDL_JOB_NAME+=("--cdn-oracle-home")
+CMDL_JOB_FLAG+=(1)
+CMDL_JOB_HELP+=("ORACLE_HOME directory")
+
 # Package-specific constants
 RPM_PACKAGE="curaden-medicloud-cdn-nginx"
 
@@ -55,11 +59,13 @@ if [ x$ARG_CND_ENABLE_JWT != 'x' ] ; then
 	sed -i 's|^.*CDN_AUTH_JWT.*$|#define CDN_AUTH_JWT|' src/modules.h
 fi
 if [ x$ARG_CND_ENABLE_MYSQL != 'x' ] ; then
+	[ x$EL_VERSION == 'x7' ] && EXTRA_LIBS="$EXTRA_LIBS -L/usr/lib64/mysql"
 	EXTRA_LIBS="$EXTRA_LIBS -lmysqlclient"
 	EXTRA_INCLUDES="$EXTRA_INCLUDES -I /usr/include/mysql"
 	sed -i 's|^.*CDN_TRANSPORT_MYSQL.*$|#define CDN_TRANSPORT_MYSQL|' src/modules.h
 fi
 if [ x$ARG_CND_ENABLE_ORACLE != 'x' ] ; then
+	export LD_LIBRARY_PATH=$ARG_CDN_ORACLE_HOME/lib
 	EXTRA_LIBS="$EXTRA_LIBS -locilib"
 	sed -i 's|^.*CDN_TRANSPORT_ORACLE.*$|#define CDN_TRANSPORT_ORACLE|' src/modules.h
 fi

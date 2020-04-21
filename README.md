@@ -163,8 +163,10 @@ yum install -y nginx libbson-devel libcurl-devel pcre-devel libxml2-devel libxml
 # Install libjwt from https://github.com/benmcollins/libjwt
 
 # To have Oracle support, install Oracle Instant Client and the OCI library from wget https://github.com/vrogier/ocilib/releases/download/v4.6.3/ocilib-4.6.3-gnu.tar.gz
-# OCIlib needs toknow where to find Oracle Instant Client, so export ORACLE_HOME for it, e.g.:
+# OCIlib needs to know where to find Oracle Instant Client at runtime, so export ORACLE_HOME for it, e.g.:
 # export ORACLE_HOME=/ora01/app/oracle/product/11.2.0/dbhome_1
+# To link against OCIlib, Oracle Instant Client's library directry must be in the LD path, so export LD_LIBRARY_PATH for it, e.g.:
+# export LD_LIBRARY_PATH=$ORACLE_HOME/lib
 
 # To enable/disable MySQL and Oracle support, edit src/modules.h. Also there you can toggle JWT support.
 
