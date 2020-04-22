@@ -8,6 +8,7 @@ Each file request must be authorised before served. Authorisation is handled by 
 
 The business logic for authorisation consists of two main elements:
 
+- Authorisation method
 - Request type: specifies the format of the request that will be sent to the external authorisation body.
 - Transport type: specifies how to connect to the external authorisation body. 
 
@@ -28,38 +29,56 @@ location /abc/xyz
 	cdn_jwt_key 0123456789ABCDEF;			// JWT validation key
 	cdn_jwt_cookie my_auth_cookie;			// Cookie which contains the JWT
 	cdn_jwt_field uid;						// Field in JWT used for authtorisation
-	cdn_json_extended no;					// Send extended JSON in request (with headers and cookies)
+	cdn_all_headers no;						// Process and include all incoming HTTP headers
+	cdn_all_cookies no;						// Process and include all cookies
 	cdn_header_auth X-Custom-JWT			// Custom headfer to search for JWT
 ```
+
 # Build configuration
 
-To enable/disable MySQL and Oracle support, edit src/modules.h (comment/uncomment the respective line). Also there you can toggle JWT support in the same way.
+To enable/disable some of the features (mostly such that require external libraries to be compiled and run), edit src/modules.h and comment/uncomment the respective line:
 
-# Usage scenarios
+- JWT support
+- MySQL support
+- Oracle support
 
-## Authorisation by JWT
+# Authorisation method
 
-This is the preferred and more common scenario. In this case a JWT is extracted to find the value for an authorisation field, which is then passed to the authorisation backend. 
-
-To use this scenario, set the JWT signature verification key in configuration option `cdn_jwt_key`.
-
-Specify the JWT paylod field to use for authorisation in configuration option `cdn_jwt_field`.
-
-JWT can be supplied in:
+Authoriation token can be supplied in:
 
 - Authorization header, as `Bearer <token>` (default)
 - In custom header: set its name in configuration option `cdn_jwt_header`
 - In a cookie: set its name in configuration option `cdn_jwt_cookie`
 
+The authrisation method determines how this authentication token will be processed to extract the actual authrisation field, which is then passed to the authorisation backend. 
+
+## Authorisation by JWT
+
+In this case the authorisation token is a JWT, which is extracted and validated to obtain the authorisation value.
+
+To use this method, set the configuration option `cdn_auth_method` to `jwt`.
+
+Also, set the JWT signature verification key in configuration option `cdn_jwt_key`.
+
+Finally, specify the JWT paylod field to use for authorisation in configuration option `cdn_jwt_field`.
+
 For JWT you'll need the JWT decoding library: https://github.com/benmcollins/libjwt
+
+## Authorisation by session ID
+
+In this case the authorisation token is a session ID, which used as authorisation value. As the seesion ID has no digital signature nor expiration time, its validity should be verified by the authorisation body.
+
+To use this method, set the configuration option `cdn_auth_method` to `session`.
 
 ## Offloaded authorisation
 
-In this case selected headers and all cookies are sent to the authorisation body. To have them sent, set the configuration option `cdn_json_extended` to `yes`. 
+This method allows you to send the original URI plus some extra info to the authrosation body. Thsi extra info may be:
 
-The three headers that are included if available are `Authorization`, `If-None-Match` and `If-Modified-Since`. Extra header may be specified in configuration option `FIXME` (coming soon). 
+- The authorisation value, if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
+- All HTTP headers, if configuration option `cdn_all_headers` is set to `yes`.
+- All cookies, if configuration option `cdn_all_cookies` is set to `yes`.
 
-This case typically uses JSON request type and Unix socket transport.
+This method may be used with some complex request types like JSON or XML. It is not applicable for SQL request type.
 
 # Request types
 
@@ -69,14 +88,16 @@ This request type is usually used with transport type set to `unix` (Unix socket
 
 ### Request format
 
-Fields `headers` and `cookies` are only included if configuration option `cdn_json_extended` is set to `yes`. 
+Field `headers` is only included if configuration option `cdn_all_headers` is set to `yes`.
 
-The field `jwt_value` from JWT token is included only if configuration options `cdn_jwt_key` and `cdn_jwt_field` are set.
+Field `cookies` is only included if configuration option `cdn_all_cookies` is set to `yes`.
+
+The field `auth_value` from authentication token is included only if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
 
 ```
 {
 	"uri" : "/some-file-id",
-	"jwt_value" : "12345"
+	"auth_value" : "12345"
 	"headers" : [
 		{
 			"name": "If-None-Match",
@@ -89,7 +110,8 @@ The field `jwt_value` from JWT token is included only if configuration options `
 		{
 			"name": "Authorization",
 			"value": "Bearer abcdefgh123456"
-		}
+		},
+		...
 	],
 	"cookies": [
 		{
@@ -99,7 +121,8 @@ The field `jwt_value` from JWT token is included only if configuration options `
 		{
 			"name": "other_cookie_name",
 			"value": "other_cookie_value"
-		}
+		},
+		...
 	]
 }
 ```
@@ -124,6 +147,8 @@ The field `jwt_value` from JWT token is included only if configuration options `
 Set the SQL query to run in the configuration option `cnd_sql_query`. Use `%s` as placeholder for the value, extracted from the JWT payload.
 
 The SQL query should return a single row with column names matching the keys in the JSON response above.
+
+NB: Oracle returns the column names in caps. This is OK.
 
 Hint: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s)`.
 
@@ -180,7 +205,8 @@ tar xf nginx-1.14.1.tar
 cd nginx-1.14.1
 
 # Configure the build the same way as the RPM packages does
-CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/run/nginx.pid --lock-path=/run/lock/subsys/nginx --user=nginx --group=nginx --with-file-aio --with-ipv6 --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_addition_module --with-http_xslt_module=dynamic --with-http_image_filter_module=dynamic --with-http_sub_module --with-http_dav_module --with-http_flv_module --with-http_mp4_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_random_index_module --with-http_secure_link_module --with-http_degradation_module --with-http_slice_module --with-http_stub_status_module --with-http_perl_module=dynamic --with-http_auth_request_module --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-debug --with-cc-opt='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I /usr/include/libbson-1.0' --with-ld-opt='-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E -lbson-1.0 -lcurl -ljwt'
+# This command has JWT and MySQL enabled, Oracle disabled.
+CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/run/nginx.pid --lock-path=/run/lock/subsys/nginx --user=nginx --group=nginx --with-file-aio --with-ipv6 --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_addition_module --with-http_xslt_module=dynamic --with-http_image_filter_module=dynamic --with-http_sub_module --with-http_dav_module --with-http_flv_module --with-http_mp4_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_random_index_module --with-http_secure_link_module --with-http_degradation_module --with-http_slice_module --with-http_stub_status_module --with-http_perl_module=dynamic --with-http_auth_request_module --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-debug --with-cc-opt='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I /usr/include/libbson-1.0 -I /usr/include/mysql' --with-ld-opt='-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E -lbson-1.0 -lcurl -ljwt -lmysqlclient'
 
 # Build modules only
 make modules
@@ -225,4 +251,9 @@ Test your authorisation query to make sure metadata is properly returned.
 - Use each of these N letters as one directory level.
 - Place the file in the resulting path.
 - Example: with depth of 4, file ID `abcdef0123456789` must be placed at path `/a/b/c/d/abcdef0123456789` inside the CDN root (note that the first N letters are *not* removed form the file name, they just for the path - this is how path will be determined when the CDN needs to serve the file).
+
+# TOOD
+
+- TCP sockets transport (copy from current Unix socket transport)
+- XML request/response (copy from current JSON request/response)
 

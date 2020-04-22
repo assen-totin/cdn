@@ -24,13 +24,13 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#ifdef CDN_AUTH_JWT
+#ifdef CDN_ENABLE_JWT
 #include <jwt.h>
 #endif
-#ifdef CDN_TRANSPORT_MYSQL
+#ifdef CDN_ENABLE_MYSQL
 #include <mysql.h>
 #endif
-#ifdef CDN_TRANSPORT_ORACLE
+#ifdef CDN_ENABLE_ORACLE
 #include <ocilib.h>
 #endif
 
@@ -58,14 +58,16 @@
 #define DEFAULT_HTTP_CODE 500
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
-#define DEFAULT_unix_socket "/tmp/auth.socket"
-#define DEFAULT_REQUEST_TYPE "json"
-#define DEFAULT_TRANSPORT_TYPE "unix"
-#define DEFAULT_JWT_COOKIE "none"
-#define DEFAULT_JWT_HEADER "none"
+#define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
+#define DEFAULT_REQUEST_TYPE "none"
+#define DEFAULT_TRANSPORT_TYPE "none"
+#define DEFAULT_AUTH_HEADER "none"
+#define DEFAULT_AUTH_COOKIE "none"
+#define DEFAULT_AUTH_METOD "none"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
-#define DEFAULT_JSON_EXTENDED "no"
+#define DEFAULT_ALL_COOKIES "no"
+#define DEFAULT_ALL_HEADERS "no"
 #define DEFAULT_SQL_DSN "none"
 #define DEFAULT_SQL_QUERY "none"
 
@@ -76,14 +78,15 @@
 #define HEADER_AUTHORIZATION "Authorization"
 #define HEADER_CONTENT_DISPOSITION "Content-Disposition"
 #define HEADER_ETAG "ETag"
-#define HEADER_IF_MODIFIED_SINCE "If-Modified-Since"
-#define HEADER_IF_NONE_MATCH "If-None-Match"
 
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
-
 #define ERROR_MESSAGE_LENGTH 1024
+
 #define UNIX_BUFFER_CHUNK 1024
 #define UNIX_SOCKET_TYPE SOCK_STREAM
+
+#define AUTH_METHOD_JWT "jwt"
+#define AUTH_METHOD_SESSION "session"
 
 #define REQUEST_TYPE_JSON "json"
 #define REQUEST_TYPE_MYSQL "mysql"
@@ -104,11 +107,13 @@ typedef struct {
 	ngx_str_t request_type;
 	ngx_str_t transport_type;
 	ngx_str_t unix_socket;
-	ngx_str_t jwt_cookie;
-	ngx_str_t jwt_header;
+	ngx_str_t auth_cookie;
+	ngx_str_t auth_header;
+	ngx_str_t auth_method;
 	ngx_str_t jwt_key;
 	ngx_str_t jwt_field;
-	ngx_str_t json_extended;
+	ngx_str_t all_cookies;
+	ngx_str_t all_headers;
 	ngx_str_t sql_dsn;
 	ngx_str_t sql_query;
 } ngx_http_cdn_loc_conf_t;
@@ -139,17 +144,20 @@ typedef struct {
 	char *fs_root;
 	char *request_type;
 	char *transport_type;
-	char *json_extended;
+	char *all_cookies;
+	char *all_headers;
 	cdn_kvp_t *headers;
 	int headers_count;
 	cdn_kvp_t *cookies;
 	int cookies_count;
-	char *jwt_cookie;
-	char *jwt_header;
+	char *auth_cookie;
+	char *auth_header;
+	char *auth_method;
+	char *auth_token;
+	const char *auth_value;
 	char *jwt_key;
 	char *jwt_json;
 	char *jwt_field;
-	const char *jwt_value;
 	char *sql_dsn;
 	char *sql_query;
 	char *hdr_if_none_match;
@@ -157,13 +165,13 @@ typedef struct {
 	char *unix_socket;
 	char *unix_request;
 	char *unix_response;
-#ifdef CDN_AUTH_JWT
+#ifdef CDN_ENABLE_JWT
 	jwt_t *jwt;
 #endif
-#ifdef CDN_TRANSPORT_MYSQL
+#ifdef CDN_ENABLE_MYSQL
 	MYSQL_RES *mysql_result;
 #endif
-#ifdef CDN_TRANSPORT_ORACLE
+#ifdef CDN_ENABLE_ORACLE
     OCI_Connection *oracle_connection;
     OCI_Statement *oracle_statement;
 	OCI_Resultset *oracle_result;

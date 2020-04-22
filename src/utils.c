@@ -36,4 +36,151 @@ ngx_int_t set_metadata_field (ngx_http_request_t *r, char **field, char *field_n
 	return NGX_OK;
 }
 
+/**
+ * Store a header
+ */
+static inline ngx_int_t store_header(session_t *session, ngx_http_request_t *r, ngx_str_t name, ngx_str_t value) {
+	cdn_kvp_t *headers;
+
+	// NB: Nginx pool does not have realloc, so we need to emulate it
+	//TODO: Maybe allocate bigger blocks to avoid doing a realloc on each new header?
+
+	// Always allocate memory
+	headers = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * (session->headers_count + 1));
+	if (headers == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l headers KVP.", sizeof(cdn_kvp_t) * (session->headers_count + 1), session->headers_count + 1);
+		return NGX_ERROR;
+	}
+
+	// If we have previous values, copy them
+	if (session->headers_count)
+		memcpy(headers, session->headers, sizeof(cdn_kvp_t) * session->headers_count);
+	session->headers = headers;
+
+	// Extract header name
+	session->headers[session->headers_count].name = from_ngx_str(r->pool, name);
+
+	// Extract header value
+	session->headers[session->headers_count].value = from_ngx_str(r->pool, value);
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header %s: %s", session->headers[session->headers_count].name, session->headers[session->headers_count].value);
+
+	session->headers_count ++;
+
+	return NGX_OK;
+}
+
+/**
+ * Extract all headers
+ */
+ngx_int_t get_all_headers(session_t *session, ngx_http_request_t *r) {
+	int i, j;
+	ngx_table_elt_t *h;
+	ngx_list_part_t *part;
+
+	part = &r->headers_in.headers.part;
+	for (i=0; i < r->headers_in.headers.nalloc; i++) {
+		h = part->elts;
+		for (j=0; j < part->nelts; j++)
+			store_header(session, r, h[j].key, h[j].value);
+
+		part = part->next;
+	}
+
+	return NGX_OK;
+}
+
+/**
+ * Extract all cookies from headers
+ */
+ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
+	int i, j, cookie_index = -1;
+	char *s0, *s1, *s2;
+	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
+	char *cookie_delim = " ", *cookie_subdelim = "=";
+	ngx_table_elt_t **elts;
+	cdn_kvp_t *cookies;
+
+	if (! r->headers_in.cookies.nelts) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No cookies found");
+		return NGX_OK;
+	}
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
+	elts = r->headers_in.cookies.elts;
+	session->cookies_count = r->headers_in.cookies.nelts;
+
+	// Allocate initial memory we have at least r->headers_in.cookies.nelts, but may be more)
+	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * r->headers_in.cookies.nelts);
+	if (session->cookies == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * r->headers_in.cookies.nelts, r->headers_in.cookies.nelts);
+		return NGX_ERROR;
+	}
+
+	for (i=0; i<r->headers_in.cookies.nelts; i++) {
+		s0 = from_ngx_str(r->pool, elts[i]->value);
+		for (str1 = s0; ; str1 = NULL) {
+			token = strtok_r(str1, cookie_delim, &saveptr1);
+			if (token == NULL)
+				break;
+
+			s1 = strchr(token, ';');
+			if (s1 == token + strlen(token) - 1) {
+				s2 = ngx_pcalloc(r->pool, strlen(token));
+				if (s2 == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie token.", strlen(token));
+					return NGX_ERROR;
+				}
+				strncpy(s2, token, strlen(token) - 1);
+			}
+			else
+				s2 = token;
+
+			// Check to see if we have space to accommodate the cookie
+			cookie_index ++;
+			if (cookie_index == session->cookies_count) {
+				cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * (session->cookies_count + 1));
+				if (session->cookies == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * (session->cookies_count + 1), session->cookies_count + 1);
+					return NGX_ERROR;
+				}
+				memcpy(cookies, session->cookies, sizeof(cdn_kvp_t) * session->cookies_count);
+				session->cookies = cookies;
+			}
+			session->cookies_count ++;
+
+			// Extract the cookie
+			for (j=0, str2 = s2; ; j++, str2 = NULL) {
+				subtoken = strtok_r(str2, cookie_subdelim, &saveptr2);
+				if (subtoken == NULL)
+					break;
+
+				if (j == 0) {
+					session->cookies[cookie_index].name = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
+					if (session->cookies[cookie_index].name == NULL) {
+						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie name.", strlen(subtoken) + 1);
+						return NGX_ERROR;
+					}
+					strcpy(session->cookies[cookie_index].name, subtoken);
+				}
+				else if (j == 1) {
+					session->cookies[cookie_index].value = ngx_pcalloc(r->pool, strlen(subtoken) + 1);
+					if (session->cookies[cookie_index].value == NULL) {
+						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cookie value.", strlen(subtoken) + 1);
+						return NGX_ERROR;
+					}
+					strcpy(session->cookies[cookie_index].value, subtoken);
+				}
+				else
+					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Malformed cookie %s", s0);
+			}
+
+			if (j == 2) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", session->cookies[cookie_index].name, session->cookies[cookie_index].value);
+			}
+		}
+	}
+
+	return NGX_OK;
+}
 

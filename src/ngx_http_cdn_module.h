@@ -16,8 +16,7 @@ ngx_int_t read_fs(session_t *session, cdn_file_t *dnld_file, ngx_http_request_t 
 ngx_int_t send_file(session_t *session, cdn_file_t *dnld_file, ngx_http_request_t *r);
 void ngx_http_cdn_cleanup(void *a);
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
-ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_str_t ngx_str);
-ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r);
+ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r);
 ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r);
 ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r);
 ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r);
@@ -74,19 +73,27 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
-		ngx_string("cdn_jwt_cookie"),
+		ngx_string("cdn_auth_cookie"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, jwt_cookie),
+		offsetof(ngx_http_cdn_loc_conf_t, auth_cookie),
 		NULL
 	},
 	{
-		ngx_string("cdn_jwt_header"),
+		ngx_string("cdn_auth_header"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, jwt_header),
+		offsetof(ngx_http_cdn_loc_conf_t, auth_header),
+		NULL
+	},
+	{
+		ngx_string("cdn_auth_method"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, auth_method),
 		NULL
 	},
 	{
@@ -106,11 +113,19 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
-		ngx_string("cdn_json_extended"),
+		ngx_string("cdn_all_cookies"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, json_extended),
+		offsetof(ngx_http_cdn_loc_conf_t, all_cookies),
+		NULL
+	},
+	{
+		ngx_string("cdn_all_headers"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, all_headers),
 		NULL
 	},
 	{

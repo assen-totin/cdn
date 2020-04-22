@@ -5,11 +5,11 @@
  */
 
 // To enable the JWT-based authorisation, uncomment the following line
-#define CDN_AUTH_JWT 1
+#define CDN_ENABLE_JWT 1
 
-// To enable the MySQL transport, uncomment the following line
-#define CDN_TRANSPORT_MYSQL 1
+// To enable the MySQL transport and request, uncomment the following line
+#define CDN_ENABLE_MYSQL 1
 
-// To enable the Oracle transport, uncomment the following line
-#define CDN_TRANSPORT_ORACLE 1
+// To enable the Oracle transport and request, uncomment the following line
+//#define CDN_ENABLE_ORACLE 1
 

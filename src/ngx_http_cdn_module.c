@@ -6,6 +6,8 @@
 
 #include "common.h"
 #include "ngx_http_cdn_module.h"
+#include "auth_jwt.h"
+#include "auth_session.h"
 #include "request_json.h"
 #include "request_mysql.h"
 #include "request_oracle.h"
@@ -22,13 +24,13 @@
 ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	int ret; 
 
-#ifdef CDN_TRANSPORT_MYSQL
+#ifdef CDN_ENABLE_MYSQL
 	if ((ret = mysql_library_init(0, NULL, NULL)) > 0) {
 		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init MySQL library: error %l.", ret);
 		return NGX_ERROR;
 	}
 #endif
-#ifdef CDN_TRANSPORT_ORACLE
+#ifdef CDN_ENABLE_ORACLE
 	// Init Oracle
 	if (! OCI_Initialize(NULL, NULL, OCI_ENV_DEFAULT | OCI_ENV_CONTEXT | OCI_ENV_THREADED)) {
 		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init Oracle OCI library: %s", OCI_ErrorGetString(OCI_GetLastError()));
@@ -44,10 +46,10 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
  */
 
 void ngx_http_cdn_module_end (ngx_cycle_t *cycle) {
-#ifdef CDN_TRANSPORT_MYSQL
+#ifdef CDN_ENABLE_MYSQL
 	mysql_library_end();
 #endif
-#ifdef CDN_TRANSPORT_ORACLE
+#ifdef CDN_ENABLE_ORACLE
 	OCI_Cleanup();
 #endif
 }
@@ -76,12 +78,14 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
 	ngx_conf_merge_str_value(child->request_type, parent->request_type, DEFAULT_REQUEST_TYPE);
 	ngx_conf_merge_str_value(child->transport_type, parent->transport_type, DEFAULT_TRANSPORT_TYPE);
-	ngx_conf_merge_str_value(child->unix_socket, parent->unix_socket, DEFAULT_unix_socket);
-	ngx_conf_merge_str_value(child->jwt_cookie, parent->jwt_cookie, DEFAULT_JWT_COOKIE);
-	ngx_conf_merge_str_value(child->jwt_header, parent->jwt_header, DEFAULT_JWT_HEADER);
+	ngx_conf_merge_str_value(child->unix_socket, parent->unix_socket, DEFAULT_UNIX_SOCKET);
+	ngx_conf_merge_str_value(child->auth_cookie, parent->auth_cookie, DEFAULT_AUTH_COOKIE);
+	ngx_conf_merge_str_value(child->auth_header, parent->auth_header, DEFAULT_AUTH_HEADER);
+	ngx_conf_merge_str_value(child->auth_method, parent->auth_method, DEFAULT_AUTH_METOD);
 	ngx_conf_merge_str_value(child->jwt_key, parent->jwt_key, DEFAULT_JWT_KEY);
 	ngx_conf_merge_str_value(child->jwt_field, parent->jwt_field, DEFAULT_JWT_FIELD);
-	ngx_conf_merge_str_value(child->json_extended, parent->json_extended, DEFAULT_JSON_EXTENDED);
+	ngx_conf_merge_str_value(child->all_headers, parent->all_headers, DEFAULT_ALL_HEADERS);
+	ngx_conf_merge_str_value(child->all_cookies, parent->all_cookies, DEFAULT_ALL_COOKIES);
 	ngx_conf_merge_str_value(child->sql_dsn, parent->sql_dsn, DEFAULT_SQL_DSN);
 	ngx_conf_merge_str_value(child->sql_query, parent->sql_query, DEFAULT_SQL_QUERY);
 
@@ -171,13 +175,16 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
 	session.request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
 	session.transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
-	session.jwt_cookie = from_ngx_str(r->pool, cdn_loc_conf->jwt_cookie);
-	session.jwt_header = from_ngx_str(r->pool, cdn_loc_conf->jwt_header);
+	session.auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
+	session.auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
+	session.auth_method = from_ngx_str(r->pool, cdn_loc_conf->auth_method);
+	session.auth_token = NULL;
+	session.auth_value = NULL;
 	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
 	session.jwt_json = NULL;
 	session.jwt_field = NULL;
-	session.jwt_value = NULL;
-	session.json_extended = from_ngx_str(r->pool, cdn_loc_conf->json_extended);
+	session.all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
+	session.all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
 	session.sql_dsn = from_ngx_str(r->pool, cdn_loc_conf->sql_dsn);
 	session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_query);
 	session.headers = NULL;
@@ -240,16 +247,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 			return ret;
 	}
 
-	// Extract common headers: Authorisation, If-Modified-Since, If-None-Match
-	if (r->headers_in.authorization) {
-		if (get_header(&session, r, HEADER_AUTHORIZATION, r->headers_in.authorization->value))
-			return NGX_ERROR;
-	}
-
+	// Process Header If-Modified-Since
 	if (r->headers_in.if_modified_since) {
-		if (get_header(&session, r, HEADER_IF_MODIFIED_SINCE, r->headers_in.if_modified_since->value))
-			return NGX_ERROR;
-
 		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
 		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
 			session.hdr_if_modified_since = mktime(&ltm);
@@ -259,10 +258,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
 	}
 
+	// Process Header If-None-Match
 	if (r->headers_in.if_none_match) {
-		if (get_header(&session, r, HEADER_IF_NONE_MATCH, r->headers_in.if_none_match->value))
-			return NGX_ERROR;
-
 		session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
 		s1 = strchr(session.hdr_if_none_match, '"');
 		s2 = strrchr(session.hdr_if_none_match, '"');
@@ -282,14 +279,33 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// TODO: support Range incoming header
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
 
-	// TODO: Extract custom headers if requested
+	// Extract all headers if requested
+	if (! strcmp(session.all_headers, "yes")) {
+		ret = get_all_headers(&session, r);
+		if (ret)
+			return ret;
+	}
 
+	// Extract all cookies if requested
+	if (! strcmp(session.all_cookies, "yes")) {
+		ret = get_all_cookies(&session, r);
+		if (ret)
+			return ret;
+	}
 
+	// Try to find an authorisation token
+	ret = get_auth_token(&session, r);
+	if (ret)
+		return ret;
 
-
-	// Extract JWT if specified (i.e. if we have a validation key specified in config)
-	if (strcmp(session.jwt_key, DEFAULT_JWT_KEY)) {
-		ret = get_jwt(&session, r);
+	// Extract authentcation token to value
+	if (! strcmp(session.auth_method, AUTH_METHOD_JWT)) {
+		ret = auth_jwt(&session, r);
+		if (ret)
+			return ret;
+	}
+	else if (! strcmp(session.auth_method, AUTH_METHOD_SESSION)) {
+		ret = auth_session(&session, r);
 		if (ret)
 			return ret;
 	}
@@ -314,7 +330,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE))
-		ret = transport_mysql(&session, r);
+		ret = transport_oracle(&session, r);
 
 	if (ret)
 		return ret;
@@ -332,10 +348,12 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	}
 	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE)) {
 		ret = response_oracle(&session, metadata, r);
+#ifdef CDN_ENABLE_ORACLE
 		if (session.oracle_statement)
 			OCI_StatementFree(session.oracle_statement);
 		if (session.oracle_connection)
 			OCI_API OCI_ConnectionFree(session.oracle_connection);
+#endif
 	}
 
 	if (ret)
@@ -588,45 +606,9 @@ void ngx_http_cdn_cleanup(void *a) {
 }
 
 /**
- * Extract a header
+ * Extract authentication token
  */
-ngx_int_t get_header(session_t *session, ngx_http_request_t *r, char *name, ngx_str_t value) {
-	cdn_kvp_t *headers;
-
-	// NB: Nginx pool does not have realloc, so we need to emulate it
-
-	// Always allocate memory
-	headers = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * (session->headers_count + 1));
-	if (headers == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l headers KVP.", sizeof(cdn_kvp_t) * (session->headers_count + 1), session->headers_count + 1);
-		return NGX_ERROR;
-	}
-
-	// If we have previous values, copy them
-	if (session->headers_count)
-		memcpy(headers, session->headers, sizeof(cdn_kvp_t) * session->headers_count);
-	session->headers = headers;
-
-	// Save header name
-	session->headers[session->headers_count].value = ngx_pcalloc(r->pool, strlen(name) + 1);
-	strcpy(session->headers[session->headers_count].value, name);
-
-	// Extract header value
-	session->headers[session->headers_count].value = from_ngx_str(r->pool, value);
-
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header %s: %s", name, session->headers[session->headers_count].value);
-
-	session->headers_count ++;
-
-	return NGX_OK;
-}
-
-/**
- * Extract JWT
- */
-ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
-#ifdef CDN_AUTH_JWT
-	time_t exp;
+ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 	char *hdr_authorization;
 	bool match = false;
 	int i, j;
@@ -635,27 +617,27 @@ ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
 	ngx_table_elt_t *h;
 	ngx_list_part_t *part;
 
-	// Try to find JWT in Authorization header
+	// First, check Authorization header
 	if (r->headers_in.authorization) {
 		hdr_authorization = from_ngx_str(r->pool, r->headers_in.authorization->value);
 
 		if (strstr(hdr_authorization, "Bearer")) {
-			session->jwt_json = ngx_pcalloc(r->pool, strlen(hdr_authorization) + 1);
-			strncpy(session->jwt_json, hdr_authorization + 7, strlen(hdr_authorization) - 7);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "JWT found in Authorization header: %s", session->jwt_json);
+			session->auth_token = ngx_pcalloc(r->pool, strlen(hdr_authorization) + 1);
+			strncpy(session->auth_token, hdr_authorization + 7, strlen(hdr_authorization) - 7);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in Authorization header: %s", session->auth_token);
 		}
 	}
 
-	// Try to find JWT in a custom header
-	if (strcmp(session->jwt_header, DEFAULT_JWT_HEADER)) {
+	// Next try a custom header, if defined
+	if (strcmp(session->auth_header, DEFAULT_AUTH_HEADER)) {
 		part = &r->headers_in.headers.part;
 		for (i=0; i < r->headers_in.headers.nalloc; i++) {
 			h = part->elts;
 			for (j=0; j < part->nelts; j++) {
-				if (! ngx_strncasecmp( h[j].key.data, (u_char *) session->jwt_header, h[j].key.len)) {
-					session->jwt_json = from_ngx_str(r->pool, h[j].value);
+				if (! ngx_strncasecmp( h[j].key.data, (u_char *) session->auth_header, h[j].key.len)) {
+					session->auth_token = from_ngx_str(r->pool, h[j].value);
 					match = true;
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "JWT found in header %s: %s", session->jwt_header, session->jwt_json);
+					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in header %s: %s", session->auth_header, session->auth_token);
 					break;
 				}
 			}
@@ -667,64 +649,23 @@ ngx_int_t get_jwt(session_t *session, ngx_http_request_t *r) {
 		}
 	}
 
-	// If cookie name given in config, try to find the cookie and to extract JWT from it
-	if (strcmp(session->jwt_cookie, DEFAULT_JWT_COOKIE)) {
-		cookie_name.len = strlen(session->jwt_cookie);
-		cookie_name.data = (u_char *) session->jwt_cookie;
+	// If cookie name given in config, try to find the cookie and to extract auth token from it
+	if (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE)) {
+		cookie_name.len = strlen(session->auth_cookie);
+		cookie_name.data = (u_char *) session->auth_cookie;
 
 		ret = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, &cookie_value);
 		if (ret == NGX_DECLINED) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Cookie %s for JWT not found", session->jwt_cookie);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Cookie %s for auth token not found", session->auth_cookie);
 		}
 		else {
-			session->jwt_json = from_ngx_str(r->pool, cookie_value);
+			session->auth_token = from_ngx_str(r->pool, cookie_value);
 		}
 	}
-
-	// If neither cookie nor header was given or JWT not found, give up
-	if (! session->jwt_json) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "JWT not found, declining request");
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-
-	// Validate and extract the token
-	if ((ret = jwt_decode(&session->jwt, session->jwt_json, (unsigned char*)session->jwt_key, strlen(session->jwt_key)))) {
-		if (ret == EINVAL) {
-			// Invalid signature
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s invalid signature", session->jwt_json);
-			return NGX_HTTP_UNAUTHORIZED;
-		}
-		else {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s system error %u while decoding", session->jwt_json, ret);
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
-		}
-	}
-
-	// Check expiration
-	exp = jwt_get_grant_int(session->jwt, "exp");
-	if (errno == ENOENT) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim EXP", session->jwt_json);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim EXP %l", session->jwt_json, exp);
-	if (exp < time(NULL)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s has expired: EXP is %l, now is %l", session->jwt_json, exp, time(NULL));
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-
-	// Extract the value from payload that we'll use in authentication
-	session->jwt_value = jwt_get_grant(session->jwt, session->jwt_field);
-	if (session->jwt_value) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim %s %s", session->jwt_json, session->jwt_field, session->jwt_value);
-	}
-	else {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim %s", session->jwt_json, session->jwt_field);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-#endif
 
 	return NGX_OK;
 }
+
 
 /**
  * Check metdata for errors

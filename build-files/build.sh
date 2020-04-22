@@ -56,18 +56,18 @@ EXTRA_LIBS="-lbson-1.0 -lcurl"
 EXTRA_INCLUDES="-I /usr/include/libbson-1.0"
 if [ x$ARG_CND_ENABLE_JWT != 'x' ] ; then
 	EXTRA_LIBS="$EXTRA_LIBS -ljwt"
-	sed -i 's|^.*CDN_AUTH_JWT.*$|#define CDN_AUTH_JWT|' src/modules.h
+	sed -i 's|^.*CDN_ENABLE_JWT.*$|#define CDN_ENABLE_JWT|' src/modules.h
 fi
 if [ x$ARG_CND_ENABLE_MYSQL != 'x' ] ; then
 	[ x$EL_VERSION == 'x7' ] && EXTRA_LIBS="$EXTRA_LIBS -L/usr/lib64/mysql"
 	EXTRA_LIBS="$EXTRA_LIBS -lmysqlclient"
 	EXTRA_INCLUDES="$EXTRA_INCLUDES -I /usr/include/mysql"
-	sed -i 's|^.*CDN_TRANSPORT_MYSQL.*$|#define CDN_TRANSPORT_MYSQL|' src/modules.h
+	sed -i 's|^.*CDN_ENABLE_MYSQL.*$|#define CDN_ENABLE_MYSQL|' src/modules.h
 fi
 if [ x$ARG_CND_ENABLE_ORACLE != 'x' ] ; then
-	export LD_LIBRARY_PATH=$ARG_CDN_ORACLE_HOME/lib
+	export LD_LIBRARY_PATH=$ARG_CDN_ENABLE_ORACLE_HOME/lib
 	EXTRA_LIBS="$EXTRA_LIBS -locilib"
-	sed -i 's|^.*CDN_TRANSPORT_ORACLE.*$|#define CDN_TRANSPORT_ORACLE|' src/modules.h
+	sed -i 's|^.*CDN_ENABLE_ORACLE.*$|#define CDN_ENABLE_ORACLE|' src/modules.h
 fi
 
 # Download the Nginx source

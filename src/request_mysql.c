@@ -5,7 +5,7 @@
  * Process MySQL response
  */
 ngx_int_t response_mysql(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
-#ifdef CDN_TRANSPORT_MYSQL
+#ifdef CDN_ENABLE_MYSQL
 	int i, fields_num;
 	MYSQL_FIELD *fields;
 	MYSQL_ROW mysql_row;

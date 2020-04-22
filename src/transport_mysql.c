@@ -14,7 +14,7 @@ static ngx_int_t close_mysql(MYSQL *conn, int ret) {
  * Process MySQL response
  */
 ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r) {
-#ifdef CDN_TRANSPORT_MYSQL
+#ifdef CDN_ENABLE_MYSQL
 	sql_dsn_t dsn;
 	MYSQL conn;
 	ngx_int_t ret;

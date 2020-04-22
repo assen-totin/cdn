@@ -5,7 +5,7 @@
  * Process Oracle response
  */
 ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r) {
-#ifdef CDN_TRANSPORT_ORACLE
+#ifdef CDN_ENABLE_ORACLE
 	sql_dsn_t dsn;
 	ngx_int_t ret;
 
