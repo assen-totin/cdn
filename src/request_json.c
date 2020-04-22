@@ -45,7 +45,7 @@ ngx_int_t request_json(session_t *session, ngx_http_request_t *r) {
 		bson_append_array_end (&b, &bc);
 	}
 
-	session->unix_request = bson_as_json (&b, NULL);
+	session->auth_request = bson_as_json (&b, NULL);
 
 	bson_destroy(&b);
 
@@ -62,9 +62,9 @@ ngx_int_t response_json(session_t *session, cdn_file_t *metadata, ngx_http_reque
 	const char *bson_key;
 	ngx_int_t ret;
 
-	// Walk around the JSON which we received from the authentication servier, session->unix_response
-	if (! bson_init_from_json(&doc, session->unix_response, strlen(session->unix_response), &error)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->unix_response);
+	// Walk around the JSON which we received from the authentication servier, session->auth_response
+	if (! bson_init_from_json(&doc, session->auth_response, strlen(session->auth_response), &error)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->auth_response);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 

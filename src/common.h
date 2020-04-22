@@ -58,6 +58,8 @@
 #define DEFAULT_HTTP_CODE 500
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
+#define DEFAULT_TCP_HOST "example.com"
+#define DEFAULT_TCP_PORT 12345
 #define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
 #define DEFAULT_REQUEST_TYPE "none"
 #define DEFAULT_TRANSPORT_TYPE "none"
@@ -82,6 +84,8 @@
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
 #define ERROR_MESSAGE_LENGTH 1024
 
+#define TCP_BUFFER_CHUNK 1500
+
 #define UNIX_BUFFER_CHUNK 1024
 #define UNIX_SOCKET_TYPE SOCK_STREAM
 
@@ -92,9 +96,10 @@
 #define REQUEST_TYPE_MYSQL "mysql"
 #define REQUEST_TYPE_ORACLE "oracle"
 
-#define TRANSPORT_TYPE_UNIX "unix"
 #define TRANSPORT_TYPE_MYSQL "mysql"
 #define TRANSPORT_TYPE_ORACLE "oracle"
+#define TRANSPORT_TYPE_TCP "tcp"
+#define TRANSPORT_TYPE_UNIX "unix"
 
 // Structures
 typedef struct {
@@ -107,6 +112,8 @@ typedef struct {
 	ngx_str_t request_type;
 	ngx_str_t transport_type;
 	ngx_str_t unix_socket;
+	ngx_str_t tcp_host;
+	ngx_str_t tcp_port;
 	ngx_str_t auth_cookie;
 	ngx_str_t auth_header;
 	ngx_str_t auth_method;
@@ -155,6 +162,8 @@ typedef struct {
 	char *auth_method;
 	char *auth_token;
 	const char *auth_value;
+	char *auth_request;
+	char *auth_response;
 	char *jwt_key;
 	char *jwt_json;
 	char *jwt_field;
@@ -163,8 +172,8 @@ typedef struct {
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
 	char *unix_socket;
-	char *unix_request;
-	char *unix_response;
+	char *tcp_host;
+	int tcp_port;
 #ifdef CDN_ENABLE_JWT
 	jwt_t *jwt;
 #endif

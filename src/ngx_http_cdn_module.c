@@ -14,6 +14,7 @@
 #include "request_sql.h"
 #include "transport_mysql.h"
 #include "transport_oracle.h"
+#include "transport_tcp.h"
 #include "transport_unix.h"
 #include "utils.h"
 
@@ -79,6 +80,8 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->request_type, parent->request_type, DEFAULT_REQUEST_TYPE);
 	ngx_conf_merge_str_value(child->transport_type, parent->transport_type, DEFAULT_TRANSPORT_TYPE);
 	ngx_conf_merge_str_value(child->unix_socket, parent->unix_socket, DEFAULT_UNIX_SOCKET);
+	ngx_conf_merge_str_value(child->tcp_host, parent->tcp_host, DEFAULT_TCP_HOST);
+	ngx_conf_merge_str_value(child->tcp_port, parent->tcp_port, DEFAULT_TCP_PORT);
 	ngx_conf_merge_str_value(child->auth_cookie, parent->auth_cookie, DEFAULT_AUTH_COOKIE);
 	ngx_conf_merge_str_value(child->auth_header, parent->auth_header, DEFAULT_AUTH_HEADER);
 	ngx_conf_merge_str_value(child->auth_method, parent->auth_method, DEFAULT_AUTH_METOD);
@@ -194,8 +197,10 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.hdr_if_none_match = NULL;
 	session.hdr_if_modified_since = -1;
 	session.unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
-	session.unix_request = NULL;
-	session.unix_response = NULL;
+	session.tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
+	session.tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
+	session.auth_request = NULL;
+	session.auth_response = NULL;
 
 	// Init file metadata
 	metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t));
@@ -321,16 +326,18 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	if (ret)
 		return ret;
 
-	// Query for metadata
-	if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX)) {
+	// Query for metadata based on transport
+	if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
 		ret = transport_unix(&session, r);
-		if (session.unix_request)
-			bson_free(session.unix_request);
-	}
+	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_TCP))
+		ret = transport_tcp(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_oracle(&session, r);
+
+	if ((! strcmp(session.request_type, REQUEST_TYPE_JSON)) && (session.auth_request))
+		bson_free(session.auth_request);
 
 	if (ret)
 		return ret;
@@ -338,8 +345,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// Process response (as per the configured request type)
 	if (! strcmp(session.request_type, REQUEST_TYPE_JSON)) {
 		ret = response_json(&session, metadata, r);
-		if (session.unix_response)
-			free(session.unix_response);
+		if (session.auth_response)
+			free(session.auth_response);
 	}
 	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL)) {
 		ret = response_mysql(&session, metadata, r);

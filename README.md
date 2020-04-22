@@ -158,9 +158,17 @@ Hint: for complex queries, create a stored procedure and use stanza like `CALL m
 
 Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writable by the Nginx user. 
 
-This transport is usually used whet request type is `json` (JSON exchange).
+This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
 
-The Unix socket must be of type `stream`. The module will half-close the connection once it has written its JSON and will then expect the response JSON, followed by full connection close by the authorisation body. 
+The Unix socket must be of type `stream`. The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
+
+## TCP socket
+
+Set the host and port for TCP connection in configuration options `cdn_tcp_host` and `cdn_tcp_port`.
+
+This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
+
+The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
 
 ## MySQL
 
@@ -254,6 +262,6 @@ Test your authorisation query to make sure metadata is properly returned.
 
 # TOOD
 
-- TCP sockets transport (copy from current Unix socket transport)
 - XML request/response (copy from current JSON request/response)
+- HTTP transport
 
