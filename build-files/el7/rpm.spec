@@ -18,11 +18,11 @@ Packager: Assen Totin <assen.totin@gmail.com>
 Group: Applications
 License: Proprietary
 BuildArch: x86_64
-BuildRequires: libbson-devel, libcurl-devel
+BuildRequires: libbson-devel, libcurl-devel, libxml2-devel
 #BuildRequires: libjwt-devel
 #BuildRequires: mariadb-devel
 #BuildRequires: ocilib-devel
-Requires: nginx, libcurl, libbson
+Requires: nginx, libcurl, libbson, libxml2
 #Requires: libjwt
 #Requires: mariadb-libs
 #Requires: ocilib

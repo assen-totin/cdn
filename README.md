@@ -84,7 +84,7 @@ This method may be used with some complex request types like JSON or XML. It is 
 
 ## JSON
 
-This request type is usually used with transport type set to `unix` (Unix socket).
+This request type is usually used with transport type set to `unix` (Unix socket) or `tcp` (TCP socket).
 
 ### Request format
 
@@ -100,16 +100,12 @@ The field `auth_value` from authentication token is included only if configurati
 	"auth_value" : "12345"
 	"headers" : [
 		{
-			"name": "If-None-Match",
-			"value": "00000000000000000000000000000000"
+			"name": "Some-Header",
+			"value": "some-value",
 		},
 		{
-			"name": "If-Modified-Since",
-			"value": "Wed, 21 Oct 2015 07:28:00 GMT"
-		},
-		{
-			"name": "Authorization",
-			"value": "Bearer abcdefgh123456"
+			"name": "Other-Header",
+			"value": "other-value"
 		},
 		...
 	],
@@ -140,6 +136,64 @@ The field `auth_value` from authentication token is included only if configurati
 	"upload_date": int, optional, Unix timestamp of mtime; stat() wil be used if missing
 	"error"	: string, optional, will be logged by Nginx
 }
+```
+
+## XML
+
+This request type is usually used with transport type set to `unix` (Unix socket) or `tcp` (TCP socket).
+
+### Request format
+
+Element `headers` is only included if configuration option `cdn_all_headers` is set to `yes`.
+
+Element `cookies` is only included if configuration option `cdn_all_cookies` is set to `yes`.
+
+The element `auth_value` from authentication token is included only if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
+
+```
+<request>
+	<uri>/some-file-id</uri>
+	<auth_value>12345</auth_value>
+	<headers>
+		<header>
+			<name>Some-Header</name>
+			<value>some-value</value>
+		</header>
+		<header>
+			<name>Other-Header</name>
+			<value>other-value</value>
+		</header>
+		...
+	</headers>
+	<cookies>
+		<cookie>
+			<name>some_cookie_name</name>
+			<value>ome_cookie_value</value>
+		</cookie>
+		<cookie>
+			<name>other_cookie_name</name>
+			<value>other_cookie_value</value>
+		</cookie>
+		...
+	</cookies>
+</request>
+```
+
+### Response format
+
+See the JSON section above for fields meaning and values.
+
+```
+<response>
+	<status></status>
+	<filename></filename>
+	<content_type></content_type>
+	<content_dispostion></content_dispostion>
+	<etag></etag>
+	<length></length>
+	<upload_date></upload_date>
+	<error></error>
+</response>
 ```
 
 ## SQL
@@ -214,7 +268,7 @@ cd nginx-1.14.1
 
 # Configure the build the same way as the RPM packages does
 # This command has JWT and MySQL enabled, Oracle disabled.
-CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/run/nginx.pid --lock-path=/run/lock/subsys/nginx --user=nginx --group=nginx --with-file-aio --with-ipv6 --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_addition_module --with-http_xslt_module=dynamic --with-http_image_filter_module=dynamic --with-http_sub_module --with-http_dav_module --with-http_flv_module --with-http_mp4_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_random_index_module --with-http_secure_link_module --with-http_degradation_module --with-http_slice_module --with-http_stub_status_module --with-http_perl_module=dynamic --with-http_auth_request_module --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-debug --with-cc-opt='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I /usr/include/libbson-1.0 -I /usr/include/mysql' --with-ld-opt='-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E -lbson-1.0 -lcurl -ljwt -lmysqlclient'
+CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/run/nginx.pid --lock-path=/run/lock/subsys/nginx --user=nginx --group=nginx --with-file-aio --with-ipv6 --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_addition_module --with-http_xslt_module=dynamic --with-http_image_filter_module=dynamic --with-http_sub_module --with-http_dav_module --with-http_flv_module --with-http_mp4_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_random_index_module --with-http_secure_link_module --with-http_degradation_module --with-http_slice_module --with-http_stub_status_module --with-http_perl_module=dynamic --with-http_auth_request_module --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-debug --with-cc-opt='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I /usr/include/libbson-1.0 -I /usr/include/mysql -I/usr/include/libxml2' --with-ld-opt='-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E -lbson-1.0 -lcurl -ljwt -lmysqlclient -lxml2'
 
 # Build modules only
 make modules
@@ -262,6 +316,6 @@ Test your authorisation query to make sure metadata is properly returned.
 
 # TOOD
 
-- XML request/response (copy from current JSON request/response)
+- MongoDB transport and request/response
 - HTTP transport
 

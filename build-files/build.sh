@@ -52,8 +52,8 @@ git_checkout
 pushd $CHECKOUT_DIR
 
 # Extra libraries needed by this modules
-EXTRA_LIBS="-lbson-1.0 -lcurl"
-EXTRA_INCLUDES="-I /usr/include/libbson-1.0"
+EXTRA_LIBS="-lbson-1.0 -lcurl -lxml2"
+EXTRA_INCLUDES="-I /usr/include/libbson-1.0 -I/usr/include/libxml2"
 if [ x$ARG_CND_ENABLE_JWT != 'x' ] ; then
 	EXTRA_LIBS="$EXTRA_LIBS -ljwt"
 	sed -i 's|^.*CDN_ENABLE_JWT.*$|#define CDN_ENABLE_JWT|' src/modules.h

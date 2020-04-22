@@ -12,10 +12,10 @@
 #include "request_mysql.h"
 #include "request_oracle.h"
 #include "request_sql.h"
+#include "request_xml.h"
 #include "transport_mysql.h"
 #include "transport_oracle.h"
-#include "transport_tcp.h"
-#include "transport_unix.h"
+#include "transport_socket.h"
 #include "utils.h"
 
 /**
@@ -26,11 +26,13 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	int ret; 
 
 #ifdef CDN_ENABLE_MYSQL
+	// Init MySQL
 	if ((ret = mysql_library_init(0, NULL, NULL)) > 0) {
 		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init MySQL library: error %l.", ret);
 		return NGX_ERROR;
 	}
 #endif
+
 #ifdef CDN_ENABLE_ORACLE
 	// Init Oracle
 	if (! OCI_Initialize(NULL, NULL, OCI_ENV_DEFAULT | OCI_ENV_CONTEXT | OCI_ENV_THREADED)) {
@@ -38,6 +40,9 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 		return NGX_ERROR;
 	}
 #endif
+
+	// Check libxml version
+	LIBXML_TEST_VERSION;
 
 	return NGX_OK;
 }
@@ -59,8 +64,9 @@ void ngx_http_cdn_module_end (ngx_cycle_t *cycle) {
  * Create location configuration
  */
 void* ngx_http_cdn_create_loc_conf(ngx_conf_t* cf) {
-	ngx_http_cdn_loc_conf_t* loc_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_cdn_loc_conf_t));
-	if (loc_conf == NULL) {
+	ngx_http_cdn_loc_conf_t *loc_conf;
+
+	if ((loc_conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_cdn_loc_conf_t))) == NULL) {
 		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Failed to allocate %l bytes for location config.", sizeof(ngx_http_cdn_loc_conf_t));
 		return NGX_CONF_ERROR;
 	}
@@ -203,8 +209,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.auth_response = NULL;
 
 	// Init file metadata
-	metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t));
-	if (metadata == NULL) {
+	if ((metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(cdn_file_t));
 		return NGX_ERROR;
 	}
@@ -241,14 +246,12 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	strcpy(metadata->file, str1);
 
 	// Get path
-	ret = get_path(&session, metadata, r);
-	if (ret)
+	if ((ret = get_path(&session, metadata, r)) > 0)
 		return ret;
 
 	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
 	if ((metadata->length < 0) || (metadata->upload_date < 0)) {
-		ret = get_stat(metadata, r);
-		if (ret)
+		if ((ret = get_stat(metadata, r)) > 0)
 			return ret;
 	}
 
@@ -269,8 +272,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		s1 = strchr(session.hdr_if_none_match, '"');
 		s2 = strrchr(session.hdr_if_none_match, '"');
 		if ((s1 == session.hdr_if_none_match) && (s2 == session.hdr_if_none_match + strlen(session.hdr_if_none_match) - 1)) {
-			s0 = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1);
-			if (s0 == NULL) {
+			if ((s0 = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_if_none_match.", strlen(session.hdr_if_none_match) - 1);
 				return NGX_ERROR;
 			}
@@ -286,32 +288,27 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 
 	// Extract all headers if requested
 	if (! strcmp(session.all_headers, "yes")) {
-		ret = get_all_headers(&session, r);
-		if (ret)
+		if ((ret = get_all_headers(&session, r)) > 0)
 			return ret;
 	}
 
 	// Extract all cookies if requested
 	if (! strcmp(session.all_cookies, "yes")) {
-		ret = get_all_cookies(&session, r);
-		if (ret)
+		if ((ret = get_all_cookies(&session, r)) > 0)
 			return ret;
 	}
 
 	// Try to find an authorisation token
-	ret = get_auth_token(&session, r);
-	if (ret)
+	if ((ret = get_auth_token(&session, r)) > 0)
 		return ret;
 
 	// Extract authentcation token to value
 	if (! strcmp(session.auth_method, AUTH_METHOD_JWT)) {
-		ret = auth_jwt(&session, r);
-		if (ret)
+		if ((ret = auth_jwt(&session, r)) > 0)
 			return ret;
 	}
 	else if (! strcmp(session.auth_method, AUTH_METHOD_SESSION)) {
-		ret = auth_session(&session, r);
-		if (ret)
+		if ((ret = auth_session(&session, r)) > 0)
 			return ret;
 	}
 
@@ -322,15 +319,17 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		ret = request_sql(&session, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))
 		ret = request_sql(&session, r);
+	else if (! strcmp(session.request_type, REQUEST_TYPE_XML))
+		ret = request_xml(&session, r);
 
 	if (ret)
 		return ret;
 
 	// Query for metadata based on transport
 	if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
-		ret = transport_unix(&session, r);
+		ret = transport_socket(&session, r, SOCKET_TYPE_UNUX);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_TCP))
-		ret = transport_tcp(&session, r);
+		ret = transport_socket(&session, r, SOCKET_TYPE_TCP);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE))
@@ -345,40 +344,27 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// Process response (as per the configured request type)
 	if (! strcmp(session.request_type, REQUEST_TYPE_JSON)) {
 		ret = response_json(&session, metadata, r);
-		if (session.auth_response)
-			free(session.auth_response);
 	}
-	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL)) {
+	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
 		ret = response_mysql(&session, metadata, r);
-		if (session.mysql_result)
-			mysql_free_result(session.mysql_result);
-	}
-	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE)) {
+	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))
 		ret = response_oracle(&session, metadata, r);
-#ifdef CDN_ENABLE_ORACLE
-		if (session.oracle_statement)
-			OCI_StatementFree(session.oracle_statement);
-		if (session.oracle_connection)
-			OCI_API OCI_ConnectionFree(session.oracle_connection);
-#endif
-	}
+	else if (! strcmp(session.request_type, REQUEST_TYPE_XML))
+		ret = response_xml(&session, metadata, r);
 
 	if (ret)
 		return ret;
 
 	// Check metadata
-	ret = metadata_check(&session, metadata, r);
-	if (ret)
+	if ((ret = metadata_check(&session, metadata, r)) > 0)
 		return ret;
 
 	// Process the file
-	ret = read_fs(&session, metadata, r);
-	if (ret)
+	if ((ret = read_fs(&session, metadata, r)) > 0)
 		return ret;
 
 	// Send the file
-	ret = send_file(&session, metadata, r);
-	if (ret) {
+	if ((ret = send_file(&session, metadata, r)) > 0) {
 		cleanup(metadata, r);
 		return ret;
 	}
@@ -429,8 +415,7 @@ ngx_int_t read_fs(session_t *session, cdn_file_t *metadata, ngx_http_request_t *
 		}
 
 		// Set cleanup handler to unmap the file
-		c = ngx_pcalloc(r->pool, sizeof(ngx_http_cleanup_t));
-		if (c == NULL) {
+		if ((c = ngx_pcalloc(r->pool, sizeof(ngx_http_cleanup_t))) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for cleanup.", sizeof(ngx_http_cleanup_t));
 			return NGX_ERROR;
 		}
@@ -568,8 +553,7 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 		}
 
 		// Prepare output buffer
-		b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
-		if (b == NULL) {
+		if ((b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t))) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
@@ -629,7 +613,11 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 		hdr_authorization = from_ngx_str(r->pool, r->headers_in.authorization->value);
 
 		if (strstr(hdr_authorization, "Bearer")) {
-			session->auth_token = ngx_pcalloc(r->pool, strlen(hdr_authorization) + 1);
+			if ((session->auth_token = ngx_pcalloc(r->pool, strlen(hdr_authorization) + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for Authorization header.", strlen(hdr_authorization) + 1);
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+
 			strncpy(session->auth_token, hdr_authorization + 7, strlen(hdr_authorization) - 7);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in Authorization header: %s", session->auth_token);
 		}
@@ -698,8 +686,7 @@ ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_requ
 
 	// Check if we have the end user's file name and use the CDN filename if missing
 	if (! metadata->filename) {
-		metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1);
-		if (metadata->filename == NULL) {
+		if ((metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(metadata->file) + 1);
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
@@ -709,8 +696,7 @@ ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_requ
 
 	// Check if we have the content type and use the default one if missing
 	if (! metadata->content_type) {
-		metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1);
-		if (metadata->content_type == NULL) {
+		if ((metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(DEFAULT_CONTENT_TYPE) + 1);
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
@@ -724,8 +710,7 @@ ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_requ
 
 	// Check if we have the eTag and use the default one if missing
 	if (! metadata->etag) {
-		metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1);
-		if (metadata->etag == NULL) {
+		if ((metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(DEFAULT_ETAG) + 1);
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
@@ -763,8 +748,7 @@ ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t 
 	int i, len, pos=0;
 
 	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
-	metadata->path = ngx_pcalloc(r->pool, len);
-	if (metadata->path == NULL) {
+	if ((metadata->path = ngx_pcalloc(r->pool, len)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
 		return NGX_ERROR;
 	}

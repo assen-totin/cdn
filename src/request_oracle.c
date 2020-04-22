@@ -34,6 +34,11 @@ ngx_int_t response_oracle(session_t *session, cdn_file_t *metadata, ngx_http_req
 
 	metadata->upload_date = OCI_GetInt2(session->oracle_result, "UPLOAD_DATE");
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
+
+	if (session->oracle_statement)
+		OCI_StatementFree(session->oracle_statement);
+	if (session->oracle_connection)
+		OCI_API OCI_ConnectionFree(session->oracle_connection);
 #endif
 
 	return NGX_OK;

@@ -63,6 +63,9 @@ ngx_int_t response_mysql(session_t *session, cdn_file_t *metadata, ngx_http_requ
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
 		}
 	}
+
+	if (session->mysql_result)
+		mysql_free_result(session->mysql_result);
 #endif
 
 	return NGX_OK;

@@ -62,7 +62,7 @@ ngx_int_t response_json(session_t *session, cdn_file_t *metadata, ngx_http_reque
 	const char *bson_key;
 	ngx_int_t ret;
 
-	// Walk around the JSON which we received from the authentication servier, session->auth_response
+	// Walk around the JSON which we received from the authentication server, session->auth_response
 	if (! bson_init_from_json(&doc, session->auth_response, strlen(session->auth_response), &error)) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->auth_response);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -122,6 +122,9 @@ ngx_int_t response_json(session_t *session, cdn_file_t *metadata, ngx_http_reque
 	}
 
 	bson_destroy(&doc);
+
+	if (session->auth_response)
+		free(session->auth_response);
 
 	return NGX_OK;
 }

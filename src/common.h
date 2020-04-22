@@ -12,6 +12,7 @@
 #include <curl/curl.h>
 #include <errno.h>
 #include <features.h>
+#include <libxml/xmlwriter.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -84,10 +85,9 @@
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
 #define ERROR_MESSAGE_LENGTH 1024
 
-#define TCP_BUFFER_CHUNK 1500
-
-#define UNIX_BUFFER_CHUNK 1024
-#define UNIX_SOCKET_TYPE SOCK_STREAM
+#define SOCKET_BUFFER_CHUNK 1500
+#define SOCKET_TYPE_TCP 1
+#define SOCKET_TYPE_UNUX 2
 
 #define AUTH_METHOD_JWT "jwt"
 #define AUTH_METHOD_SESSION "session"
@@ -95,6 +95,7 @@
 #define REQUEST_TYPE_JSON "json"
 #define REQUEST_TYPE_MYSQL "mysql"
 #define REQUEST_TYPE_ORACLE "oracle"
+#define REQUEST_TYPE_XML "xml"
 
 #define TRANSPORT_TYPE_MYSQL "mysql"
 #define TRANSPORT_TYPE_ORACLE "oracle"
