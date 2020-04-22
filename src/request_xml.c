@@ -7,7 +7,10 @@
  * Handle XML error
  */
 static ngx_int_t error_xml(ngx_http_request_t *r, xmlTextWriterPtr writer, xmlBufferPtr buf, char *element) {
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "XML writer error at %s", element);
+	xmlErrorPtr err;
+
+	err = xmlGetLastError();
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "XML writer error at %s: %s", element, err->message);
 	xmlFreeTextWriter(writer);
 	xmlBufferFree(buf);
 	return NGX_HTTP_INTERNAL_SERVER_ERROR;
