@@ -123,9 +123,6 @@ ngx_int_t response_json(session_t *session, cdn_file_t *metadata, ngx_http_reque
 
 	bson_destroy(&doc);
 
-	if (session->auth_response)
-		free(session->auth_response);
-
 	return NGX_OK;
 }
 

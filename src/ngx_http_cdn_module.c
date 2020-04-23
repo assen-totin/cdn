@@ -13,6 +13,7 @@
 #include "request_oracle.h"
 #include "request_sql.h"
 #include "request_xml.h"
+#include "transport_http.h"
 #include "transport_mysql.h"
 #include "transport_oracle.h"
 #include "transport_socket.h"
@@ -43,6 +44,9 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 
 	// Check libxml version
 	LIBXML_TEST_VERSION;
+
+	// Init cURL
+	curl_global_init(CURL_GLOBAL_DEFAULT);
 
 	return NGX_OK;
 }
@@ -97,6 +101,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->all_cookies, parent->all_cookies, DEFAULT_ALL_COOKIES);
 	ngx_conf_merge_str_value(child->sql_dsn, parent->sql_dsn, DEFAULT_SQL_DSN);
 	ngx_conf_merge_str_value(child->sql_query, parent->sql_query, DEFAULT_SQL_QUERY);
+	ngx_conf_merge_str_value(child->http_url, parent->http_url, DEFAULT_HTTP_URL);
 
 	return NGX_CONF_OK;
 }
@@ -205,8 +210,10 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
 	session.tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
 	session.tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
+	session.http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
 	session.auth_request = NULL;
 	session.auth_response = NULL;
+	session.curl = NULL;
 
 	// Init file metadata
 	if ((metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t))) == NULL) {
@@ -326,14 +333,16 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		return ret;
 
 	// Query for metadata based on transport
-	if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
-		ret = transport_socket(&session, r, SOCKET_TYPE_UNUX);
-	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_TCP))
-		ret = transport_socket(&session, r, SOCKET_TYPE_TCP);
+	if (! strcmp(session.transport_type, TRANSPORT_TYPE_HTTP))
+		ret = transport_http(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_oracle(&session, r);
+	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_TCP))
+		ret = transport_socket(&session, r, SOCKET_TYPE_TCP);
+	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
+		ret = transport_socket(&session, r, SOCKET_TYPE_UNUX);
 
 	if ((! strcmp(session.request_type, REQUEST_TYPE_JSON)) && (session.auth_request))
 		bson_free(session.auth_request);
@@ -342,15 +351,17 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		return ret;
 
 	// Process response (as per the configured request type)
-	if (! strcmp(session.request_type, REQUEST_TYPE_JSON)) {
+	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
 		ret = response_json(&session, metadata, r);
-	}
 	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
 		ret = response_mysql(&session, metadata, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))
 		ret = response_oracle(&session, metadata, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_XML))
 		ret = response_xml(&session, metadata, r);
+
+	if (session.auth_response)
+		free(session.auth_response);
 
 	if (ret)
 		return ret;
@@ -439,7 +450,6 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 	int b1_len, b2_len;
 	char *encoded = NULL;
 	bool curl_encoded = false;
-	CURL *curl;
     ngx_buf_t *b, *b1, *b2;
     ngx_chain_t *out = NULL;
 	ngx_table_elt_t *h;
@@ -480,10 +490,12 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 
 	// Attachment: if file will be an attachment
 	if (metadata->content_disposition && ! strcmp(metadata->content_disposition, CONTENT_DISPOSITION_ATTACHMENT)) {
-		// URI-encode the file name?
-		curl = curl_easy_init();
-		if (curl) {
-			encoded = curl_easy_escape(curl, metadata->filename, strlen(metadata->filename));
+		// Lazy init curl, if not done so
+		if (! session->curl)
+			session->curl = curl_easy_init();
+	
+		if (session->curl) {
+			encoded = curl_easy_escape(session->curl, metadata->filename, strlen(metadata->filename));
 			if (encoded) {
 				curl_encoded = true;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using URI-encoded filename %s", metadata->file, encoded);
@@ -499,8 +511,7 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 		// Add Content-Disposition header
 		// headers['Content-Disposition'] = 'attachment; filename="' + encodeURIComponent(this.file.filename) + '";'
 		// NB: It is not in the standard Nginx header table, so add it as custom header
-		h = ngx_list_push(&r->headers_out.headers);
-		if (h == NULL) {
+		if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header.");
 		    return NGX_ERROR;
 		}
@@ -517,12 +528,13 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 		b2->last = ngx_sprintf(b2->last, "attachment; filename=\"%s\"", encoded);
 		h->value.len = b2_len;
 		h->value.data = b2->start;
+	}
 
-		if (curl) {
-			if (curl_encoded)
-				curl_free(encoded);
-			curl_easy_cleanup(curl);
-		}
+	// Clean up cURL - it might have been init'ed in transport_http, or just above, or never
+	if (session->curl) {
+		if (curl_encoded)
+			curl_free(encoded);
+		curl_easy_cleanup(session->curl);
 	}
 
 	//TODO: Return Content-Range header if Range header was specified in the request

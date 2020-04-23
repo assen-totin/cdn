@@ -204,7 +204,7 @@ The SQL query should return a single row with column names matching the keys in 
 
 NB: Oracle returns the column names in caps. This is OK.
 
-Hint: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s)`.
+NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s)`.
 
 # Transport types
 
@@ -216,6 +216,8 @@ This transport is usually used when request type is `json` (JSON exchange) or `x
 
 The Unix socket must be of type `stream`. The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
 
+NB: The `examples` directory contains a sample Unix domain socket server in NodeJS which supports socket half-closing.
+
 ## TCP socket
 
 Set the host and port for TCP connection in configuration options `cdn_tcp_host` and `cdn_tcp_port`.
@@ -223,6 +225,20 @@ Set the host and port for TCP connection in configuration options `cdn_tcp_host`
 This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
 
 The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
+
+NB: TCP is naturally slower than Unix domain socket.
+
+NB: The `examples` directory contains a sample Unix domain socket server in NodeJS which supports socket half-closing. It can easily be converted to TCP socket.
+
+## HTTP
+
+Set the URL in configuration option `cdn_http_url`. If using HTTPS, the local libcurl (used to make the HTTP request) must be able to verify the TLS certificate of the remote end. Authentication to this URL is currently unsupported.
+
+This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
+
+The HTTP request will be of type POST.
+
+NB: HTTP is naturally slower than both Unix domain socket an TCP socket.
 
 ## MySQL
 
@@ -317,5 +333,5 @@ Test your authorisation query to make sure metadata is properly returned.
 # TOOD
 
 - MongoDB transport and request/response
-- HTTP transport
+
 

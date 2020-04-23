@@ -62,6 +62,7 @@
 #define DEFAULT_TCP_HOST "example.com"
 #define DEFAULT_TCP_PORT 12345
 #define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
+#define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_REQUEST_TYPE "none"
 #define DEFAULT_TRANSPORT_TYPE "none"
 #define DEFAULT_AUTH_HEADER "none"
@@ -97,6 +98,7 @@
 #define REQUEST_TYPE_ORACLE "oracle"
 #define REQUEST_TYPE_XML "xml"
 
+#define TRANSPORT_TYPE_HTTP "http"
 #define TRANSPORT_TYPE_MYSQL "mysql"
 #define TRANSPORT_TYPE_ORACLE "oracle"
 #define TRANSPORT_TYPE_TCP "tcp"
@@ -124,6 +126,7 @@ typedef struct {
 	ngx_str_t all_headers;
 	ngx_str_t sql_dsn;
 	ngx_str_t sql_query;
+	ngx_str_t http_url;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -146,6 +149,7 @@ typedef struct {
 } cdn_kvp_t;
 
 typedef struct {
+	ngx_http_request_t *r;
 	time_t exp;
 	char *uri;
 	uint fs_depth;
@@ -165,6 +169,8 @@ typedef struct {
 	const char *auth_value;
 	char *auth_request;
 	char *auth_response;
+	int auth_response_len;
+	int auth_response_pos;
 	char *jwt_key;
 	char *jwt_json;
 	char *jwt_field;
@@ -175,6 +181,8 @@ typedef struct {
 	char *unix_socket;
 	char *tcp_host;
 	int tcp_port;
+	char *http_url;
+	CURL *curl;
 #ifdef CDN_ENABLE_JWT
 	jwt_t *jwt;
 #endif
