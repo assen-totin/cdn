@@ -16,6 +16,10 @@ CMDL_JOB_NAME+=("--cdn-enable-jwt")
 CMDL_JOB_FLAG+=(0)
 CMDL_JOB_HELP+=("Link against libjwt.so")
 
+CMDL_JOB_NAME+=("--cdn-enable-mongo")
+CMDL_JOB_FLAG+=(0)
+CMDL_JOB_HELP+=("Link against Mongo C driver")
+
 CMDL_JOB_NAME+=("--cdn-enable-mysql")
 CMDL_JOB_FLAG+=(0)
 CMDL_JOB_HELP+=("Link against libmysqlclient.so")
@@ -57,6 +61,11 @@ EXTRA_INCLUDES="-I /usr/include/libbson-1.0 -I/usr/include/libxml2"
 if [ x$ARG_CND_ENABLE_JWT != 'x' ] ; then
 	EXTRA_LIBS="$EXTRA_LIBS -ljwt"
 	sed -i 's|^.*CDN_ENABLE_JWT.*$|#define CDN_ENABLE_JWT|' src/modules.h
+fi
+if [ x$ARG_CND_ENABLE_MONGO != 'x' ] ; then
+	EXTRA_LIBS="$EXTRA_LIBS -lmongoc-1.0"
+	EXTRA_INCLUDES="$EXTRA_INCLUDES -I /usr/include/libmongoc-1.0"
+	sed -i 's|^.*CDN_ENABLE_MONGO.*$|#define CDN_ENABLE_MONGO|' src/modules.h
 fi
 if [ x$ARG_CND_ENABLE_MYSQL != 'x' ] ; then
 	[ x$EL_VERSION == 'x7' ] && EXTRA_LIBS="$EXTRA_LIBS -L/usr/lib64/mysql"
@@ -109,6 +118,10 @@ copy_spec_file
 if [ x$ARG_CND_ENABLE_JWT != 'x' ] ; then
 	sed -i 's|^.*libjwt-devel.*$|BuildRequires: libjwt-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 	sed -i 's|^.*libjwt$|Requires: libjwt|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+fi
+if [ x$ARG_CND_ENABLE_MONGO != 'x' ] ; then
+	sed -i 's|^.*mongo-c-driver-devel.*$|BuildRequires: mongo-c-driver-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	sed -i 's|^.*mongo-c-driver$|Requires: mongo-c-driver|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 fi
 if [ x$ARG_CND_ENABLE_MYSQL != 'x' ] ; then
 	if [ x$EL_VERSION == 'x7' ] ; then

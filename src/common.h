@@ -28,9 +28,15 @@
 #ifdef CDN_ENABLE_JWT
 #include <jwt.h>
 #endif
+
+#ifdef CDN_ENABLE_MONGO
+#include <mongoc.h>
+#endif
+
 #ifdef CDN_ENABLE_MYSQL
 #include <mysql.h>
 #endif
+
 #ifdef CDN_ENABLE_ORACLE
 #include <ocilib.h>
 #endif
@@ -72,8 +78,10 @@
 #define DEFAULT_JWT_FIELD "none"
 #define DEFAULT_ALL_COOKIES "no"
 #define DEFAULT_ALL_HEADERS "no"
-#define DEFAULT_SQL_DSN "none"
+#define DEFAULT_DB_DSN "none"
 #define DEFAULT_SQL_QUERY "none"
+#define DEFAULT_MONGO_DB "none"
+#define DEFAULT_MONGO_COLLECTION "none"
 
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
@@ -94,11 +102,13 @@
 #define AUTH_METHOD_SESSION "session"
 
 #define REQUEST_TYPE_JSON "json"
+#define REQUEST_TYPE_MONGO "mongo"
 #define REQUEST_TYPE_MYSQL "mysql"
 #define REQUEST_TYPE_ORACLE "oracle"
 #define REQUEST_TYPE_XML "xml"
 
 #define TRANSPORT_TYPE_HTTP "http"
+#define TRANSPORT_TYPE_MONGO "mongo"
 #define TRANSPORT_TYPE_MYSQL "mysql"
 #define TRANSPORT_TYPE_ORACLE "oracle"
 #define TRANSPORT_TYPE_TCP "tcp"
@@ -124,9 +134,11 @@ typedef struct {
 	ngx_str_t jwt_field;
 	ngx_str_t all_cookies;
 	ngx_str_t all_headers;
-	ngx_str_t sql_dsn;
+	ngx_str_t db_dsn;
 	ngx_str_t sql_query;
 	ngx_str_t http_url;
+	ngx_str_t mongo_db;
+	ngx_str_t mongo_collection;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -173,7 +185,7 @@ typedef struct {
 	char *jwt_key;
 	char *jwt_json;
 	char *jwt_field;
-	char *sql_dsn;
+	char *db_dsn;
 	char *sql_query;
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
@@ -184,6 +196,11 @@ typedef struct {
 	CURL *curl;
 #ifdef CDN_ENABLE_JWT
 	jwt_t *jwt;
+#endif
+#ifdef CDN_ENABLE_MONGO
+	char *mongo_db
+	char *mongo_collection
+	bson_t *mongo_reponse
 #endif
 #ifdef CDN_ENABLE_MYSQL
 	MYSQL_RES *mysql_result;
@@ -203,5 +220,5 @@ typedef struct {
 	char *user;
 	char *password;
 	char *db;
-} sql_dsn_t;
+} db_dsn_t;
 

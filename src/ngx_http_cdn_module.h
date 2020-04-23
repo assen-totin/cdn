@@ -153,11 +153,11 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
-		ngx_string("cdn_sql_dsn"),
+		ngx_string("cdn_db_dsn"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, sql_dsn),
+		offsetof(ngx_http_cdn_loc_conf_t, db_dsn),
 		NULL
 	},
 	{
@@ -166,6 +166,22 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, sql_query),
+		NULL
+	},
+	{
+		ngx_string("cdn_mongo_db"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, mongo_db),
+		NULL
+	},
+	{
+		ngx_string("cdn_mongo_collection"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, mongo_collection),
 		NULL
 	},
 	ngx_null_command

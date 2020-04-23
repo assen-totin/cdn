@@ -198,13 +198,19 @@ See the JSON section above for fields meaning and values.
 
 ## SQL
 
-Set the SQL query to run in the configuration option `cnd_sql_query`. It must have two `%s` placeholdes - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
+Set the SQL query to run in the configuration option `cnd_sql_query`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
 
 The SQL query should return a single row with column names matching the keys in the JSON response above.
 
 NB: Oracle returns the column names in caps. This is OK.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
+
+## Mongo
+
+Because Mongo does not allow for textual queries, both file metadata and authorisation data must reside in a single collection with one document per file. Each document must have the same properties as the JSON response above plus two extra: `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). When asking for authorisation and data, CDN will compose a Mongo query with a filter that will have both these properties set: `{file_id: 1234-567-89, auth_value: abcd-efgh-ijkl}`; there should either be one exact match (if access is authorised) or no match.
+
+Set the database name in the configuration option `cnd_mongo_db`. Set the collection name the configuration option `cnd_mongo_collection`.
 
 # Transport types
 
@@ -242,15 +248,19 @@ NB: HTTP is naturally slower than both Unix domain socket an TCP socket.
 
 ## MySQL
 
-Set the DSN in the configuration option `cnd_sql_dsn` using the following syntax: `host:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number.
+Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `host:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number.
 
 ## Oracle
 
-Set the DSN in the configuration option `cnd_sql_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service` fields `port` and `database` are ignored.
+Set the DSN in the configuration option `cnd_db_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service` fields `port` and `database` are ignored.
 
 You'll need to manually install Oracle Instant Client library; make sure you have a version which knows how to talk to your Oracle server.
 
 You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the ORACLE_HOME variable.
+
+## Mongo
+
+Set the database connection string in the configuration option `cnd_db_dsn` using the standard Mongo driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
 
 # Dev environment setup
 

@@ -215,7 +215,7 @@ static inline ngx_int_t property_sql(ngx_http_request_t *r, char **field, char *
 /**
  * SQL DSN parser
  */
-ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r, sql_dsn_t *dsn) {
+ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r, db_dsn_t *dsn) {
 	int i;
 	char *token, *saveptr, *str;
 	ngx_int_t ret;
@@ -230,8 +230,8 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r, sql_dsn_t *dsn) {
 	dsn->db = NULL;
 
 	// host:port|socket:user:password:db
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing MySQL DSN: %s", session->sql_dsn);
-	for (str = session->sql_dsn, i = 0; ; str = NULL, i++) {
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing MySQL DSN: %s", session->db_dsn);
+	for (str = session->db_dsn, i = 0; ; str = NULL, i++) {
 		token = strtok_r(str, ":", &saveptr);
 		if (token == NULL)
 			break;

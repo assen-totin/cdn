@@ -20,10 +20,12 @@ License: Proprietary
 BuildArch: x86_64
 BuildRequires: libbson-devel, libcurl-devel, libxml2-devel
 #BuildRequires: libjwt-devel
+#BuildRequires: mongo-c-driver-devel
 #BuildRequires: mariadb-devel
 #BuildRequires: ocilib-devel
 Requires: nginx, libcurl, libbson, libxml2
 #Requires: libjwt
+#Requires: mongo-c-driver
 #Requires: mariadb-libs
 #Requires: ocilib
 

@@ -2,11 +2,11 @@
 #include "utils.h"
 
 /**
- * Process Oracle response
+ * Get file metadata from Oracle
  */
 ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_ORACLE
-	sql_dsn_t dsn;
+	db_dsn_t dsn;
 	ngx_int_t ret;
 
 	// Parse DNS

@@ -9,11 +9,13 @@
 #include "auth_jwt.h"
 #include "auth_session.h"
 #include "request_json.h"
+#include "request_mongo.h"
 #include "request_mysql.h"
 #include "request_oracle.h"
 #include "request_sql.h"
 #include "request_xml.h"
 #include "transport_http.h"
+#include "transport_mongo.h"
 #include "transport_mysql.h"
 #include "transport_oracle.h"
 #include "transport_socket.h"
@@ -25,6 +27,11 @@
 
 ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	int ret; 
+
+#ifdef CDN_ENABLE_MONGO
+	// Init Mongo
+	mongoc_init();
+#endif
 
 #ifdef CDN_ENABLE_MYSQL
 	// Init MySQL
@@ -99,9 +106,11 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->jwt_field, parent->jwt_field, DEFAULT_JWT_FIELD);
 	ngx_conf_merge_str_value(child->all_headers, parent->all_headers, DEFAULT_ALL_HEADERS);
 	ngx_conf_merge_str_value(child->all_cookies, parent->all_cookies, DEFAULT_ALL_COOKIES);
-	ngx_conf_merge_str_value(child->sql_dsn, parent->sql_dsn, DEFAULT_SQL_DSN);
+	ngx_conf_merge_str_value(child->db_dsn, parent->db_dsn, DEFAULT_DB_DSN);
 	ngx_conf_merge_str_value(child->sql_query, parent->sql_query, DEFAULT_SQL_QUERY);
 	ngx_conf_merge_str_value(child->http_url, parent->http_url, DEFAULT_HTTP_URL);
+	ngx_conf_merge_str_value(child->mongo_db, parent->mongo_db, DEFAULT_MONGO_DB);
+	ngx_conf_merge_str_value(child->mongo_collection, parent->mongo_collection, DEFAULT_MONGO_COLLECTION);
 
 	return NGX_CONF_OK;
 }
@@ -193,12 +202,9 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.auth_method = from_ngx_str(r->pool, cdn_loc_conf->auth_method);
 	session.auth_token = NULL;
 	session.auth_value = NULL;
-	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
-	session.jwt_json = NULL;
-	session.jwt_field = NULL;
 	session.all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
 	session.all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
-	session.sql_dsn = from_ngx_str(r->pool, cdn_loc_conf->sql_dsn);
+	session.db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
 	session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_query);
 	session.headers = NULL;
 	session.headers_count = 0;
@@ -213,6 +219,12 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.auth_request = NULL;
 	session.auth_response = NULL;
 	session.curl = NULL;
+	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
+	session.jwt_json = NULL;
+	session.jwt_field = NULL;
+#ifdef CDN_ENABLE_MONGO
+	session.mongo_response = NULL;
+#endif
 
 	// Init file metadata
 	if ((metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t))) == NULL) {
@@ -321,6 +333,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// Prepare request (as per the configured request type)
 	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
 		ret = request_json(&session, metadata, r);
+	else if (! strcmp(session.request_type, REQUEST_TYPE_MONGO))
+		ret = request_mongo(&session, metadata, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
 		ret = request_sql(&session, metadata, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))
@@ -334,6 +348,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// Query for metadata based on transport
 	if (! strcmp(session.transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(&session, r);
+	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MONGO))
+		ret = transport_mongo(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE))
@@ -345,6 +361,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 
 	if ((! strcmp(session.request_type, REQUEST_TYPE_JSON)) && (session.auth_request))
 		bson_free(session.auth_request);
+	if ((! strcmp(session.request_type, REQUEST_TYPE_MONGO)) && (session.auth_request))
+		bson_free(session.auth_request);
 
 	if (ret)
 		return ret;
@@ -352,6 +370,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// Process response (as per the configured request type)
 	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
 		ret = response_json(&session, metadata, r);
+	else if (! strcmp(session.request_type, REQUEST_TYPE_MONGO))
+		ret = response_mongo(&session, metadata, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
 		ret = response_mysql(&session, metadata, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))
