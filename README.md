@@ -72,7 +72,7 @@ To use this method, set the configuration option `cdn_auth_method` to `session`.
 
 ## Offloaded authorisation
 
-This method allows you to send the original URI plus some extra info to the authrosation body. Thsi extra info may be:
+This method allows you to send some extra info to the authrosation body. Thsi extra info may be:
 
 - The authorisation value, if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
 - All HTTP headers, if configuration option `cdn_all_headers` is set to `yes`.
@@ -96,7 +96,7 @@ The field `auth_value` from authentication token is included only if configurati
 
 ```
 {
-	"uri" : "/some-file-id",
+	"file_id" : "1234-567-89",
 	"auth_value" : "12345"
 	"headers" : [
 		{
@@ -152,7 +152,7 @@ The element `auth_value` from authentication token is included only if configura
 
 ```
 <request>
-	<uri>/some-file-id</uri>
+	<file_id>1234-567-89</file_id>
 	<auth_value>12345</auth_value>
 	<headers>
 		<header>
@@ -198,13 +198,13 @@ See the JSON section above for fields meaning and values.
 
 ## SQL
 
-Set the SQL query to run in the configuration option `cnd_sql_query`. Use `%s` as placeholder for the value, extracted from the JWT payload.
+Set the SQL query to run in the configuration option `cnd_sql_query`. It must have two `%s` placeholdes - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
 
 The SQL query should return a single row with column names matching the keys in the JSON response above.
 
 NB: Oracle returns the column names in caps. This is OK.
 
-NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s)`.
+NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
 # Transport types
 

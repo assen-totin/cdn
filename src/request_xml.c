@@ -20,7 +20,7 @@ static ngx_int_t error_xml(ngx_http_request_t *r, xmlTextWriterPtr writer, xmlBu
 /**
  * Prepare XML request
  */
-ngx_int_t request_xml(session_t *session, ngx_http_request_t *r) {
+ngx_int_t request_xml(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	int i, ret;
 	xmlTextWriterPtr writer;
 	xmlBufferPtr buf;
@@ -46,8 +46,8 @@ ngx_int_t request_xml(session_t *session, ngx_http_request_t *r) {
 	if ((ret = xmlTextWriterStartElement(writer, BAD_CAST "request")) < 0)
 		return error_xml(r, writer, buf, "xmlTextWriterStartElement");
 
-	// URI
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "uri", (const xmlChar *) session->uri)) < 0)
+	// File ID
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "file_id", (const xmlChar *) metadata->file)) < 0)
 		return error_xml(r, writer, buf, "xmlTextWriterWriteElement");
 
 	// Add the authorisation value if extracted

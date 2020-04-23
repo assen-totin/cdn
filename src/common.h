@@ -151,7 +151,6 @@ typedef struct {
 typedef struct {
 	ngx_http_request_t *r;
 	time_t exp;
-	char *uri;
 	uint fs_depth;
 	char *fs_root;
 	char *request_type;

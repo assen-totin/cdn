@@ -4,7 +4,7 @@
 /**
  * Prepare JSON request
  */
-ngx_int_t request_json(session_t *session, ngx_http_request_t *r) {
+ngx_int_t request_json(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
 	int i;
 	char s[11];
 	bson_t b, bc, bh, bel;
@@ -12,8 +12,8 @@ ngx_int_t request_json(session_t *session, ngx_http_request_t *r) {
 	// Init a BSON
 	bson_init (&b);
 
-	// Add the URI
-	BSON_APPEND_UTF8 (&b, "uri", session->uri);
+	// Add the file ID
+	BSON_APPEND_UTF8 (&b, "file_id", metadata->file_id);
 
 	// Add the authorisation key as extracted from JWT
 	if (session->auth_value)
