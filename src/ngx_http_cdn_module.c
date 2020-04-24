@@ -135,7 +135,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_int_t ret;
 	ngx_table_elt_t *h;
 	cdn_file_t *metadata;
-	char *uri, *s0, *s1, *s2, str1, *saveptr1;
+	char *uri, *s0, *s1, *s2, *str1, *saveptr1;
 	struct tm ltm;
 
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
@@ -222,9 +222,6 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
 	session.jwt_json = NULL;
 	session.jwt_field = NULL;
-#ifdef CDN_ENABLE_MONGO
-	session.mongo_response = NULL;
-#endif
 
 	// Init file metadata
 	if ((metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t))) == NULL) {
@@ -359,10 +356,10 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
 		ret = transport_socket(&session, r, SOCKET_TYPE_UNUX);
 
-	if ((! strcmp(session.request_type, REQUEST_TYPE_JSON)) && (session.auth_request))
-		bson_free(session.auth_request);
-	if ((! strcmp(session.request_type, REQUEST_TYPE_MONGO)) && (session.auth_request))
-		bson_free(session.auth_request);
+	if (session.auth_request) {
+		if ((! strcmp(session.request_type, REQUEST_TYPE_JSON)) || (! strcmp(session.request_type, REQUEST_TYPE_MONGO)))
+			bson_free(session.auth_request);
+	}
 
 	if (ret)
 		return ret;
@@ -370,8 +367,11 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// Process response (as per the configured request type)
 	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
 		ret = response_json(&session, metadata, r);
-	else if (! strcmp(session.request_type, REQUEST_TYPE_MONGO))
-		ret = response_mongo(&session, metadata, r);
+	else if (! strcmp(session.request_type, REQUEST_TYPE_MONGO)) {
+		ret = response_json(&session, metadata, r);
+		bson_free(session.auth_response);
+		session.auth_response = NULL;
+	}
 	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
 		ret = response_mysql(&session, metadata, r);
 	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))

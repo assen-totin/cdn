@@ -198,9 +198,8 @@ typedef struct {
 	jwt_t *jwt;
 #endif
 #ifdef CDN_ENABLE_MONGO
-	char *mongo_db
-	char *mongo_collection
-	bson_t *mongo_reponse
+	char *mongo_db;
+	char *mongo_collection;
 #endif
 #ifdef CDN_ENABLE_MYSQL
 	MYSQL_RES *mysql_result;
@@ -221,4 +220,5 @@ typedef struct {
 	char *password;
 	char *db;
 } db_dsn_t;
+
 

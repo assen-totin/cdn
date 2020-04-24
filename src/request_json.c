@@ -13,7 +13,7 @@ ngx_int_t request_json(session_t *session, cdn_file_t *metadata, ngx_http_reques
 	bson_init (&b);
 
 	// Add the file ID
-	BSON_APPEND_UTF8 (&b, "file_id", metadata->file_id);
+	BSON_APPEND_UTF8 (&b, "file_id", metadata->file);
 
 	// Add the authorisation key as extracted from JWT
 	if (session->auth_value)
