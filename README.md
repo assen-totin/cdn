@@ -26,7 +26,7 @@ location /
 	cdn_fs_root /usr/share/curaden/fs;  // Root directgory of CDN 
 	cdn_fs_depth 4;                     // CDN tree depth
 
-	cdn_auth_type;                    // Type of authorisation to use: "jwt", "session" (optional)
+	cdn_auth_type;                      // Type of authorisation to use: "jwt", "session" (optional)
 	cdn_auth_cookie my_cookie;          // Cookie where to find the authorisation token (optional)
 	cdn_auth_header X-Custom-Auth;      // HTTP header where to find the authorisation token (optional)
 	cdn_jwt_key 0123456789ABCDEF;       // Authorisation "jwt": JWT key authorisation token
