@@ -98,8 +98,8 @@
 #define SOCKET_TYPE_TCP 1
 #define SOCKET_TYPE_UNUX 2
 
-#define AUTH_METHOD_JWT "jwt"
-#define AUTH_METHOD_SESSION "session"
+#define auth_type_JWT "jwt"
+#define auth_type_SESSION "session"
 
 #define REQUEST_TYPE_JSON "json"
 #define REQUEST_TYPE_MONGO "mongo"
@@ -129,7 +129,7 @@ typedef struct {
 	ngx_str_t tcp_port;
 	ngx_str_t auth_cookie;
 	ngx_str_t auth_header;
-	ngx_str_t auth_method;
+	ngx_str_t auth_type;
 	ngx_str_t jwt_key;
 	ngx_str_t jwt_field;
 	ngx_str_t all_cookies;
@@ -175,7 +175,7 @@ typedef struct {
 	int cookies_count;
 	char *auth_cookie;
 	char *auth_header;
-	char *auth_method;
+	char *auth_type;
 	char *auth_token;
 	const char *auth_value;
 	char *auth_request;

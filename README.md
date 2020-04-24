@@ -18,20 +18,34 @@ To create a blank filesystem storage, use `tools/mkcdn.sh`.
 
 # Nginx configuration
 
+CDN URL for a file should be similar to `http://cdn.example.com/some-file-id`
+
 ```
-location /abc/xyz
-	cdn;
-	cdn_fs_root /usr/share/curaden/fs;		// Root directgory of CDN 
-	cdn_fs_depth 4;							// CDN tree depth
-	cdn_request_type json;					// Type of authorisation request to perform: "json"
-	cdn_transport_type unix;				// Type of transport for authorisation: "unix" 
-	cdn_unix_socket /path/to/some.sock;		// Path to the Unix socket
-	cdn_jwt_key 0123456789ABCDEF;			// JWT validation key
-	cdn_jwt_cookie my_auth_cookie;			// Cookie which contains the JWT
-	cdn_jwt_field uid;						// Field in JWT used for authtorisation
-	cdn_all_headers no;						// Process and include all incoming HTTP headers
-	cdn_all_cookies no;						// Process and include all cookies
-	cdn_header_auth X-Custom-JWT			// Custom headfer to search for JWT
+location /
+	cdn;                                // Enable CDN module
+	cdn_fs_root /usr/share/curaden/fs;  // Root directgory of CDN 
+	cdn_fs_depth 4;                     // CDN tree depth
+
+	cdn_auth_type;                    // Type of authorisation to use: "jwt", "session" (optional)
+	cdn_auth_cookie my_cookie;          // Cookie where to find the authorisation token (optional)
+	cdn_auth_header X-Custom-Auth;      // HTTP header where to find the authorisation token (optional)
+	cdn_jwt_key 0123456789ABCDEF;       // Authorisation "jwt": JWT key authorisation token
+	cdn_jwt_field user_id;              // Authorisation "jwt": Name of the JWT payload field which contains the authorisation value
+
+	cdn_request_type json;              // Type of authorisation request to perform: "json", "xml", "sql", "mongo"
+	cdn_all_cookies yes;                // Request "json", "xml": include all cookies in request to authentication service
+	cdn_all_headers yes;                // Request "json", "xml": include all HTTP headers in request to authentication service
+
+	cdn_transport_type unix;            // Type of transport for authorisation: "unix", "tcp", "http", "mysql", "oracle", "mongo"
+	cdn_unix_socket /path/to/unix.sock; // Transport "unix": path to the Unix socket of the authorisation service
+	cdn_tcp_host;                       // Transport "tcp": hostname of the authorisation service
+	cdn_tcp_port;                       // Transport "tcp": port of the authorisation service
+	cdn_http_url;                       // Transport "http": URL of the authorisation service
+	cdn_db_dsn dsn-or-url               // Transport "mysql", "oracle", "mongo": DSN of the database service (see docs for db-specific format)
+	cdn_sql_query                       // Transport "mysql", "oracle": SQL query to execute (with placeholders)
+	cdn_mongo_collection                // Transport "mongo": name of the Mongo collection where the metadata is
+	cdn_mongo_db                        // Transport "mongo": name of the Mongo database where the metadata collection is
+
 ```
 
 # Build configuration
@@ -59,7 +73,7 @@ You may also use tarnsparent authorisation when we pass all incoming headers and
 
 In this case the authorisation token is a JWT, which is extracted and validated to obtain the authorisation value.
 
-To use this method, set the configuration option `cdn_auth_method` to `jwt`.
+To use this method, set the configuration option `cdn_auth_type` to `jwt`.
 
 Also, set the JWT signature verification key in configuration option `cdn_jwt_key`.
 
@@ -71,7 +85,7 @@ For JWT you'll need the JWT decoding library: https://github.com/benmcollins/lib
 
 In this case the authorisation token is a session ID, which used as authorisation value. As the session ID has no digital signature nor expiration time, its validity should be verified by the authorisation body.
 
-To use this method, set the configuration option `cdn_auth_method` to `session`.
+To use this method, set the configuration option `cdn_auth_type` to `session`.
 
 ## Transparent authorisation
 
@@ -79,7 +93,7 @@ This method allows you to send some extra info to the authorisation body. This e
 - All HTTP headers, if configuration option `cdn_all_headers` is set to `yes`.
 - All cookies, if configuration option `cdn_all_cookies` is set to `yes`.
 
-This method will automatically include in the request the authorisation value if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
+This method will automatically include in the request the authorisation value if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
 
 This method may be used with some complex request types like JSON or XML. It is not applicable for SQL request type.
 
@@ -95,7 +109,7 @@ Field `headers` is only included if configuration option `cdn_all_headers` is se
 
 Field `cookies` is only included if configuration option `cdn_all_cookies` is set to `yes`.
 
-The field `auth_value` from authentication token is included only if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
+The field `auth_value` from authentication token is included only if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
 
 ```
 {
@@ -151,7 +165,7 @@ Element `headers` is only included if configuration option `cdn_all_headers` is 
 
 Element `cookies` is only included if configuration option `cdn_all_cookies` is set to `yes`.
 
-The element `auth_value` from authentication token is included only if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
+The element `auth_value` from authentication token is included only if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
 
 ```
 <request>

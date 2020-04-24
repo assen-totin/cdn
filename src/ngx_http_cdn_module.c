@@ -101,7 +101,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->tcp_port, parent->tcp_port, DEFAULT_TCP_PORT);
 	ngx_conf_merge_str_value(child->auth_cookie, parent->auth_cookie, DEFAULT_AUTH_COOKIE);
 	ngx_conf_merge_str_value(child->auth_header, parent->auth_header, DEFAULT_AUTH_HEADER);
-	ngx_conf_merge_str_value(child->auth_method, parent->auth_method, DEFAULT_AUTH_METOD);
+	ngx_conf_merge_str_value(child->auth_type, parent->auth_type, DEFAULT_AUTH_METOD);
 	ngx_conf_merge_str_value(child->jwt_key, parent->jwt_key, DEFAULT_JWT_KEY);
 	ngx_conf_merge_str_value(child->jwt_field, parent->jwt_field, DEFAULT_JWT_FIELD);
 	ngx_conf_merge_str_value(child->all_headers, parent->all_headers, DEFAULT_ALL_HEADERS);
@@ -199,7 +199,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
 	session.auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
 	session.auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
-	session.auth_method = from_ngx_str(r->pool, cdn_loc_conf->auth_method);
+	session.auth_type = from_ngx_str(r->pool, cdn_loc_conf->auth_type);
 	session.auth_token = NULL;
 	session.auth_value = NULL;
 	session.all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
@@ -318,11 +318,11 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		return ret;
 
 	// Extract authentcation token to value
-	if (! strcmp(session.auth_method, AUTH_METHOD_JWT)) {
+	if (! strcmp(session.auth_type, auth_type_JWT)) {
 		if ((ret = auth_jwt(&session, r)) > 0)
 			return ret;
 	}
-	else if (! strcmp(session.auth_method, AUTH_METHOD_SESSION)) {
+	else if (! strcmp(session.auth_type, auth_type_SESSION)) {
 		if ((ret = auth_session(&session, r)) > 0)
 			return ret;
 	}
