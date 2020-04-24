@@ -8,9 +8,9 @@ Each file request must be authorised before served. Authorisation is handled by 
 
 The business logic for authorisation consists of two main elements:
 
-- Authorisation method
-- Request type: specifies the format of the request that will be sent to the external authorisation body.
-- Transport type: specifies how to connect to the external authorisation body. 
+- Authorisation method: we support JWT, session ID  and transparent (completely offloaded)
+- Request type: specifies the format of the request that will be sent to the external authorisation body; we support SQL, JSON, XML and Mongo.
+- Transport type: specifies how to connect to the external authorisation body; we support MySQL, Oracle, Mongo, HTTP, TCP and Unix domain socket.
 
 # Initialise
 
@@ -39,18 +39,21 @@ location /abc/xyz
 To enable/disable some of the features (mostly such that require external libraries to be compiled and run), edit src/modules.h and comment/uncomment the respective line:
 
 - JWT support
+- Mongo support
 - MySQL support
 - Oracle support
 
 # Authorisation method
 
-Authoriation token can be supplied in:
+Authorisation token may be supplied in:
 
 - Authorization header, as `Bearer <token>` (default)
-- In custom header: set its name in configuration option `cdn_jwt_header`
-- In a cookie: set its name in configuration option `cdn_jwt_cookie`
+- In custom header: set its name in configuration option `cdn_auth_header`
+- In a cookie: set its name in configuration option `cdn_auth_cookie`
 
-The authrisation method determines how this authentication token will be processed to extract the actual authrisation field, which is then passed to the authorisation backend. 
+The authorisation method determines how this authentication token will be processed to extract the actual authorisation token, which is then passed to the authorisation backend. 
+
+You may also use tarnsparent authorisation when we pass all incoming headers and cookies to the authorisation body without working on them.
 
 ## Authorisation by JWT
 
@@ -60,23 +63,23 @@ To use this method, set the configuration option `cdn_auth_method` to `jwt`.
 
 Also, set the JWT signature verification key in configuration option `cdn_jwt_key`.
 
-Finally, specify the JWT paylod field to use for authorisation in configuration option `cdn_jwt_field`.
+Finally, specify the JWT payload field to use for authorisation in configuration option `cdn_jwt_field`.
 
 For JWT you'll need the JWT decoding library: https://github.com/benmcollins/libjwt
 
 ## Authorisation by session ID
 
-In this case the authorisation token is a session ID, which used as authorisation value. As the seesion ID has no digital signature nor expiration time, its validity should be verified by the authorisation body.
+In this case the authorisation token is a session ID, which used as authorisation value. As the session ID has no digital signature nor expiration time, its validity should be verified by the authorisation body.
 
 To use this method, set the configuration option `cdn_auth_method` to `session`.
 
-## Offloaded authorisation
+## Transparent authorisation
 
-This method allows you to send some extra info to the authrosation body. Thsi extra info may be:
-
-- The authorisation value, if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
+This method allows you to send some extra info to the authorisation body. This extra info may be:
 - All HTTP headers, if configuration option `cdn_all_headers` is set to `yes`.
 - All cookies, if configuration option `cdn_all_cookies` is set to `yes`.
+
+This method will automatically include in the request the authorisation value if configuration option `cdn_auth_method` is set to either `jwt` or `session`.
 
 This method may be used with some complex request types like JSON or XML. It is not applicable for SQL request type.
 
@@ -218,7 +221,7 @@ Set the database name in the configuration option `cnd_mongo_db`. Set the collec
 
 Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writable by the Nginx user. 
 
-This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
+This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML exchange).
 
 The Unix socket must be of type `stream`. The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
 
