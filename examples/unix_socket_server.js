@@ -1,6 +1,6 @@
 /*
 **
-**  Example of Node.js Unix domain socket server
+**  Example of Node.js Unix domain socket server to use with CDN as authorisation body
 **
 */
 
@@ -30,7 +30,11 @@ function createServer(socket){
         stream.on('end', function() {
 			console.log('Client sent: ' + input[self]);
             console.log('Client disconnected.');
-	        stream.write('Bye-bye!');
+
+			//TODO: process the authorisation request here and prepare response from file metadata
+			var response = {};
+
+	        stream.write(JSON.stringify(response));
 			stream.end();
             delete connections[self];
             delete input[self];
