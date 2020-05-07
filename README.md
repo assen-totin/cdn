@@ -2,7 +2,7 @@
 
 The module implements an optimised, custom delivery of authorised content (e.g., user files etc.). 
 
-The module only serves files. Their upload must be handled separately; it is quite easy, though - see File Uploads below.
+The module only serves files (including deletion of files). Their upload must be handled separately; it is quite easy, though - see File Uploads below.
 
 Each file request must be authorised before served. Authorisation is handled by an external body to which the module connects. 
 
@@ -111,9 +111,12 @@ Field `cookies` is only included if configuration option `cdn_all_cookies` is se
 
 The field `auth_value` from authentication token is included only if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
 
+The field `http_method` will be either `GET` for GET/HEAD HTTP requests or `DELETE` for DELETE HTTP requests.
+
 ```
 {
 	"file_id" : "1234-567-89",
+	"http_method" : "GET"
 	"auth_value" : "12345"
 	"headers" : [
 		{
@@ -167,9 +170,12 @@ Element `cookies` is only included if configuration option `cdn_all_cookies` is 
 
 The element `auth_value` from authentication token is included only if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
 
+The element `http_method` will be either `GET` for GET/HEAD HTTP requests or `DELETE` for DELETE HTTP requests.
+
 ```
 <request>
 	<file_id>1234-567-89</file_id>
+	<http_method>12345</http_method>
 	<auth_value>12345</auth_value>
 	<headers>
 		<header>
@@ -360,6 +366,12 @@ Test your authorisation query to make sure metadata is properly returned.
 ## Example
 
 See Examples below.
+
+# File deletion
+
+To delete a file from the filesystem, issue the same request as for getting a file, but use DELETE HTTP method.
+
+NB: The metadata for the file will not be deleted, unless this is handled by the authorisation body.
 
 # Examples
 

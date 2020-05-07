@@ -61,7 +61,7 @@
 #define DEFAULT_ETAG "00000000000000000000000000000000"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN "*"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS "If-None-Match, If-Modified-Since"
-#define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, OPTIONS"
+#define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, OPTIONS, DELETE"
 #define DEFAULT_HTTP_CODE 500
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
@@ -165,6 +165,7 @@ typedef struct {
 	time_t exp;
 	uint fs_depth;
 	char *fs_root;
+	char *http_method;
 	char *request_type;
 	char *transport_type;
 	char *all_cookies;

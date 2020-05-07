@@ -44,30 +44,34 @@ ngx_int_t request_xml(session_t *session, cdn_file_t *metadata, ngx_http_request
 
 	// Root element
 	if ((ret = xmlTextWriterStartElement(writer, BAD_CAST "request")) < 0)
-		return error_xml(r, writer, buf, "xmlTextWriterStartElement");
+		return error_xml(r, writer, buf, "request");
 
 	// File ID
 	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "file_id", (const xmlChar *) metadata->file)) < 0)
-		return error_xml(r, writer, buf, "xmlTextWriterWriteElement");
+		return error_xml(r, writer, buf, "file_id");
+
+	// HTTP method
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "http_method", (const xmlChar *) session->http_method)) < 0)
+		return error_xml(r, writer, buf, "http_method");
 
 	// Add the authorisation value if extracted
 	if (session->auth_value) {
 		if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "auth_value", (const xmlChar *) session->auth_value)) < 0)
-			return error_xml(r, writer, buf, "xmlTextWriterWriteElement");
+			return error_xml(r, writer, buf, "auth_value");
 	}
 
 	// Headers: make an array of objects with name and value
 	if (! strcmp(session->all_headers, "yes")) {
 		if ((ret = xmlTextWriterStartElement(writer, BAD_CAST "headers")) < 0)
-			return error_xml(r, writer, buf, "xmlTextWriterStartElement");
+			return error_xml(r, writer, buf, "headers");
 
 		for (i=0; i < session->headers_count; i++) {
 			if ((ret = xmlTextWriterStartElement(writer, BAD_CAST "header")) < 0)
-				return error_xml(r, writer, buf, "xmlTextWriterStartElement");
+				return error_xml(r, writer, buf, "header");
 			if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "name", (const xmlChar *) session->headers[i].name)) < 0)
-				return error_xml(r, writer, buf, "xmlTextWriterWriteElement");
+				return error_xml(r, writer, buf, "name");
 			if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "value", (const xmlChar *) session->headers[i].value)) < 0)
-				return error_xml(r, writer, buf, "xmlTextWriterWriteElement");
+				return error_xml(r, writer, buf, "value");
 			if ((ret = xmlTextWriterEndElement(writer)) < 0)
 				return error_xml(r, writer, buf, "xmlTextWriterEndElement");
 		}
@@ -79,15 +83,15 @@ ngx_int_t request_xml(session_t *session, cdn_file_t *metadata, ngx_http_request
 	// Cookies: make an array of objects with name and value
 	if (! strcmp(session->all_cookies, "yes")) {
 		if ((ret = xmlTextWriterStartElement(writer, BAD_CAST "cookies")) < 0)
-			return error_xml(r, writer, buf, "xmlTextWriterStartElement");
+			return error_xml(r, writer, buf, "cookies");
 
 		for (i=0; i < session->cookies_count; i++) {
 			if ((ret = xmlTextWriterStartElement(writer, BAD_CAST "cookie")) < 0)
-				return error_xml(r, writer, buf, "xmlTextWriterStartElement");
+				return error_xml(r, writer, buf, "cookie");
 			if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "name", (const xmlChar *) session->cookies[i].name)) < 0)
-				return error_xml(r, writer, buf, "xmlTextWriterWriteElement");
+				return error_xml(r, writer, buf, "name");
 			if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "value", (const xmlChar *) session->cookies[i].value)) < 0)
-				return error_xml(r, writer, buf, "xmlTextWriterWriteElement");
+				return error_xml(r, writer, buf, "value");
 			if ((ret = xmlTextWriterEndElement(writer)) < 0)
 				return error_xml(r, writer, buf, "xmlTextWriterEndElement");
 		}

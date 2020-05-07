@@ -187,7 +187,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	}
 
 	// Check if we should serve this request
-	if (!(r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD))) {
+	if (!(r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE))) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "HTTP method not supported: %l", r->method);
 		return NGX_DECLINED;
 	}
 
@@ -222,6 +223,12 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
 	session.jwt_json = NULL;
 	session.jwt_field = NULL;
+
+	session.http_method = ngx_pcalloc(r->pool, 8);
+	if (r->method & (NGX_HTTP_DELETE))
+		sprintf(session.http_method, "DELETE");
+	else
+		sprintf(session.http_method, "GET");
 
 	// Init file metadata
 	if ((metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t))) == NULL) {
@@ -389,6 +396,15 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	if ((ret = metadata_check(&session, metadata, r)) > 0)
 		return ret;
 
+	// For DELETE requests, do so
+	if (r->method & (NGX_HTTP_DELETE)) {
+		if (unlink(metadata->path) < 0) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s unlink() error %s", metadata->file, metadata->path, strerror(errno));
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+		return NGX_OK;
+	}
+
 	// Process the file
 	if ((ret = read_fs(&session, metadata, r)) > 0)
 		return ret;
@@ -400,7 +416,6 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	}
 
 	// NB: The mapped file will be unmapped by the cleanup handler once data is sent to client
-
 	return NGX_OK;
 }
 
