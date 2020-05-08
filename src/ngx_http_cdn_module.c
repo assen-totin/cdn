@@ -121,20 +121,172 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
  * Init module and set handler
  */
 char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
-    ngx_http_core_loc_conf_t  *clcf;
+	ngx_http_core_loc_conf_t  *clcf;
 
-    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-    clcf->handler = ngx_http_cdn_handler;
+	clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+	clcf->handler = ngx_http_cdn_handler;
 
-    return NGX_CONF_OK;
+	return NGX_CONF_OK;
 }
+
+///// DEBUG IPOST
+//client_body_buffer_size IS THE DIRECTIVE THAT GOVERNS WHEN TEMP FILE WILL BE USED! DEFAULT: 16k
+//client_max_body_size IS THE MAX UPLOAD SIZE. DEFAULT: 1m
+
+static void ngx_http_cdn_body_handler (ngx_http_request_t *r);
+
+static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
+	off_t len = 0, len_buf;
+	ngx_buf_t *b;
+	ngx_chain_t out, *bufs;
+	char *content_length_z, *content_type;
+	long content_length;
+
+	if (r->request_body == NULL) {
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+
+/*
+	// Body is still being received
+	if (r->request_body->rest) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "BODY STILL RECEIVING");
+		return NGX_DONE;
+	}
+*/
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body is ready for processing.");
+
+	// Extract content type from header
+	content_type = from_ngx_str(r->pool, r->headers_in.content_type->value);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload Content-Type: %s", content_type);
+	if (! strstr(content_type, UPLOAD_CONTENT_TYPE)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload Content-Type is not %s: %s", UPLOAD_CONTENT_TYPE, content_type);
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	}
+
+	// Extract content length from header
+	content_length_z = from_ngx_str(r->pool, r->headers_in.content_length->value);
+	if (! content_length_z) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload Content-Length not set");
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	}
+	content_length = atol(content_length_z);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload Content-Length: %l", content_length);
+
+	// Use mmap or not?
+	char *rbz = NULL;
+	bool rbz_malloc = false;
+	long rbz_pos = 0;
+	bufs = r->request_body->bufs;
+	if (bufs && bufs->buf && bufs->buf->in_file) {
+		// Use mmap from FD in the buffer
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: using file buffers");
+		len = bufs->buf->file_last;
+
+		if ((rbz = mmap(NULL, len, PROT_READ, MAP_SHARED, bufs->buf->file->fd, 0)) < 0) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Request body: mmap() error %s", strerror(errno));
+			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			return;
+		}
+	}
+	else {
+		// Work from memory
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: using memory buffers");
+
+		rbz = malloc(content_length + 1);
+		if (! rbz) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to allocate %l bytes for request body conversion", content_length + 1);
+			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		}
+		rbz_malloc = true;
+
+		for (bufs = r->request_body->bufs; bufs; bufs = bufs->next) {
+			len_buf = ngx_buf_size(bufs->buf);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: found new buffer with size: %l", len_buf);
+			len += len_buf;
+
+			memcpy(rbz + rbz_pos, bufs->buf->start, len_buf);
+			rbz_pos += len_buf;
+		}
+
+		// NULL-terminate the memory buffer?
+		//if (rbz)
+		//	rbz[rbz_pos] = '\0';
+	}
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: total length: %l", len);
+	if (len != content_length) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Error processing request body: Content-Length set to %l, but found %l bytes", content_length, len);
+		if (rbz_malloc)
+			free(rbz);
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+
+	// FIXME: Process form data to fields
+
+	// FIXME: Decode file if needed?
+
+	// FIXME: Create file hash
+
+	// FIXME: Save file to CDN
+
+	// FIXME: Save metadata - to SQL/Mongo or send JSON/XML
+
+	// FIXME: Return the file ID
+
+/*
+	// Send output
+	if ((b = ngx_create_temp_buf(r->pool, NGX_OFF_T_LEN)) == NULL) {
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+
+	b->last = ngx_sprintf(b->pos, "%s", metadata->file);
+	b->last_buf = 1;
+	b->last_in_chain = 1;
+
+	r->headers_out.status = NGX_HTTP_OK;
+	r->headers_out.content_length_n = b->last - b->pos;
+
+	rc = ngx_http_send_header(r);
+
+	if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
+		ngx_http_finalize_request(r, rc);
+		return;
+	}
+
+	out.buf = b;
+	out.next = NULL;
+
+	rc = ngx_http_output_filter(r, &out);
+
+	ngx_http_finalize_request(r, rc);
+*/
+}
+
+
+/*
+-----------------------------18777234483971611453887793901
+Content-Disposition: form-data; name="n"; filename="gthomas.doc"
+Content-Type: application/msword
+
+lalal
+-----------------------------18777234483971611453887793901
+Content-Disposition: form-data; name="submit"
+
+Upload Image
+-----------------------------18777234483971611453887793901--
+*/
+///// END DEBUG POST
 
 /**
  * Content handler
  */
 ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
-	ngx_int_t ret;
+	ngx_int_t ret = NGX_OK;
 	ngx_table_elt_t *h;
 	cdn_file_t *metadata;
 	char *uri, *s0, *s1, *s2, *str1, *saveptr1;
@@ -262,56 +414,58 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	uri = from_ngx_str(r->pool, r->uri);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", uri);
 
-	// Extract file ID
-	// URL format: http://cdn.example.com/some-file-id
-	s0 = from_ngx_str(r->pool, r->uri);
-	str1 = strtok_r(s0, "/", &saveptr1);
-	if (str1 == NULL)
-		return NGX_HTTP_BAD_REQUEST;
+	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {
+		// Extract file ID
+		// URL format: http://cdn.example.com/some-file-id
+		s0 = from_ngx_str(r->pool, r->uri);
+		str1 = strtok_r(s0, "/", &saveptr1);
+		if (str1 == NULL)
+			return NGX_HTTP_BAD_REQUEST;
 
-	metadata->file = ngx_pnalloc(r->pool, strlen(str1) + 1);
-	if (metadata->file == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str1) + 1);
-		return NGX_ERROR;
-	}
-	strcpy(metadata->file, str1);
+		metadata->file = ngx_pnalloc(r->pool, strlen(str1) + 1);
+		if (metadata->file == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str1) + 1);
+			return NGX_ERROR;
+		}
+		strcpy(metadata->file, str1);
 
-	// Get path
-	if ((ret = get_path(&session, metadata, r)) > 0)
-		return ret;
-
-	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
-	if ((metadata->length < 0) || (metadata->upload_date < 0)) {
-		if ((ret = get_stat(metadata, r)) > 0)
+		// Get path
+		if ((ret = get_path(&session, metadata, r)) > 0)
 			return ret;
-	}
 
-	// Process Header If-Modified-Since
-	if (r->headers_in.if_modified_since) {
-		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
-		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
-			session.hdr_if_modified_since = mktime(&ltm);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session.hdr_if_modified_since);
+		// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
+		if ((metadata->length < 0) || (metadata->upload_date < 0)) {
+			if ((ret = get_stat(metadata, r)) > 0)
+				return ret;
 		}
-		else
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
-	}
 
-	// Process Header If-None-Match
-	if (r->headers_in.if_none_match) {
-		session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
-		s1 = strchr(session.hdr_if_none_match, '"');
-		s2 = strrchr(session.hdr_if_none_match, '"');
-		if ((s1 == session.hdr_if_none_match) && (s2 == session.hdr_if_none_match + strlen(session.hdr_if_none_match) - 1)) {
-			if ((s0 = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_if_none_match.", strlen(session.hdr_if_none_match) - 1);
-				return NGX_ERROR;
+		// Process Header If-Modified-Since
+		if (r->headers_in.if_modified_since) {
+			s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
+			if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
+				session.hdr_if_modified_since = mktime(&ltm);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session.hdr_if_modified_since);
 			}
-
-			strncpy(s0, session.hdr_if_none_match + 1, strlen(session.hdr_if_none_match) - 2);
-			session.hdr_if_none_match = s0;
+			else
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
 		}
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session.hdr_if_none_match);
+
+		// Process Header If-None-Match
+		if (r->headers_in.if_none_match) {
+			session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
+			s1 = strchr(session.hdr_if_none_match, '"');
+			s2 = strrchr(session.hdr_if_none_match, '"');
+			if ((s1 == session.hdr_if_none_match) && (s2 == session.hdr_if_none_match + strlen(session.hdr_if_none_match) - 1)) {
+				if ((s0 = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1)) == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_if_none_match.", strlen(session.hdr_if_none_match) - 1);
+					return NGX_ERROR;
+				}
+
+				strncpy(s0, session.hdr_if_none_match + 1, strlen(session.hdr_if_none_match) - 2);
+				session.hdr_if_none_match = s0;
+			}
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session.hdr_if_none_match);
+		}
 	}
 
 	// TODO: support Range incoming header
@@ -329,19 +483,34 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 			return ret;
 	}
 
-	// Try to find an authorisation token
-	if ((ret = get_auth_token(&session, r)) > 0)
+	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {
+		// Try to find an authorisation token
+		if ((ret = get_auth_token(&session, r)) > 0)
+			return ret;
+
+		// Extract authentcation token to value
+		if (! strcmp(session.auth_type, AUTH_TYPE_JWT)) {
+			if ((ret = auth_jwt(&session, r)) > 0)
+				return ret;
+		}
+		else if (! strcmp(session.auth_type, AUTH_TYPE_SESSION)) {
+			if ((ret = auth_session(&session, r)) > 0)
+				return ret;
+		}
+	}
+
+///// DEBUG IPOST
+
+if (r->method & (NGX_HTTP_POST)) {
+	// Set body handler
+	ret = ngx_http_read_client_request_body(r, ngx_http_cdn_body_handler); 
+	if (ret >= NGX_HTTP_SPECIAL_RESPONSE)
 		return ret;
 
-	// Extract authentcation token to value
-	if (! strcmp(session.auth_type, AUTH_TYPE_JWT)) {
-		if ((ret = auth_jwt(&session, r)) > 0)
-			return ret;
-	}
-	else if (! strcmp(session.auth_type, AUTH_TYPE_SESSION)) {
-		if ((ret = auth_session(&session, r)) > 0)
-			return ret;
-	}
+	return NGX_DONE;
+}
+
+///// END DEBUG POST
 
 	// Prepare request (as per the configured request type)
 	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
@@ -506,8 +675,8 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 	int b1_len, b2_len;
 	char *encoded = NULL;
 	bool curl_encoded = false;
-    ngx_buf_t *b, *b1, *b2;
-    ngx_chain_t *out = NULL;
+	ngx_buf_t *b, *b1, *b2;
+	ngx_chain_t *out = NULL;
 	ngx_table_elt_t *h;
 	ngx_int_t ret;
 
@@ -533,7 +702,7 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 	b1 = ngx_create_temp_buf(r->pool, b1_len);
 	if (b1 == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate bufer for etag header.");
-	    return NGX_ERROR;
+		return NGX_ERROR;
 	}
 	b1->last = ngx_sprintf(b1->last, "\"%s\"", metadata->etag);
 
@@ -569,7 +738,7 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 		// NB: It is not in the standard Nginx header table, so add it as custom header
 		if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header.");
-		    return NGX_ERROR;
+			return NGX_ERROR;
 		}
 		h->hash = 1;
 
@@ -649,18 +818,18 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
  * Cleanup (unmap mapped file after serving)
  */
 void cleanup(cdn_file_t *metadata, ngx_http_request_t *r) {
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
-    
-    if (metadata->data && (munmap(metadata->data, metadata->length) < 0))
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file, strerror(errno));
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
+	
+	if (metadata->data && (munmap(metadata->data, metadata->length) < 0))
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file, strerror(errno));
 }
 
 /**
  * Cleanup (unmap mapped file after serving)
  */
 void ngx_http_cdn_cleanup(void *a) {
-    ngx_http_request_t *r = (ngx_http_request_t *)a;
-    cdn_file_t *metadata = ngx_http_get_module_ctx(r, ngx_http_cdn_module);
+	ngx_http_request_t *r = (ngx_http_request_t *)a;
+	cdn_file_t *metadata = ngx_http_get_module_ctx(r, ngx_http_cdn_module);
 	cleanup(metadata, r);
 }
 

@@ -56,7 +56,6 @@
 #endif
 
 // Definitions
-#define DEFAULT_ENABLE 1
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
 #define DEFAULT_ETAG "00000000000000000000000000000000"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN "*"
@@ -66,7 +65,7 @@
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
 #define DEFAULT_TCP_HOST "example.com"
-#define DEFAULT_TCP_PORT 12345
+#define DEFAULT_TCP_PORT "12345"
 #define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
 #define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_REQUEST_TYPE "none"
@@ -113,6 +112,8 @@
 #define TRANSPORT_TYPE_ORACLE "oracle"
 #define TRANSPORT_TYPE_TCP "tcp"
 #define TRANSPORT_TYPE_UNIX "unix"
+
+#define UPLOAD_CONTENT_TYPE "multipart/form-data"
 
 // Structures
 typedef struct {
