@@ -42,7 +42,8 @@ location /
 	cdn_tcp_port;                       // Transport "tcp": port of the authorisation service
 	cdn_http_url;                       // Transport "http": URL of the authorisation service
 	cdn_db_dsn dsn-or-url               // Transport "mysql", "oracle", "mongo": DSN of the database service (see docs for db-specific format)
-	cdn_sql_query                       // Transport "mysql", "oracle": SQL query to execute (with placeholders)
+	cdn_sql_select                      // Transport "mysql", "oracle": SQL query to execute when fetching a file (with placeholders)
+	cdn_sql_delete                      // Transport "mysql", "oracle": SQL query to execute when deleting a file (with placeholders)
 	cdn_mongo_collection                // Transport "mongo": name of the Mongo collection where the metadata is
 	cdn_mongo_db                        // Transport "mongo": name of the Mongo database where the metadata collection is
 
@@ -221,7 +222,7 @@ See the JSON section above for fields meaning and values.
 
 ## SQL
 
-Set the SQL query to run in the configuration option `cnd_sql_query`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
+Set the SQL queries to run in the configuration option `cnd_sql_select` (used to authorise a get or delete request) and `cdn_sql_delete` (used to delete metadata when deleting a file). It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
 
 The SQL query should return a single row with column names matching the keys in the JSON response above.
 
@@ -371,7 +372,7 @@ See Examples below.
 
 To delete a file from the filesystem, issue the same request as for getting a file, but use DELETE HTTP method.
 
-NB: The metadata for the file will not be deleted, unless this is handled by the authorisation body.
+NB: The metadata for the file will be deleted when using SQL authorisation or MOngoDB. In al other cases the authorisation body should delete the metadata (when the `http_method` in the authorisation request is set to `DELETE`).
 
 # Examples
 

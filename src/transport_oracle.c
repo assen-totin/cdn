@@ -4,7 +4,7 @@
 /**
  * Get file metadata from Oracle
  */
-ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r) {
+ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_ORACLE
 	db_dsn_t dsn;
 	ngx_int_t ret;
@@ -29,7 +29,8 @@ ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r) {
 	OCI_ExecuteStmt(session->oracle_statement, session->sql_query);
 
 	// Get result
-	session->oracle_result = OCI_GetResultset(session->oracle_statement);
+	if (mode == METADATA_SELECT)
+		session->oracle_result = OCI_GetResultset(session->oracle_statement);
 #endif
 
 	return NGX_OK;

@@ -161,11 +161,27 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
-		ngx_string("cdn_sql_query"),
+		ngx_string("cdn_sql_select"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, sql_query),
+		offsetof(ngx_http_cdn_loc_conf_t, sql_select),
+		NULL
+	},
+	{
+		ngx_string("cdn_sql_insert"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, sql_insert),
+		NULL
+	},
+	{
+		ngx_string("cdn_sql_delete"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, sql_delete),
 		NULL
 	},
 	{

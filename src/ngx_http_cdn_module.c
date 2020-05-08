@@ -107,7 +107,9 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->all_headers, parent->all_headers, DEFAULT_ALL_HEADERS);
 	ngx_conf_merge_str_value(child->all_cookies, parent->all_cookies, DEFAULT_ALL_COOKIES);
 	ngx_conf_merge_str_value(child->db_dsn, parent->db_dsn, DEFAULT_DB_DSN);
-	ngx_conf_merge_str_value(child->sql_query, parent->sql_query, DEFAULT_SQL_QUERY);
+	ngx_conf_merge_str_value(child->sql_insert, parent->sql_insert, DEFAULT_SQL_QUERY);
+	ngx_conf_merge_str_value(child->sql_delete, parent->sql_delete, DEFAULT_SQL_QUERY);
+	ngx_conf_merge_str_value(child->sql_select, parent->sql_select, DEFAULT_SQL_QUERY);
 	ngx_conf_merge_str_value(child->http_url, parent->http_url, DEFAULT_HTTP_URL);
 	ngx_conf_merge_str_value(child->mongo_db, parent->mongo_db, DEFAULT_MONGO_DB);
 	ngx_conf_merge_str_value(child->mongo_collection, parent->mongo_collection, DEFAULT_MONGO_COLLECTION);
@@ -137,6 +139,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	cdn_file_t *metadata;
 	char *uri, *s0, *s1, *s2, *str1, *saveptr1;
 	struct tm ltm;
+	session_t session;
 
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
@@ -186,14 +189,27 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		return ngx_http_send_header(r);
 	}
 
-	// Check if we should serve this request
-	if (!(r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE))) {
+	// Method-specific init
+	session.http_method = ngx_pcalloc(r->pool, 8);
+	if (r->method & (NGX_HTTP_DELETE)) {
+		sprintf(session.http_method, "DELETE");
+		session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
+		// NB: We'll init the SQL DELETE query later
+	}
+	else if (r->method & (NGX_HTTP_POST)) {
+		sprintf(session.http_method, "POST");
+		session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_insert);
+	}
+	else if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
+		sprintf(session.http_method, "GET");
+		session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
+	}
+	else {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "HTTP method not supported: %l", r->method);
 		return NGX_DECLINED;
 	}
 
 	// Prepare session management data
-	session_t session;
 	session.fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
 	session.fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
 	session.request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
@@ -206,7 +222,6 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
 	session.all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
 	session.db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
-	session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_query);
 	session.headers = NULL;
 	session.headers_count = 0;
 	session.cookies = NULL;
@@ -223,12 +238,6 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
 	session.jwt_json = NULL;
 	session.jwt_field = NULL;
-
-	session.http_method = ngx_pcalloc(r->pool, 8);
-	if (r->method & (NGX_HTTP_DELETE))
-		sprintf(session.http_method, "DELETE");
-	else
-		sprintf(session.http_method, "GET");
 
 	// Init file metadata
 	if ((metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t))) == NULL) {
@@ -325,11 +334,11 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		return ret;
 
 	// Extract authentcation token to value
-	if (! strcmp(session.auth_type, auth_type_JWT)) {
+	if (! strcmp(session.auth_type, AUTH_TYPE_JWT)) {
 		if ((ret = auth_jwt(&session, r)) > 0)
 			return ret;
 	}
-	else if (! strcmp(session.auth_type, auth_type_SESSION)) {
+	else if (! strcmp(session.auth_type, AUTH_TYPE_SESSION)) {
 		if ((ret = auth_session(&session, r)) > 0)
 			return ret;
 	}
@@ -353,11 +362,11 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	if (! strcmp(session.transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(&session, r);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MONGO))
-		ret = transport_mongo(&session, r);
+		ret = transport_mongo(&session, r, METADATA_SELECT);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
-		ret = transport_mysql(&session, r);
+		ret = transport_mysql(&session, r, METADATA_SELECT);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE))
-		ret = transport_oracle(&session, r);
+		ret = transport_oracle(&session, r, METADATA_DELETE);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_TCP))
 		ret = transport_socket(&session, r, SOCKET_TYPE_TCP);
 	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
@@ -396,23 +405,43 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	if ((ret = metadata_check(&session, metadata, r)) > 0)
 		return ret;
 
-	// For DELETE requests, do so
-	if (r->method & (NGX_HTTP_DELETE)) {
+	// Method-specific file processing
+	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
+		// Process the file
+		if ((ret = read_fs(&session, metadata, r)) > 0)
+			return ret;
+
+		// Send the file
+		if ((ret = send_file(&session, metadata, r)) > 0) {
+			cleanup(metadata, r);
+			return ret;
+		}
+	}
+	else if (r->method & (NGX_HTTP_POST)) {
+		// FIXME
+	}
+	else if (r->method & (NGX_HTTP_DELETE)) {
+		// Delete the file
 		if (unlink(metadata->path) < 0) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s unlink() error %s", metadata->file, metadata->path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
-		return NGX_OK;
-	}
 
-	// Process the file
-	if ((ret = read_fs(&session, metadata, r)) > 0)
-		return ret;
-
-	// Send the file
-	if ((ret = send_file(&session, metadata, r)) > 0) {
-		cleanup(metadata, r);
-		return ret;
+		// Delete metadata (only for MongoDB and SQL)
+		// NB: we ignore errors here
+		if (! strcmp(session.transport_type, TRANSPORT_TYPE_MONGO))
+			// NB: Our MongoDB request was already prepared above for the AUTH step
+			ret = transport_mongo(&session, r, METADATA_DELETE);
+		else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL)) {
+			// Switch query to DELETE one and rebuild it
+			session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_delete);
+			ret = transport_mysql(&session, r, METADATA_DELETE);
+		}
+		else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE)) {
+			// Switch query to DELETE one and rebuild it
+			session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_delete);
+			ret = transport_oracle(&session, r, METADATA_DELETE);
+		}
 	}
 
 	// NB: The mapped file will be unmapped by the cleanup handler once data is sent to client

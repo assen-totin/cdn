@@ -19,7 +19,7 @@ static ngx_int_t close_mongo(bson_t *query,  mongoc_client_t * conn, mongoc_coll
 /**
  * Get file metadata from Mongo
  */
-ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r) {
+ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_MONGO
 	const bson_t *doc;
 	bson_t *query;
@@ -41,8 +41,7 @@ ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r) {
 	}
 
 	// Get collection
-	collection = mongoc_client_get_collection (conn, session->mongo_db, session->mongo_collection);
-	if (! collection) {
+	if ((collection = mongoc_client_get_collection (conn, session->mongo_db, session->mongo_collection)) = NULL) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to get Mongo collection %s", session->mongo_collection);
 		return close_mongo(query, conn, NULL, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
@@ -66,10 +65,16 @@ ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r) {
 		return close_mongo(query, conn, collection, NGX_HTTP_NOT_FOUND);
 	}
 
-	session->auth_response = bson_as_json(doc, NULL);
+	// Act as per mode
+	if (mode == METADATA_SELECT)
+		// If invoked to select data, convert it
+		session->auth_response = bson_as_json(doc, NULL);
+	else if (mode == METADATA_DELETE)
+		// If invoked to delete, ignore error
+		if (! mongoc_collection_delete_one (collection, query, NULL, NULL, &error))
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to delete metadata for file %s from Mongo collection %s: %s", metadata->fil, session->mongo_collection, &error.message[0]);
 
 	close_mongo(query, conn, collection, NGX_OK);
-
 #endif
 
 	return NGX_OK;

@@ -61,7 +61,7 @@
 #define DEFAULT_ETAG "00000000000000000000000000000000"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN "*"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS "If-None-Match, If-Modified-Since"
-#define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, OPTIONS, DELETE"
+#define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, POST, OPTIONS, DELETE"
 #define DEFAULT_HTTP_CODE 500
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
@@ -98,8 +98,8 @@
 #define SOCKET_TYPE_TCP 1
 #define SOCKET_TYPE_UNUX 2
 
-#define auth_type_JWT "jwt"
-#define auth_type_SESSION "session"
+#define AUTH_TYPE_JWT "jwt"
+#define AUTH_TYPE_SESSION "session"
 
 #define REQUEST_TYPE_JSON "json"
 #define REQUEST_TYPE_MONGO "mongo"
@@ -135,7 +135,9 @@ typedef struct {
 	ngx_str_t all_cookies;
 	ngx_str_t all_headers;
 	ngx_str_t db_dsn;
-	ngx_str_t sql_query;
+	ngx_str_t sql_select;
+	ngx_str_t sql_insert;
+	ngx_str_t sql_delete;
 	ngx_str_t http_url;
 	ngx_str_t mongo_db;
 	ngx_str_t mongo_collection;
@@ -222,4 +224,9 @@ typedef struct {
 	char *db;
 } db_dsn_t;
 
+enum {
+	METADATA_SELECT = 0,
+	METADATA_DELETE,
+	METADATA_INSERT
+};
 
