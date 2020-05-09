@@ -7,7 +7,7 @@
 #include "common.h"
 #include "ngx_http_cdn_module.h"
 #include "auth_jwt.h"
-#include "auth_session.h"
+#include "auth_session->h"
 #include "request_json.h"
 #include "request_mongo.h"
 #include "request_mysql.h"
@@ -130,7 +130,106 @@ char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
 	return NGX_CONF_OK;
 }
 
-///// DEBUG IPOST
+///// DEBUG POST
+/**
+ * Read a line from current position
+ */
+char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
+	char *end, *ret; 
+
+	end = strstr(begin, "\r\n");
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Header line length: %l", end - begin);
+
+	// Sanity check - line should exceed 1000 bytes
+	if ((end - begin) > 1024) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Header line too long: %l", end - begin);
+		return NULL;
+	}
+
+	// Prepare reply
+	if ((ret = ngx_pcalloc(r->pool, end - begin + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for upload part line.", end - begin + 1);
+		return NULL;
+	}
+
+	strncpy(ret, begin, end - begin);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header line: %s", ret);
+
+	return ret;
+}
+
+/**
+ * Find a value from a key=value pair, present in a bigger string (haystack), when given the key
+ * E.g. knowing 'key' from 'lala; key="value"; bebe' returns "value"
+ */
+char *mpfd_get_value(ngx_http_request_t *r, char *haystack, char *needle) {
+	char *begin, *end, *ret;
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Looking for needle %s in haystack %s", needle, haystack);
+
+	// Find the beginning of the needle
+	if (! (begin = strcasestr(haystack, needle))) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Needle %s not found in haystack %s", needle, haystack);
+        return NULL;
+    }
+
+	// Move forward with the length of the needle, e.g. key=
+    begin += strlen(needle) + 1;
+
+	// Check if we have a trailing semicolon; 
+	// It will be absent if we are the last key=value pair in the string, so use everything till the end of the string
+	end = strstr(begin, ";");
+    if (! end)
+		end = begin + strlen(begin);
+
+	// Prepare return value and copy the value from the pair there
+	if ((ret = ngx_pcalloc(r->pool, end - begin + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for upload param value.", end - begin + 1);
+		return NULL;
+	}
+	strncpy(ret, begin, end - begin);
+
+	// Remove quotes which may surround the value
+	if (strstr(ret, "\"")) {
+		memset(ret + strlen(ret) - 1, '\0', 1);
+		ret ++;
+    }
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found value for needle %s: %s", needle, ret);
+	return ret;
+}
+
+/**
+ * Read the value from a header up to the first demicolon, if any
+ */
+char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
+	char *begin, *end, *ret;
+
+	// Check if we are the proper header
+	if ((begin = strcasestr(line, header)) == NULL)
+		return NULL;
+
+	// Move to beginning of content
+	begin += strlen(header) + 2;
+
+	// Check for trailing semicolon
+	if (strstr(begin, ";"))
+		end = strstr(begin, ";");
+	else
+		end = begin + strlen(begin);
+
+	if ((ret = ngx_pcalloc(r->pool, end - begin + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for upload part header %s", end - begin + 1, header);
+		return NULL;
+	}
+
+	strncpy(ret, begin, end - begin);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found value for upload part header %s: %s", header, ret);
+
+	return ret;
+}
+
+
 //client_body_buffer_size IS THE DIRECTIVE THAT GOVERNS WHEN TEMP FILE WILL BE USED! DEFAULT: 16k
 //client_max_body_size IS THE MAX UPLOAD SIZE. DEFAULT: 1m
 
@@ -140,30 +239,50 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	off_t len = 0, len_buf;
 	ngx_buf_t *b;
 	ngx_chain_t out, *bufs;
-	char *content_length_z, *content_type;
+	char *content_length_z, *content_type, *boundary, *line;
 	long content_length;
+	int upload_content_type, file_fd, file_size;
+	uint64_t hash[2];
+	session_t *session;
+	metadata_t *metadata;
 
+	// Check if we have body
 	if (r->request_body == NULL) {
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		return;
 	}
 
-/*
-	// Body is still being received
-	if (r->request_body->rest) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "BODY STILL RECEIVING");
-		return NGX_DONE;
+	// Init session
+	if ((session = ngx_pcalloc(r->pool, sizeof(session_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for session.", sizeof(session_t));
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
 	}
-*/
+
+	// Init metadata
+	if ((metadata = ngx_pcalloc(r->pool, sizeof(metadata_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(metadata_t));
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+
+//FIXME:
+//session->fs_root
+//session->fs_depth
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body is ready for processing.");
 
 	// Extract content type from header
 	content_type = from_ngx_str(r->pool, r->headers_in.content_type->value);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload Content-Type: %s", content_type);
-	if (! strstr(content_type, UPLOAD_CONTENT_TYPE)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload Content-Type is not %s: %s", UPLOAD_CONTENT_TYPE, content_type);
+	if (strstr(content_type, CONTENT_TYPE_MPFD))
+		upload_content_type = UPLOAD_CONTENT_TYPE_MPFD;
+	else if (strstr(content_type, CONTENT_TYPE_AXWFU))
+		upload_content_type = UPLOAD_CONTENT_TYPE_AXWFU;
+	else {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload Content-Type %s not supported", content_type);
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
 	}
 
 	// Extract content length from header
@@ -176,16 +295,16 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload Content-Length: %l", content_length);
 
 	// Use mmap or not?
-	char *rbz = NULL;
-	bool rbz_malloc = false;
-	long rbz_pos = 0;
+	char *rb = NULL;
+	bool rb_malloc = false;
+	long rb_pos = 0;
 	bufs = r->request_body->bufs;
 	if (bufs && bufs->buf && bufs->buf->in_file) {
 		// Use mmap from FD in the buffer
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: using file buffers");
 		len = bufs->buf->file_last;
 
-		if ((rbz = mmap(NULL, len, PROT_READ, MAP_SHARED, bufs->buf->file->fd, 0)) < 0) {
+		if ((rb = mmap(NULL, len, PROT_READ, MAP_SHARED, bufs->buf->file->fd, 0)) < 0) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Request body: mmap() error %s", strerror(errno));
 			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			return;
@@ -195,50 +314,195 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		// Work from memory
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: using memory buffers");
 
-		rbz = malloc(content_length + 1);
-		if (! rbz) {
+		rb = malloc(content_length);
+		if (! rb) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to allocate %l bytes for request body conversion", content_length + 1);
 			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
-		rbz_malloc = true;
+		rb_malloc = true;
 
 		for (bufs = r->request_body->bufs; bufs; bufs = bufs->next) {
 			len_buf = ngx_buf_size(bufs->buf);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: found new buffer with size: %l", len_buf);
 			len += len_buf;
 
-			memcpy(rbz + rbz_pos, bufs->buf->start, len_buf);
-			rbz_pos += len_buf;
+			memcpy(rb + rb_pos, bufs->buf->start, len_buf);
+			rb_pos += len_buf;
 		}
-
-		// NULL-terminate the memory buffer?
-		//if (rbz)
-		//	rbz[rbz_pos] = '\0';
 	}
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: total length: %l", len);
 	if (len != content_length) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Error processing request body: Content-Length set to %l, but found %l bytes", content_length, len);
-		if (rbz_malloc)
-			free(rbz);
+		if (rb_malloc)
+			free(rb);
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		return;
 	}
 
-	// FIXME: Process form data to fields
+//FIXME: Create a cleanup funciton that will free rb if rb_malloc before calling ngx_http_finalize_request and use if everywhere below
+
+	// Process multipart/form-data
+	if (upload_content_type == UPLOAD_CONTENT_TYPE_MPFD) {
+		// Extract boundary
+		if ((boundary = mpfd_get_value(r, content_type, "boundary")) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to find boundary in Content-Type: %s", content_type);
+			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			return;
+		}
+
+		char *file_data_begin, *file_data_end, *filename, *file_content_type = NULL, *file_content_transfer_encoding = NULL;
+		char *part = rb;
+		int cnt_part = 0, cnt_header;
+		while (1) {
+			char *part_pos;
+			char *part_field_name = NULL, *part_filename = NULL, *part_content_type = NULL, *part_content_transfer_encoding = NULL;
+			char *part_data_end;
+
+			cnt_part++;
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "PROCESSING NEW PART %l", cnt_part);
+			if (cnt_part > 10) {
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Too many loops while processing parts: %l", cnt_part);
+				ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+				return;
+			}
+
+			// Seek a boundary and move past it + CRLF
+			if (! (part_pos = strstr(part, boundary))) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "boundary not found in body: %s", boundary);
+				ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+				return;
+			}
+
+			// If next two characters are not CRLF (but rather '--CRLF'), this is the end of the form
+			char *tmp = strstr(part_pos, "\r\n");
+			if ((tmp - part_pos) != strlen(boundary)) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Reached end of form");
+				break;
+			}
+
+			part_pos += strlen(boundary) + 2;
+
+			cnt_header = 0;
+			while (1) {
+				cnt_header++;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "PROCESSING NEW HEADER %l IN PART %l", cnt_header, cnt_part);
+				if (cnt_header > 10) {
+					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Too many loops while processing headers: %l", cnt_part);
+					ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+					return;
+				}
+
+				// Get a line from the headerss
+				if ((line = mpfd_get_line(r, part_pos)) == NULL) {
+					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to read a header line.");
+					ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+					return;
+				}
+
+				// If line is empty, this is last line of the header; skip its CRLF and break
+				if (strlen(line) == 0) {
+					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found last line of header.");
+					part_pos += 2;
+					break;
+				}
+
+				// Process Content-Disposition header
+				if (strcasestr(line, "Content-Disposition")) {
+					part_field_name = mpfd_get_value(r, line, "name");
+					part_filename = mpfd_get_value(r, line, "filename");
+				}
+
+				// Process Content-Type header
+				if (! part_content_type)
+					part_content_type = mpfd_get_header(r, line, "Content-Type");
+
+				// Process Content-Transfer-Encoding
+				if (! part_content_transfer_encoding)
+					part_content_transfer_encoding = mpfd_get_header(r, line, "Content-Transfer-Encoding");
+
+				part_pos += strlen(line) + 2;
+			}
+
+			// Move past the CRLF of the empty line to start reading data
+			if ((part_data_end = strstr(part_pos, boundary)) == NULL) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Unable to find next boundary in body: %s", boundary);
+				ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+				return;				
+			}
+			part_data_end -= 4;	// Go back the CRLF "--" that preceed the boundary
+			
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "DATA LENGTH FOR PART %l: %l", cnt_part, part_data_end - part_pos);
+
+			// Remember data begin and end if this part was the file part
+			if (part_filename) {
+				filename = part_filename;
+				file_content_type = part_content_type;
+				file_content_transfer_encoding = part_content_transfer_encoding;
+				file_data_begin = part_pos;
+				file_data_end = part_data_end;
+				file_size = file_data_end - file_data_begin;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Filename %s uploaded data %l", filename, file_data_end - file_data_begin);
+			}
+
+			// Move the part forward
+			part = data_end;
+		}
+	}
+
+	// Process application/x-www-form-urlencoded
+	else if (upload_content_type == UPLOAD_CONTENT_TYPE_AXWFU) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload type %s not supported (yet)", CONTENT_TYPE_AXWFU);
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;		
+	}
 
 	// FIXME: Decode file if needed?
+	if (file_content_transfer_encoding) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Transfer encoding %s not supported (yet)", file_content_transfer_encoding);
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;	
+	}
 
-	// FIXME: Create file hash
+	// Create file hash
+	//FIXME: Add server ID and timestamp somehow?
+	murmur3((void *)file_data_begin, file_size, TRULY_RANDOM_NUMBER, (void *) &hash[0]);
 
-	// FIXME: Save file to CDN
+	// Convert hash to hex string
+	if ((metadata->file = ngx_pcalloc(r->pool, 33)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate 33 bytes for file ID.");
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+	sprintf(metadata->file, "%016lx%016lx\n", hash[0], hash[1]);
+
+	// Obtain file path
+	if ((ret = get_path(session, metadata, r)) > 0) {
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+
+	// Save file to CDN
+	if ((file_fd = open(file->path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to create file %s: %s", file->path, strerror(errno));
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+	if (write(file_fd, (const void *)file_data_begin, file_size) < file_size) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write %l bytes to file %s: %s", file_size, file->path, strerror(errno));
+		close(file_fd);
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+	close(file_fd);
 
 	// FIXME: Save metadata - to SQL/Mongo or send JSON/XML
 
-	// FIXME: Return the file ID
+	// Cleanup
+	if (rb_malloc)
+		free(rb);
 
-/*
-	// Send output
+	// Send output: the file ID
 	if ((b = ngx_create_temp_buf(r->pool, NGX_OFF_T_LEN)) == NULL) {
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		return;
@@ -264,7 +528,6 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	rc = ngx_http_output_filter(r, &out);
 
 	ngx_http_finalize_request(r, rc);
-*/
 }
 
 
@@ -289,10 +552,10 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	ngx_int_t ret = NGX_OK;
 	ngx_table_elt_t *h;
-	cdn_file_t *metadata;
+	session_t *session;
+	metadata_t *metadata;
 	char *uri, *s0, *s1, *s2, *str1, *saveptr1, *cors_origin;
 	struct tm ltm;
-	session_t session;
 
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
@@ -343,20 +606,26 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		return ngx_http_send_header(r);
 	}
 
+	// Init session
+	if ((session = ngx_pcalloc(r->pool, sizeof(session_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for session.", sizeof(session_t));
+		return NGX_ERROR;
+	}
+
 	// Method-specific init
-	session.http_method = ngx_pcalloc(r->pool, 8);
+	session->http_method = ngx_pcalloc(r->pool, 8);
 	if (r->method & (NGX_HTTP_DELETE)) {
-		sprintf(session.http_method, "DELETE");
-		session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
+		sprintf(session->http_method, "DELETE");
+		session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
 		// NB: We'll init the SQL DELETE query later
 	}
 	else if (r->method & (NGX_HTTP_POST)) {
-		sprintf(session.http_method, "POST");
-		session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_insert);
+		sprintf(session->http_method, "POST");
+		session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_insert);
 	}
 	else if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
-		sprintf(session.http_method, "GET");
-		session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
+		sprintf(session->http_method, "GET");
+		session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
 	}
 	else {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "HTTP method not supported: %l", r->method);
@@ -364,38 +633,38 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	}
 
 	// Prepare session management data
-	session.fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
-	session.fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
-	session.request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
-	session.transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
-	session.auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
-	session.auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
-	session.auth_type = from_ngx_str(r->pool, cdn_loc_conf->auth_type);
-	session.auth_token = NULL;
-	session.auth_value = NULL;
-	session.all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
-	session.all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
-	session.db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
-	session.headers = NULL;
-	session.headers_count = 0;
-	session.cookies = NULL;
-	session.cookies_count = 0;
-	session.hdr_if_none_match = NULL;
-	session.hdr_if_modified_since = -1;
-	session.unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
-	session.tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
-	session.tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
-	session.http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
-	session.auth_request = NULL;
-	session.auth_response = NULL;
-	session.curl = NULL;
-	session.jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
-	session.jwt_json = NULL;
-	session.jwt_field = NULL;
+	session->fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
+	session->fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
+	session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
+	session->transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
+	session->auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
+	session->auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
+	session->auth_type = from_ngx_str(r->pool, cdn_loc_conf->auth_type);
+	session->auth_token = NULL;
+	session->auth_value = NULL;
+	session->all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
+	session->all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
+	session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
+	session->headers = NULL;
+	session->headers_count = 0;
+	session->cookies = NULL;
+	session->cookies_count = 0;
+	session->hdr_if_none_match = NULL;
+	session->hdr_if_modified_since = -1;
+	session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
+	session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
+	session->tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
+	session->http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
+	session->auth_request = NULL;
+	session->auth_response = NULL;
+	session->curl = NULL;
+	session->jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
+	session->jwt_json = NULL;
+	session->jwt_field = NULL;
 
 	// Init file metadata
-	if ((metadata = ngx_pcalloc(r->pool, sizeof(cdn_file_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(cdn_file_t));
+	if ((metadata = ngx_pcalloc(r->pool, sizeof(metadata_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(metadata_t));
 		return NGX_ERROR;
 	}
 
@@ -432,7 +701,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		strcpy(metadata->file, str1);
 
 		// Get path
-		if ((ret = get_path(&session, metadata, r)) > 0)
+		if ((ret = get_path(session, metadata, r)) > 0)
 			return ret;
 
 		// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
@@ -445,8 +714,8 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		if (r->headers_in.if_modified_since) {
 			s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
 			if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
-				session.hdr_if_modified_since = mktime(&ltm);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session.hdr_if_modified_since);
+				session->hdr_if_modified_since = mktime(&ltm);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session->hdr_if_modified_since);
 			}
 			else
 				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
@@ -454,19 +723,19 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 
 		// Process Header If-None-Match
 		if (r->headers_in.if_none_match) {
-			session.hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
-			s1 = strchr(session.hdr_if_none_match, '"');
-			s2 = strrchr(session.hdr_if_none_match, '"');
-			if ((s1 == session.hdr_if_none_match) && (s2 == session.hdr_if_none_match + strlen(session.hdr_if_none_match) - 1)) {
-				if ((s0 = ngx_pcalloc(r->pool, strlen(session.hdr_if_none_match) - 1)) == NULL) {
-					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_if_none_match.", strlen(session.hdr_if_none_match) - 1);
+			session->hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
+			s1 = strchr(session->hdr_if_none_match, '"');
+			s2 = strrchr(session->hdr_if_none_match, '"');
+			if ((s1 == session->hdr_if_none_match) && (s2 == session->hdr_if_none_match + strlen(session->hdr_if_none_match) - 1)) {
+				if ((s0 = ngx_pcalloc(r->pool, strlen(session->hdr_if_none_match) - 1)) == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_if_none_match.", strlen(session->hdr_if_none_match) - 1);
 					return NGX_ERROR;
 				}
 
-				strncpy(s0, session.hdr_if_none_match + 1, strlen(session.hdr_if_none_match) - 2);
-				session.hdr_if_none_match = s0;
+				strncpy(s0, session->hdr_if_none_match + 1, strlen(session->hdr_if_none_match) - 2);
+				session->hdr_if_none_match = s0;
 			}
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session.hdr_if_none_match);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session->hdr_if_none_match);
 		}
 	}
 
@@ -474,29 +743,29 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
 
 	// Extract all headers if requested
-	if (! strcmp(session.all_headers, "yes")) {
-		if ((ret = get_all_headers(&session, r)) > 0)
+	if (! strcmp(session->all_headers, "yes")) {
+		if ((ret = get_all_headers(session, r)) > 0)
 			return ret;
 	}
 
 	// Extract all cookies if requested
-	if (! strcmp(session.all_cookies, "yes")) {
-		if ((ret = get_all_cookies(&session, r)) > 0)
+	if (! strcmp(session->all_cookies, "yes")) {
+		if ((ret = get_all_cookies(session, r)) > 0)
 			return ret;
 	}
 
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {
 		// Try to find an authorisation token
-		if ((ret = get_auth_token(&session, r)) > 0)
+		if ((ret = get_auth_token(session, r)) > 0)
 			return ret;
 
 		// Extract authentcation token to value
-		if (! strcmp(session.auth_type, AUTH_TYPE_JWT)) {
-			if ((ret = auth_jwt(&session, r)) > 0)
+		if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
+			if ((ret = auth_jwt(session, r)) > 0)
 				return ret;
 		}
-		else if (! strcmp(session.auth_type, AUTH_TYPE_SESSION)) {
-			if ((ret = auth_session(&session, r)) > 0)
+		else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
+			if ((ret = auth_session(session, r)) > 0)
 				return ret;
 		}
 	}
@@ -515,75 +784,75 @@ if (r->method & (NGX_HTTP_POST)) {
 ///// END DEBUG POST
 
 	// Prepare request (as per the configured request type)
-	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
-		ret = request_json(&session, metadata, r);
-	else if (! strcmp(session.request_type, REQUEST_TYPE_MONGO))
-		ret = request_mongo(&session, metadata, r);
-	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
-		ret = request_sql(&session, metadata, r);
-	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))
-		ret = request_sql(&session, metadata, r);
-	else if (! strcmp(session.request_type, REQUEST_TYPE_XML))
-		ret = request_xml(&session, metadata, r);
+	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
+		ret = request_json(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO))
+		ret = request_mongo(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
+		ret = request_sql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
+		ret = request_sql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
+		ret = request_xml(session, metadata, r);
 
 	if (ret)
 		return ret;
 
 	// Query for metadata based on transport
-	if (! strcmp(session.transport_type, TRANSPORT_TYPE_HTTP))
-		ret = transport_http(&session, r);
-	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MONGO))
-		ret = transport_mongo(&session, r, METADATA_SELECT);
-	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL))
-		ret = transport_mysql(&session, r, METADATA_SELECT);
-	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE))
-		ret = transport_oracle(&session, r, METADATA_DELETE);
-	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_TCP))
-		ret = transport_socket(&session, r, SOCKET_TYPE_TCP);
-	else if (! strcmp(session.transport_type, TRANSPORT_TYPE_UNIX))
-		ret = transport_socket(&session, r, SOCKET_TYPE_UNUX);
+	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
+		ret = transport_http(session, r);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
+		ret = transport_mongo(session, r, METADATA_SELECT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
+		ret = transport_mysql(session, r, METADATA_SELECT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
+		ret = transport_oracle(session, r, METADATA_DELETE);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
+		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
+		ret = transport_socket(session, r, SOCKET_TYPE_UNUX);
 
-	if (session.auth_request) {
-		if ((! strcmp(session.request_type, REQUEST_TYPE_JSON)) || (! strcmp(session.request_type, REQUEST_TYPE_MONGO)))
-			bson_free(session.auth_request);
+	if (session->auth_request) {
+		if ((! strcmp(session->request_type, REQUEST_TYPE_JSON)) || (! strcmp(session->request_type, REQUEST_TYPE_MONGO)))
+			bson_free(session->auth_request);
 	}
 
 	if (ret)
 		return ret;
 
 	// Process response (as per the configured request type)
-	if (! strcmp(session.request_type, REQUEST_TYPE_JSON))
-		ret = response_json(&session, metadata, r);
-	else if (! strcmp(session.request_type, REQUEST_TYPE_MONGO)) {
-		ret = response_json(&session, metadata, r);
-		bson_free(session.auth_response);
-		session.auth_response = NULL;
+	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
+		ret = response_json(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
+		ret = response_json(session, metadata, r);
+		bson_free(session->auth_response);
+		session->auth_response = NULL;
 	}
-	else if (! strcmp(session.request_type, REQUEST_TYPE_MYSQL))
-		ret = response_mysql(&session, metadata, r);
-	else if (! strcmp(session.request_type, REQUEST_TYPE_ORACLE))
-		ret = response_oracle(&session, metadata, r);
-	else if (! strcmp(session.request_type, REQUEST_TYPE_XML))
-		ret = response_xml(&session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
+		ret = response_mysql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
+		ret = response_oracle(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
+		ret = response_xml(session, metadata, r);
 
-	if (session.auth_response)
-		free(session.auth_response);
+	if (session->auth_response)
+		free(session->auth_response);
 
 	if (ret)
 		return ret;
 
 	// Check metadata
-	if ((ret = metadata_check(&session, metadata, r)) > 0)
+	if ((ret = metadata_check(session, metadata, r)) > 0)
 		return ret;
 
 	// Method-specific file processing
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
 		// Process the file
-		if ((ret = read_fs(&session, metadata, r)) > 0)
+		if ((ret = read_fs(session, metadata, r)) > 0)
 			return ret;
 
 		// Send the file
-		if ((ret = send_file(&session, metadata, r)) > 0) {
+		if ((ret = send_file(session, metadata, r)) > 0) {
 			cleanup(metadata, r);
 			return ret;
 		}
@@ -600,18 +869,18 @@ if (r->method & (NGX_HTTP_POST)) {
 
 		// Delete metadata (only for MongoDB and SQL)
 		// NB: we ignore errors here
-		if (! strcmp(session.transport_type, TRANSPORT_TYPE_MONGO))
+		if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
 			// NB: Our MongoDB request was already prepared above for the AUTH step
-			ret = transport_mongo(&session, r, METADATA_DELETE);
-		else if (! strcmp(session.transport_type, TRANSPORT_TYPE_MYSQL)) {
+			ret = transport_mongo(session, r, METADATA_DELETE);
+		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL)) {
 			// Switch query to DELETE one and rebuild it
-			session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_delete);
-			ret = transport_mysql(&session, r, METADATA_DELETE);
+			session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_delete);
+			ret = transport_mysql(session, r, METADATA_DELETE);
 		}
-		else if (! strcmp(session.transport_type, TRANSPORT_TYPE_ORACLE)) {
+		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE)) {
 			// Switch query to DELETE one and rebuild it
-			session.sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_delete);
-			ret = transport_oracle(&session, r, METADATA_DELETE);
+			session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_delete);
+			ret = transport_oracle(session, r, METADATA_DELETE);
 		}
 	}
 
@@ -622,7 +891,7 @@ if (r->method & (NGX_HTTP_POST)) {
 /**
  * Read file
  */
-ngx_int_t read_fs(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int fd, ret;
 	ngx_http_cleanup_t *c;
 
@@ -673,7 +942,7 @@ ngx_int_t read_fs(session_t *session, cdn_file_t *metadata, ngx_http_request_t *
 /**
  * Send file to client
  */
-ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int b1_len, b2_len;
 	char *encoded = NULL;
 	bool curl_encoded = false;
@@ -819,7 +1088,7 @@ ngx_int_t send_file(session_t *session, cdn_file_t *metadata, ngx_http_request_t
 /**
  * Cleanup (unmap mapped file after serving)
  */
-void cleanup(cdn_file_t *metadata, ngx_http_request_t *r) {
+void cleanup(metadata_t *metadata, ngx_http_request_t *r) {
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
 	
 	if (metadata->data && (munmap(metadata->data, metadata->length) < 0))
@@ -831,7 +1100,7 @@ void cleanup(cdn_file_t *metadata, ngx_http_request_t *r) {
  */
 void ngx_http_cdn_cleanup(void *a) {
 	ngx_http_request_t *r = (ngx_http_request_t *)a;
-	cdn_file_t *metadata = ngx_http_get_module_ctx(r, ngx_http_cdn_module);
+	metadata_t *metadata = ngx_http_get_module_ctx(r, ngx_http_cdn_module);
 	cleanup(metadata, r);
 }
 
@@ -904,7 +1173,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 /**
  * Check metdata for errors
  */
-ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	// Metadata: check for error
 	if ((metadata->status > 0) && (metadata->status != NGX_HTTP_OK)) {
 		if (metadata->error)
@@ -983,7 +1252,7 @@ ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_requ
 /**
  * Helper: get the full path from a file name
  */
-ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int i, len, pos=0;
 
 	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
@@ -1016,7 +1285,7 @@ ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t 
 /**
  * Helper: get stat of a file
  */
-ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r) {
 	struct stat statbuf;
 	int fd;
 

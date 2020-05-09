@@ -17,6 +17,7 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 #include <time.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -113,7 +114,8 @@
 #define TRANSPORT_TYPE_TCP "tcp"
 #define TRANSPORT_TYPE_UNIX "unix"
 
-#define UPLOAD_CONTENT_TYPE "multipart/form-data"
+#define CONTENT_TYPE_MPFD "multipart/form-data"
+#define CONTENT_TYPE_AXWFU "application/x-www-form-urlencoded"
 
 // Structures
 typedef struct {
@@ -157,7 +159,7 @@ typedef struct {
 	time_t upload_date; 
 	int32_t status;
 	int64_t length;
-} cdn_file_t;
+} metadata_t;
 
 typedef struct {
 	char *name;
@@ -227,8 +229,15 @@ typedef struct {
 } db_dsn_t;
 
 enum {
-	METADATA_SELECT = 0,
+	METADATA_NONE = 0,
+	METADATA_SELECT,
 	METADATA_DELETE,
 	METADATA_INSERT
+};
+
+enum {
+	UPLOAD_CONTENT_TYPE_NONE = 0,
+	UPLOAD_CONTENT_TYPE_MPFD,
+	UPLOAD_CONTENT_TYPE_AXWFU,
 };
 

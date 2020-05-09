@@ -20,7 +20,7 @@ static ngx_int_t error_xml(ngx_http_request_t *r, xmlTextWriterPtr writer, xmlBu
 /**
  * Prepare XML request
  */
-ngx_int_t request_xml(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t request_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int i, ret;
 	xmlTextWriterPtr writer;
 	xmlBufferPtr buf;
@@ -120,7 +120,7 @@ ngx_int_t request_xml(session_t *session, cdn_file_t *metadata, ngx_http_request
 /**
  * Process XML response
  */
-ngx_int_t response_xml(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t response_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL, *cur_node = NULL;
 	ngx_int_t ret;

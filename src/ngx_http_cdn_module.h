@@ -12,15 +12,15 @@ char *ngx_http_cdn_merge_loc_conf(ngx_conf_t* directive, void* parent, void* chi
 char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
 ngx_int_t ngx_http_cdn_handler(ngx_http_request_t* request);
-ngx_int_t read_fs(session_t *session, cdn_file_t *dnld_file, ngx_http_request_t *r);
-ngx_int_t send_file(session_t *session, cdn_file_t *dnld_file, ngx_http_request_t *r);
+ngx_int_t read_fs(session_t *session, metadata_t *dnld_file, ngx_http_request_t *r);
+ngx_int_t send_file(session_t *session, metadata_t *dnld_file, ngx_http_request_t *r);
 void ngx_http_cdn_cleanup(void *a);
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
 ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r);
-ngx_int_t get_path(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r);
-ngx_int_t get_stat(cdn_file_t *metadata, ngx_http_request_t *r);
-ngx_int_t metadata_check(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r);
-void cleanup(cdn_file_t *metadata, ngx_http_request_t *r);
+ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
+void cleanup(metadata_t *metadata, ngx_http_request_t *r);
 
 // Globals: array to specify how to handle configuration directives.
 static ngx_command_t ngx_http_cdn_commands[] = {

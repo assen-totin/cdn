@@ -4,7 +4,7 @@
 /**
  * Prepare JSON request
  */
-ngx_int_t request_json(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t request_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int i;
 	char s[11];
 	bson_t b, bc, bh, bel;
@@ -58,7 +58,7 @@ ngx_int_t request_json(session_t *session, cdn_file_t *metadata, ngx_http_reques
 /**
  * Process JSON response
  */
-ngx_int_t response_json(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t response_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	bson_t doc;
 	bson_error_t error;
 	bson_iter_t iter;

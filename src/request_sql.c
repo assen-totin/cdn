@@ -3,7 +3,7 @@
 /**
  * Prepare SQL request
  */
-ngx_int_t request_sql(session_t *session, cdn_file_t *metadata, ngx_http_request_t *r) {
+ngx_int_t request_sql(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	char *query;
 
 	// session->sql_query now contains the query template, but we want if to have the expanded query, so swap it to a local variable
