@@ -113,6 +113,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->http_url, parent->http_url, DEFAULT_HTTP_URL);
 	ngx_conf_merge_str_value(child->mongo_db, parent->mongo_db, DEFAULT_MONGO_DB);
 	ngx_conf_merge_str_value(child->mongo_collection, parent->mongo_collection, DEFAULT_MONGO_COLLECTION);
+	ngx_conf_merge_str_value(child->cors_origin, parent->cors_origin, DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN);
 
 	return NGX_CONF_OK;
 }
@@ -289,7 +290,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_int_t ret = NGX_OK;
 	ngx_table_elt_t *h;
 	cdn_file_t *metadata;
-	char *uri, *s0, *s1, *s2, *str1, *saveptr1;
+	char *uri, *s0, *s1, *s2, *str1, *saveptr1, *cors_origin;
 	struct tm ltm;
 	session_t session;
 
@@ -308,6 +309,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		r->headers_out.content_length_n = 0;
 
 		// Add Access-Control-Allow-Origin header
+		cors_origin = from_ngx_str(r->pool, cdn_loc_conf->cors_origin);
 		h = ngx_list_push(&r->headers_out.headers);
 		if (h == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
@@ -315,7 +317,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		}
 		h->hash = 1;
 		ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
-		ngx_str_set(&h->value, DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN);
+		ngx_str_set(&h->value, cors_origin);
 
 		// Add Access-Control-Allow-Methods header
 		h = ngx_list_push(&r->headers_out.headers);

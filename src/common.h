@@ -142,6 +142,7 @@ typedef struct {
 	ngx_str_t http_url;
 	ngx_str_t mongo_db;
 	ngx_str_t mongo_collection;
+	ngx_str_t cors_origin;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {

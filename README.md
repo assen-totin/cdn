@@ -25,6 +25,7 @@ location /
 	cdn;                                // Enable CDN module
 	cdn_fs_root /usr/share/curaden/fs;  // Root directgory of CDN 
 	cdn_fs_depth 4;                     // CDN tree depth
+	cdn_cors_origin host.example.com;   // Allowerd CORS origin
 
 	cdn_auth_type;                      // Type of authorisation to use: "jwt", "session" (optional)
 	cdn_auth_cookie my_cookie;          // Cookie where to find the authorisation token (optional)
@@ -57,6 +58,10 @@ To enable/disable some of the features (mostly such that require external librar
 - Mongo support
 - MySQL support
 - Oracle support
+
+# CORS
+
+For cross-origin resource sharing (CORS) you configure one allowed host in the `cdn_cors_origin` configuration parameter. The default value for it is "*" (allow any host).
 
 # Authorisation method
 
