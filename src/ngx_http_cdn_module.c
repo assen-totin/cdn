@@ -452,7 +452,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	r->headers_out.content_length_n = b->last - b->pos;
 
 	// Content-Type 
-	r->headers_out.content_type.len = strlen(metadata->file);
+	r->headers_out.content_type.len = strlen("text/plain");
 	r->headers_out.content_type.data = (u_char*)"text/plain";
 
 	ret = ngx_http_send_header(r);
@@ -871,7 +871,7 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 	r->headers_out.status = NGX_HTTP_OK;
 
 	// Content-Length
-	// NB: Nginx violates RFC 2616 and mandates the return of 0 in case of HEAD, otherwise the response in never completes
+	// NB: Nginx violates RFC 2616 and mandates the return of 0 in case of HEAD, otherwise the response never completes
 	if (r->method & (NGX_HTTP_GET))
 		r->headers_out.content_length_n = metadata->length;
 	else
