@@ -23,9 +23,10 @@ CDN URL for a file should be similar to `http://cdn.example.com/some-file-id`
 ```
 location /
 	cdn;                                // Enable CDN module
+	cdn_server_id 1;                    // ID of the server instance, 1-48 (optional, default 1)
 	cdn_fs_root /usr/share/curaden/fs;  // Root directgory of CDN 
 	cdn_fs_depth 4;                     // CDN tree depth
-	cdn_cors_origin host.example.com;   // Allowerd CORS origin
+	cdn_cors_origin host.example.com;   // Allowerd CORS origin (optional, default *)
 
 	cdn_auth_type;                      // Type of authorisation to use: "jwt", "session" (optional)
 	cdn_auth_cookie my_cookie;          // Cookie where to find the authorisation token (optional)
@@ -50,6 +51,14 @@ location /
 
 ```
 
+## Server ID
+
+Configuration parameter `cdn_server_id` denotes the ID of the server when multiple CND servers write to the same filesystem tree. It is used to guarantee the uniqueness of the uploaded file. Only used when uploading files via CDN. Default is 1.
+
+## CORS
+
+For cross-origin resource sharing (CORS) you configure one allowed host in the `cdn_cors_origin` configuration parameter. The default value for it is "*" (allow any host).
+
 # Build configuration
 
 To enable/disable some of the features (mostly such that require external libraries to be compiled and run), edit src/modules.h and comment/uncomment the respective line:
@@ -58,10 +67,6 @@ To enable/disable some of the features (mostly such that require external librar
 - Mongo support
 - MySQL support
 - Oracle support
-
-# CORS
-
-For cross-origin resource sharing (CORS) you configure one allowed host in the `cdn_cors_origin` configuration parameter. The default value for it is "*" (allow any host).
 
 # Authorisation method
 
@@ -235,9 +240,9 @@ NB: Oracle returns the column names in caps. This is OK.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
-## Mongo
+## MongoDB
 
-Because Mongo does not allow for textual queries, both file metadata and authorisation data must reside in a single collection with one document per file. Each document must have the same properties as the JSON response above plus two extra: `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). When asking for authorisation and data, CDN will compose a Mongo query with a filter that will have both these properties set: `{file_id: 1234-567-89, auth_value: abcd-efgh-ijkl}`; there should either be one exact match (if access is authorised) or no match.
+Because MongoDB does not allow for textual queries, both file metadata and authorisation data must reside in a single collection with one document per file. Each document must have the same properties as the JSON response above plus two extra: `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). When asking for authorisation and data, CDN will compose a Mongo query with a filter that will have both these properties set: `{file_id: 1234-567-89, auth_value: abcd-efgh-ijkl}`; there should either be one exact match (if access is authorised) or no match.
 
 Set the database name in the configuration option `cnd_mongo_db`. Set the collection name the configuration option `cnd_mongo_collection`.
 
@@ -287,11 +292,82 @@ You'll need to manually install Oracle Instant Client library; make sure you hav
 
 You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the ORACLE_HOME variable.
 
-## Mongo
+## MongoDB
 
-Set the database connection string in the configuration option `cnd_db_dsn` using the standard Mongo driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
+Set the database connection string in the configuration option `cnd_db_dsn` using the standard MongoDB driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
 
-# Dev environment setup
+# File uploads
+
+## Uploads via CDN
+
+Files can be uploaded via the CDN itself. File upload uses HTTP POST request. Only one file can be uploaded per request.
+
+The following upload methods are available via CDN:
+
+- multipart/form-data
+- application/x-www-form-urlencoded
+
+The following form field names are recognised: 
+
+- `f`: file field when uploading using multipart/form-data; the file content when using application/x-www-form-urlencoded.
+- `n`: file name; only used for application/x-www-form-urlencoded.
+- `cd`: content disposition to use for this file. May only be set to `attachment`, all other values are ignored. If not set, file will be served inline.
+- `ct`: content type of the file. For multipart/form-data overrides the value, provided in the file part of the form itself.
+
+The metadata can be created in two ways:
+
+- For SQL or MongoDB, you need to provide auth_value to be set in the database table or collection, e.g. via JWT.
+- For JSON or XML, a request will be send using the chosen transport (Unix, TCP, HTTP) with the file metadata (as in the response when asking to download or delete a file); the response will be ignored.
+
+## Manual uploads
+
+Here is the workflow to upload yourself a file to the CDN:
+
+### Create file ID
+
+- Use a lightweight hashing algorithm. 
+- We recommend strongly 128-bit murmur3: very fast, very sensitive, very good distribution, open source.
+- Ensure input is unique: use the file name, the current timestamp (with at least ms precision), the ID (or session ID) of the user and an ID of the app instance (e.g., IP address).
+- Convert the ID to lowercase hex string.
+- Do not use random data: low entropy on virtualised systems will slow you down.
+
+### Write the file ID and its metadata
+
+Write them to the metadata storage which will be used by CDN for authorisation (e.g., to the MySQL database).
+
+- Original file name. Will be used when serving the file with `Attachment` disposition. 
+- Upload timestamp. Will be compared to `If-Modified-Since` request header.
+- Etag: will be used for `Etag` response header and compared to `If-None-Match` request header.
+- MIME type. Will be used as `Content-Type`.
+- Content disposition – serve inline or as attachment.
+- Size: file size in bytes.
+
+Test your authorisation query to make sure metadata is properly returned.
+
+### Write the file into CDN file structure
+
+- Read the first N letters of the file ID generated above (where N is the depth of the CDN tree).
+- Use each of these N letters as one directory level.
+- Place the file in the resulting path.
+- Example: with depth of 4, file ID `abcdef0123456789` must be placed at path `/a/b/c/d/abcdef0123456789` inside the CDN root (note that the first N letters are *not* removed form the file name, they just for the path - this is how path will be determined when the CDN needs to serve the file).
+
+### Example
+
+See Examples below.
+
+# File deletion
+
+To delete a file from the filesystem, issue the same request as for getting a file, but use DELETE HTTP method.
+
+NB: The metadata for the file will be deleted when using SQL authorisation or MongoDB. In al other cases the authorisation body should delete the metadata (when the `http_method` in the authorisation request is set to `DELETE`).
+
+# Examples
+
+`unix_socket_server.js` is an example Unix socket server in Node.js which can be used as a skeleton for creating an authorisation body. It contains the necessary code minus the actual authorisation part.
+
+`file_upload.js` is an example HTTP server in Node.js which can be used as a skeleton for creating an upload service for the CDN. It contains the necessary code minus the authorisation of the upload and the writing of the metadata.
+
+# Development environment setup
 
 NB: This is for RHEL-8 and derivatives. RHEL-7 has some differences in packages and in the configure command. 
 
@@ -337,52 +413,5 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
 # Create empty CDN tree using tools/mkcdn.sh
 ```
-# File uploads
-
-Here is the workflow to upload a file to the CDN:
-
-## Create file ID
-
-- Use a lightweight hashing algorithm. 
-- We recommend strongly 128-bit murmur3: very fast, very sensitive, very good distribution, open source.
-- Ensure input is unique: use the file name, the current timestamp (with at least ms precision), the ID (or session ID) of the user and an ID of the app instance (e.g., IP address).
-- Convert the ID to lowercase hex string.
-- Do not use random data: low entropy on virtualised systems will slow you down.
-
-## Write the file ID and its metadata
-
-Write them to the metadata storage which will be used by CDN for authorisation (e.g., to the MySQL database).
-
-- Original file name. Will be used when serving the file with `Attachment` disposition. 
-- Upload timestamp. Will be compared to `If-Modified-Since` request header.
-- Etag: will be used for `Etag` response header and compared to `If-None-Match` request header.
-- MIME type. Will be used as `Content-Type`.
-- Content disposition – serve inline or as attachment.
-- Size: file size in bytes.
-
-Test your authorisation query to make sure metadata is properly returned.
-
-## Write the file into CDN file structure
-
-- Read the first N letters of the file ID generated above (where N is the depth of the CDN tree).
-- Use each of these N letters as one directory level.
-- Place the file in the resulting path.
-- Example: with depth of 4, file ID `abcdef0123456789` must be placed at path `/a/b/c/d/abcdef0123456789` inside the CDN root (note that the first N letters are *not* removed form the file name, they just for the path - this is how path will be determined when the CDN needs to serve the file).
-
-## Example
-
-See Examples below.
-
-# File deletion
-
-To delete a file from the filesystem, issue the same request as for getting a file, but use DELETE HTTP method.
-
-NB: The metadata for the file will be deleted when using SQL authorisation or MOngoDB. In al other cases the authorisation body should delete the metadata (when the `http_method` in the authorisation request is set to `DELETE`).
-
-# Examples
-
-`unix_socket_server.js` is an example Unix socket server in Node.js which can be used as a skeleton for creating an authorisation body. It contains the necessary code minus the actual authorisation part.
-
-`file_upload.js` is an example HTTP server in Node.js which can be used as a skeleton for creating an upload service for the CDN. It contains the necessary code minus the authorisation of the upload and the writing of the metadata.
 
 

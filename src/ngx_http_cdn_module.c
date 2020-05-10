@@ -231,6 +231,19 @@ char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
 	return ret;
 }
 
+/**
+ * Polyfill for memstr()
+ */
+char *memstr(char *haystack, char *needle, int size) {
+	char *p;
+	char needlesize = strlen(needle);
+
+	for (p = haystack; p <= (haystack - needlesize + size); p++) {
+		if (memcmp(p, needle, needlesize) == 0)
+			return p;
+	}
+	return NULL;
+}
 
 //client_body_buffer_size IS THE DIRECTIVE THAT GOVERNS WHEN TEMP FILE WILL BE USED! DEFAULT: 16k
 //client_max_body_size IS THE MAX UPLOAD SIZE. DEFAULT: 1m
@@ -239,8 +252,8 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r);
 
 static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	off_t len = 0, len_buf;
-	ngx_buf_t *b;
-	ngx_chain_t out, *bufs;
+	ngx_buf_t *b = NULL;
+	ngx_chain_t *out, *bufs;
 	ngx_int_t ret;
 	char *content_length_z, *content_type, *boundary, *line;
 	long content_length;
@@ -364,7 +377,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		char *part = rb;
 		int cnt_part = 0, cnt_header;
 		while (1) {
-			char *part_pos;
+			char *part_pos = NULL;
 			char *part_field_name = NULL, *part_filename = NULL, *part_content_type = NULL, *part_content_transfer_encoding = NULL;
 			char *part_data_end;
 
@@ -377,15 +390,14 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 			}
 
 			// Seek a boundary and move past it + CRLF
-			if (! (part_pos = strstr(part, boundary))) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "boundary not found in body: %s", boundary);
+			if (! (part_pos = memstr(part, boundary, rb - part + content_length))) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Boundary not found in body: %s", boundary);
 				ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 				return;
 			}
 
-			// If next two characters are not CRLF (but rather '--CRLF'), this is the end of the form
-			char *tmp = strstr(part_pos, "\r\n");
-			if ((tmp - part_pos) != strlen(boundary)) {
+			// If next two characters are '--', this is the end of the form
+			if (! memcmp(part_pos + strlen(boundary), "--", 2)) {
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Reached end of form");
 				break;
 			}
@@ -402,7 +414,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 					return;
 				}
 
-				// Get a line from the headerss
+				// Get a line from the headers
 				if ((line = mpfd_get_line(r, part_pos)) == NULL) {
 					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to read a header line.");
 					ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -434,7 +446,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 			}
 
 			// Move past the CRLF of the empty line to start reading data
-			if ((part_data_end = strstr(part_pos, boundary)) == NULL) {
+			if ((part_data_end = memstr(part_pos, boundary, rb - part_pos + content_length)) == NULL) {
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Unable to find next boundary in body: %s", boundary);
 				ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 				return;				
@@ -495,7 +507,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		return;
 	}
-	sprintf(metadata->file, "%016lx%016lx\n", hash[0], hash[1]);
+	sprintf(metadata->file, "%016lx%016lx", hash[0], hash[1]);
 
 	// Obtain file path
 	if (get_path(session, metadata, r) > 0) {
@@ -525,31 +537,39 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	if (rb_malloc)
 		free(rb);
 
-	// Send output: the file ID
-	if ((b = ngx_create_temp_buf(r->pool, NGX_OFF_T_LEN)) == NULL) {
+	// Prepare output chain
+	out = ngx_alloc_chain_link(r->pool);
+	if (out == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for buffer chain.", sizeof(ngx_chain_t));
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
 	}
 
-	b->last = ngx_sprintf(b->pos, "%s", metadata->file);
-	b->last_buf = 1;
-	b->last_in_chain = 1;
+	// Prepare output buffer
+	if ((b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	}
 
+	// Prepare output chain; hook the buffer
+	out->buf = b;
+	out->next = NULL; 
+
+	// Set the buffer
+	b->pos = (u_char *) metadata->file;
+	b->last = (u_char *) metadata->file + strlen(metadata->file);
+	b->mmap = 1; 
+	b->last_buf = 1; 
+
+	// Status
 	r->headers_out.status = NGX_HTTP_OK;
 	r->headers_out.content_length_n = b->last - b->pos;
 
+	// Content-Type 
+	r->headers_out.content_type.len = strlen(metadata->file);
+	r->headers_out.content_type.data = (u_char*)"text/plain";
+
 	ret = ngx_http_send_header(r);
-
-	if (ret == NGX_ERROR || ret > NGX_OK || r->header_only) {
-		ngx_http_finalize_request(r, ret);
-		return;
-	}
-
-	out.buf = b;
-	out.next = NULL;
-
-	ret = ngx_http_output_filter(r, &out);
-
+	ret = ngx_http_output_filter(r, out);
 	ngx_http_finalize_request(r, ret);
 }
 
