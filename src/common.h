@@ -23,6 +23,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -63,6 +64,7 @@
 #define DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS "If-None-Match, If-Modified-Since"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, POST, OPTIONS, DELETE"
 #define DEFAULT_HTTP_CODE 500
+#define DEFAULT_SERVER_ID 1
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
 #define DEFAULT_TCP_HOST "example.com"
@@ -82,6 +84,8 @@
 #define DEFAULT_SQL_QUERY "none"
 #define DEFAULT_MONGO_DB "none"
 #define DEFAULT_MONGO_COLLECTION "none"
+
+#define MAX_SERVER_ID 48
 
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
@@ -123,6 +127,7 @@ typedef struct {
 } ngx_http_cdn_main_conf_t;
 
 typedef struct {
+	ngx_str_t server_id;
 	ngx_str_t fs_root;
 	ngx_str_t fs_depth;
 	ngx_str_t request_type;
@@ -169,6 +174,7 @@ typedef struct {
 typedef struct {
 	ngx_http_request_t *r;
 	time_t exp;
+	uint server_id;
 	uint fs_depth;
 	char *fs_root;
 	char *http_method;

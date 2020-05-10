@@ -7,7 +7,8 @@
 #include "common.h"
 #include "ngx_http_cdn_module.h"
 #include "auth_jwt.h"
-#include "auth_session->h"
+#include "auth_session.h"
+#include "murmur3.h"
 #include "request_json.h"
 #include "request_mongo.h"
 #include "request_mysql.h"
@@ -92,6 +93,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_http_cdn_loc_conf_t *parent = void_parent;
 	ngx_http_cdn_loc_conf_t *child = void_child;
 
+	ngx_conf_merge_str_value(child->server_id, parent->server_id, DEFAULT_SERVER_ID);
 	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, DEFAULT_FS_ROOT);
 	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
 	ngx_conf_merge_str_value(child->request_type, parent->request_type, DEFAULT_REQUEST_TYPE);
@@ -239,22 +241,16 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	off_t len = 0, len_buf;
 	ngx_buf_t *b;
 	ngx_chain_t out, *bufs;
+	ngx_int_t ret;
 	char *content_length_z, *content_type, *boundary, *line;
 	long content_length;
-	int upload_content_type, file_fd, file_size;
+	int upload_content_type, file_fd;
 	uint64_t hash[2];
 	session_t *session;
 	metadata_t *metadata;
 
 	// Check if we have body
 	if (r->request_body == NULL) {
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
-	}
-
-	// Init session
-	if ((session = ngx_pcalloc(r->pool, sizeof(session_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for session.", sizeof(session_t));
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		return;
 	}
@@ -266,9 +262,21 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		return;
 	}
 
-//FIXME:
-//session->fs_root
-//session->fs_depth
+	metadata->content_type = NULL;
+	metadata->length = 0;
+
+	// Init session
+	if ((session = ngx_pcalloc(r->pool, sizeof(session_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for session.", sizeof(session_t));
+		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return;
+	}
+
+	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
+	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
+	session->server_id = atoi(from_ngx_str(r->pool, cdn_loc_conf->server_id)) % MAX_SERVER_ID + 1;
+	session->fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
+	session->fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body is ready for processing.");
 
@@ -342,6 +350,8 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 
 //FIXME: Create a cleanup funciton that will free rb if rb_malloc before calling ngx_http_finalize_request and use if everywhere below
 
+	char *file_data_begin = NULL, *filename, *file_content_transfer_encoding = NULL;
+
 	// Process multipart/form-data
 	if (upload_content_type == UPLOAD_CONTENT_TYPE_MPFD) {
 		// Extract boundary
@@ -351,7 +361,6 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 			return;
 		}
 
-		char *file_data_begin, *file_data_end, *filename, *file_content_type = NULL, *file_content_transfer_encoding = NULL;
 		char *part = rb;
 		int cnt_part = 0, cnt_header;
 		while (1) {
@@ -437,16 +446,22 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 			// Remember data begin and end if this part was the file part
 			if (part_filename) {
 				filename = part_filename;
-				file_content_type = part_content_type;
+				metadata->content_type = part_content_type;
 				file_content_transfer_encoding = part_content_transfer_encoding;
 				file_data_begin = part_pos;
-				file_data_end = part_data_end;
-				file_size = file_data_end - file_data_begin;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Filename %s uploaded data %l", filename, file_data_end - file_data_begin);
+				metadata->length = part_data_end - file_data_begin;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Filename %s uploaded data %l", filename, metadata->length);
 			}
 
 			// Move the part forward
-			part = data_end;
+			part = part_data_end;
+		}
+
+		// If we did not find a file, bail out
+		if (! file_data_begin) {
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Unable to find uploaded file");
+			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			return;
 		}
 	}
 
@@ -464,9 +479,15 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		return;	
 	}
 
+	// Create hash salt: No of seconds for today with ms precision, mulitplied by server id =< 49
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    int sec = tv.tv_sec % 86400;
+    int msec = tv.tv_usec / 1000;
+    uint32_t salt = session->server_id * (1000 * sec + msec);
+
 	// Create file hash
-	//FIXME: Add server ID and timestamp somehow?
-	murmur3((void *)file_data_begin, file_size, TRULY_RANDOM_NUMBER, (void *) &hash[0]);
+	murmur3((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
 
 	// Convert hash to hex string
 	if ((metadata->file = ngx_pcalloc(r->pool, 33)) == NULL) {
@@ -477,24 +498,26 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	sprintf(metadata->file, "%016lx%016lx\n", hash[0], hash[1]);
 
 	// Obtain file path
-	if ((ret = get_path(session, metadata, r)) > 0) {
+	if (get_path(session, metadata, r) > 0) {
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		return;
 	}
 
 	// Save file to CDN
-	if ((file_fd = open(file->path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to create file %s: %s", file->path, strerror(errno));
+	if ((file_fd = open(metadata->path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to create file %s: %s", metadata->path, strerror(errno));
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		return;
 	}
-	if (write(file_fd, (const void *)file_data_begin, file_size) < file_size) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write %l bytes to file %s: %s", file_size, file->path, strerror(errno));
+	if (write(file_fd, (const void *)file_data_begin, metadata->length) < metadata->length) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write %l bytes to file %s: %s", metadata->length, metadata->path, strerror(errno));
 		close(file_fd);
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		return;
 	}
 	close(file_fd);
+
+	// FIXME: Process JWT/sess_id here
 
 	// FIXME: Save metadata - to SQL/Mongo or send JSON/XML
 
@@ -515,19 +538,19 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	r->headers_out.status = NGX_HTTP_OK;
 	r->headers_out.content_length_n = b->last - b->pos;
 
-	rc = ngx_http_send_header(r);
+	ret = ngx_http_send_header(r);
 
-	if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
-		ngx_http_finalize_request(r, rc);
+	if (ret == NGX_ERROR || ret > NGX_OK || r->header_only) {
+		ngx_http_finalize_request(r, ret);
 		return;
 	}
 
 	out.buf = b;
 	out.next = NULL;
 
-	rc = ngx_http_output_filter(r, &out);
+	ret = ngx_http_output_filter(r, &out);
 
-	ngx_http_finalize_request(r, rc);
+	ngx_http_finalize_request(r, ret);
 }
 
 
@@ -633,6 +656,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	}
 
 	// Prepare session management data
+	session->server_id = atoi(from_ngx_str(r->pool, cdn_loc_conf->server_id)) % MAX_SERVER_ID + 1;
 	session->fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
 	session->fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
 	session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
