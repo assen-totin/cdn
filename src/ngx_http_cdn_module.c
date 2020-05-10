@@ -20,6 +20,7 @@
 #include "transport_mysql.h"
 #include "transport_oracle.h"
 #include "transport_socket.h"
+#include "upload_mpfd.h"
 #include "utils.h"
 
 /**
@@ -132,124 +133,9 @@ char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
 	return NGX_CONF_OK;
 }
 
-///// DEBUG POST
 /**
- * Read a line from current position
+ * POST request body processing callback
  */
-char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
-	char *end, *ret; 
-
-	end = strstr(begin, "\r\n");
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Header line length: %l", end - begin);
-
-	// Sanity check - line should exceed 1000 bytes
-	if ((end - begin) > 1024) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Header line too long: %l", end - begin);
-		return NULL;
-	}
-
-	// Prepare reply
-	if ((ret = ngx_pcalloc(r->pool, end - begin + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for upload part line.", end - begin + 1);
-		return NULL;
-	}
-
-	strncpy(ret, begin, end - begin);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header line: %s", ret);
-
-	return ret;
-}
-
-/**
- * Find a value from a key=value pair, present in a bigger string (haystack), when given the key
- * E.g. knowing 'key' from 'lala; key="value"; bebe' returns "value"
- */
-char *mpfd_get_value(ngx_http_request_t *r, char *haystack, char *needle) {
-	char *begin, *end, *ret;
-
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Looking for needle %s in haystack %s", needle, haystack);
-
-	// Find the beginning of the needle
-	if (! (begin = strcasestr(haystack, needle))) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Needle %s not found in haystack %s", needle, haystack);
-        return NULL;
-    }
-
-	// Move forward with the length of the needle, e.g. key=
-    begin += strlen(needle) + 1;
-
-	// Check if we have a trailing semicolon; 
-	// It will be absent if we are the last key=value pair in the string, so use everything till the end of the string
-	end = strstr(begin, ";");
-    if (! end)
-		end = begin + strlen(begin);
-
-	// Prepare return value and copy the value from the pair there
-	if ((ret = ngx_pcalloc(r->pool, end - begin + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for upload param value.", end - begin + 1);
-		return NULL;
-	}
-	strncpy(ret, begin, end - begin);
-
-	// Remove quotes which may surround the value
-	if (strstr(ret, "\"")) {
-		memset(ret + strlen(ret) - 1, '\0', 1);
-		ret ++;
-    }
-
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found value for needle %s: %s", needle, ret);
-	return ret;
-}
-
-/**
- * Read the value from a header up to the first demicolon, if any
- */
-char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
-	char *begin, *end, *ret;
-
-	// Check if we are the proper header
-	if ((begin = strcasestr(line, header)) == NULL)
-		return NULL;
-
-	// Move to beginning of content
-	begin += strlen(header) + 2;
-
-	// Check for trailing semicolon
-	if (strstr(begin, ";"))
-		end = strstr(begin, ";");
-	else
-		end = begin + strlen(begin);
-
-	if ((ret = ngx_pcalloc(r->pool, end - begin + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for upload part header %s", end - begin + 1, header);
-		return NULL;
-	}
-
-	strncpy(ret, begin, end - begin);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found value for upload part header %s: %s", header, ret);
-
-	return ret;
-}
-
-/**
- * Polyfill for memstr()
- */
-char *memstr(char *haystack, char *needle, int size) {
-	char *p;
-	char needlesize = strlen(needle);
-
-	for (p = haystack; p <= (haystack - needlesize + size); p++) {
-		if (memcmp(p, needle, needlesize) == 0)
-			return p;
-	}
-	return NULL;
-}
-
-//client_body_buffer_size IS THE DIRECTIVE THAT GOVERNS WHEN TEMP FILE WILL BE USED! DEFAULT: 16k
-//client_max_body_size IS THE MAX UPLOAD SIZE. DEFAULT: 1m
-
-static void ngx_http_cdn_body_handler (ngx_http_request_t *r);
-
 static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	off_t len = 0, len_buf;
 	ngx_buf_t *b = NULL;
@@ -361,7 +247,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		return;
 	}
 
-//FIXME: Create a cleanup funciton that will free rb if rb_malloc before calling ngx_http_finalize_request and use if everywhere below
+//FIXME: Create a cleanup function that will free rb if rb_malloc before calling ngx_http_finalize_request and use if everywhere below
 
 	char *file_data_begin = NULL, *filename, *file_content_transfer_encoding = NULL;
 
@@ -478,6 +364,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	}
 
 	// Process application/x-www-form-urlencoded
+	// FIXME: Implement
 	else if (upload_content_type == UPLOAD_CONTENT_TYPE_AXWFU) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload type %s not supported (yet)", CONTENT_TYPE_AXWFU);
 		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -529,7 +416,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	}
 	close(file_fd);
 
-	// FIXME: Process JWT/sess_id here
+	// FIXME: Process JWT/sess_id here to get auth_value
 
 	// FIXME: Save metadata - to SQL/Mongo or send JSON/XML
 
@@ -572,21 +459,6 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	ret = ngx_http_output_filter(r, out);
 	ngx_http_finalize_request(r, ret);
 }
-
-
-/*
------------------------------18777234483971611453887793901
-Content-Disposition: form-data; name="n"; filename="gthomas.doc"
-Content-Type: application/msword
-
-lalal
------------------------------18777234483971611453887793901
-Content-Disposition: form-data; name="submit"
-
-Upload Image
------------------------------18777234483971611453887793901--
-*/
-///// END DEBUG POST
 
 /**
  * Content handler

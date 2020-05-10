@@ -1,6 +1,21 @@
 #include "common.h"
 
 /**
+ * Polyfill for memstr()
+ */
+char *memstr(char *haystack, char *needle, int size) {
+	char *p;
+	char needlesize = strlen(needle);
+
+	for (p = haystack; p <= (haystack - needlesize + size); p++) {
+		if (memcmp(p, needle, needlesize) == 0)
+			return p;
+	}
+
+	return NULL;
+}
+
+/**
  * Helper: convert Nginx string to normal
  */
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {

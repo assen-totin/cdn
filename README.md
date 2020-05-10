@@ -51,6 +51,11 @@ location /
 
 ```
 
+The following general-purpose Nginx params may be useful:
+`client_body_buffer_size`: sets the size above which a temp file will be used for uploads; default is 16k, you may want to increase it.
+`client_max_body_size`: sets the maximum size of a single POST request used for uploads to CDN (i.e. larger files will not be accepted for upload); default is 1m, you may want to increase it.
+
+
 ## Server ID
 
 Configuration parameter `cdn_server_id` denotes the ID of the server when multiple CND servers write to the same filesystem tree. It is used to guarantee the uniqueness of the uploaded file. Only used when uploading files via CDN. Default is 1.
