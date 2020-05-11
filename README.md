@@ -309,12 +309,12 @@ Files can be uploaded via the CDN itself. File upload uses HTTP POST request. On
 
 The following upload methods are available via CDN:
 
-- multipart/form-data
+- multipart/form-data. Only raw data (aka 8-bit) is supported (i.e. no quoted-printable of Base64).
 - application/x-www-form-urlencoded
 
 The following form field names are recognised: 
 
-- `f`: file field when uploading using multipart/form-data; the file content when using application/x-www-form-urlencoded.
+- `d`: file field when uploading using multipart/form-data; the file content when using application/x-www-form-urlencoded.
 - `n`: file name; only used for application/x-www-form-urlencoded.
 - `cd`: content disposition to use for this file. May only be set to `attachment`, all other values are ignored. If not set, file will be served inline.
 - `ct`: content type of the file. For multipart/form-data overrides the value, provided in the file part of the form itself.

@@ -84,6 +84,7 @@
 #define DEFAULT_SQL_QUERY "none"
 #define DEFAULT_MONGO_DB "none"
 #define DEFAULT_MONGO_COLLECTION "none"
+#define DEFAULT_FILE_NAME "unnamed"
 
 #define MAX_SERVER_ID 48
 
@@ -120,6 +121,7 @@
 
 #define CONTENT_TYPE_MPFD "multipart/form-data"
 #define CONTENT_TYPE_AXWFU "application/x-www-form-urlencoded"
+#define CONTENT_TYPE_TEXT_PLAIN "text/plain"
 
 // Structures
 typedef struct {

@@ -134,6 +134,15 @@ char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
 }
 
 /**
+ * POST cleanup
+ */
+void upload_cleanup(ngx_http_request_t *r, char *rb, bool rb_malloc, int status) {
+	if (rb_malloc)
+		free(rb);
+	ngx_http_finalize_request(r, status);
+}
+
+/**
  * POST request body processing callback
  */
 static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
@@ -141,34 +150,36 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	ngx_buf_t *b = NULL;
 	ngx_chain_t *out, *bufs;
 	ngx_int_t ret;
-	char *content_length_z, *content_type, *boundary, *line;
-	long content_length;
-	int upload_content_type, file_fd;
+	char *content_length_z, *content_type, *boundary, *line, *rb = NULL, *part = NULL;
+	char *file_data_begin = NULL, *file_content_transfer_encoding = NULL;
+	char *part_pos = NULL, *part_field_name = NULL, *part_filename = NULL, *part_content_type = NULL, *part_content_transfer_encoding = NULL, *part_end;
+	int upload_content_type, file_fd, cnt_part = 0, cnt_header;
+	long content_length, rb_pos = 0;
 	uint64_t hash[2];
 	session_t *session;
 	metadata_t *metadata;
+	bool rb_malloc = false;
+	CURL *curl = NULL;
 
 	// Check if we have body
-	if (r->request_body == NULL) {
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
-	}
+	if (r->request_body == NULL)
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
 	// Init metadata
 	if ((metadata = ngx_pcalloc(r->pool, sizeof(metadata_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(metadata_t));
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
 	metadata->content_type = NULL;
+	metadata->content_disposition = NULL;
+	metadata->file_name = NULL;
 	metadata->length = 0;
 
 	// Init session
 	if ((session = ngx_pcalloc(r->pool, sizeof(session_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for session.", sizeof(session_t));
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
@@ -177,49 +188,44 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	session->fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
 	session->fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body is ready for processing.");
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body is ready for processing.");
 
 	// Extract content type from header
 	content_type = from_ngx_str(r->pool, r->headers_in.content_type->value);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload Content-Type: %s", content_type);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload found header Content-Type: %s", content_type);
 	if (strstr(content_type, CONTENT_TYPE_MPFD))
 		upload_content_type = UPLOAD_CONTENT_TYPE_MPFD;
 	else if (strstr(content_type, CONTENT_TYPE_AXWFU))
 		upload_content_type = UPLOAD_CONTENT_TYPE_AXWFU;
 	else {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload Content-Type %s not supported", content_type);
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
 	// Extract content length from header
 	content_length_z = from_ngx_str(r->pool, r->headers_in.content_length->value);
 	if (! content_length_z) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload Content-Length not set");
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 	content_length = atol(content_length_z);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload Content-Length: %l", content_length);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload found header Content-Length: %l", content_length);
 
 	// Use mmap or not?
-	char *rb = NULL;
-	bool rb_malloc = false;
-	long rb_pos = 0;
 	bufs = r->request_body->bufs;
 	if (bufs && bufs->buf && bufs->buf->in_file) {
 		// Use mmap from FD in the buffer
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: using file buffers");
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body will use file buffers");
 		len = bufs->buf->file_last;
 
 		if ((rb = mmap(NULL, len, PROT_READ, MAP_SHARED, bufs->buf->file->fd, 0)) < 0) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Request body: mmap() error %s", strerror(errno));
-			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-			return;
+			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
 	}
 	else {
 		// Work from memory
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: using memory buffers");
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body will use memory buffers");
 
 		rb = malloc(content_length);
 		if (! rb) {
@@ -230,7 +236,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 
 		for (bufs = r->request_body->bufs; bufs; bufs = bufs->next) {
 			len_buf = ngx_buf_size(bufs->buf);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: found new buffer with size: %l", len_buf);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body: found new memory buffer with size: %l", len_buf);
 			len += len_buf;
 
 			memcpy(rb + rb_pos, bufs->buf->start, len_buf);
@@ -238,48 +244,39 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		}
 	}
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Request body: total length: %l", len);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body: total memory buffer length: %l", len);
 	if (len != content_length) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Error processing request body: Content-Length set to %l, but found %l bytes", content_length, len);
-		if (rb_malloc)
-			free(rb);
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request body mismatch: Content-Length %l, total memory buffers %l bytes", content_length, len);
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
-
-//FIXME: Create a cleanup function that will free rb if rb_malloc before calling ngx_http_finalize_request and use if everywhere below
-
-	char *file_data_begin = NULL, *filename, *file_content_transfer_encoding = NULL;
 
 	// Process multipart/form-data
 	if (upload_content_type == UPLOAD_CONTENT_TYPE_MPFD) {
 		// Extract boundary
 		if ((boundary = mpfd_get_value(r, content_type, "boundary")) == NULL) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to find boundary in Content-Type: %s", content_type);
-			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-			return;
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request MPFD: unable to find boundary in Content-Type: %s", content_type);
+			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
 
-		char *part = rb;
-		int cnt_part = 0, cnt_header;
+		// Loop around parts of the form
+		part = rb;
 		while (1) {
-			char *part_pos = NULL;
-			char *part_field_name = NULL, *part_filename = NULL, *part_content_type = NULL, *part_content_transfer_encoding = NULL;
-			char *part_data_end;
+			part_field_name = NULL;
+			part_filename = NULL;
+			part_content_type = NULL;
+			part_content_transfer_encoding = NULL;
 
 			cnt_part++;
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "PROCESSING NEW PART %l", cnt_part);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: found new part %l", cnt_part);
 			if (cnt_part > 10) {
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Too many loops while processing parts: %l", cnt_part);
-				ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-				return;
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request MPFD: too many loops while processing parts: %l", cnt_part);
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 
 			// Seek a boundary and move past it + CRLF
 			if (! (part_pos = memstr(part, boundary, rb - part + content_length))) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Boundary not found in body: %s", boundary);
-				ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-				return;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: boundary not found in body: %s", boundary);
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 
 			// If next two characters are '--', this is the end of the form
@@ -293,23 +290,21 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 			cnt_header = 0;
 			while (1) {
 				cnt_header++;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "PROCESSING NEW HEADER %l IN PART %l", cnt_header, cnt_part);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: found new header %l in part %l", cnt_header, cnt_part);
 				if (cnt_header > 10) {
-					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Too many loops while processing headers: %l", cnt_part);
-					ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-					return;
+					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request MPFD: too many loops while processing headers in part $l: %l", cnt_header, cnt_part);
+					return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 				}
 
 				// Get a line from the headers
 				if ((line = mpfd_get_line(r, part_pos)) == NULL) {
 					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to read a header line.");
-					ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-					return;
+					return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 				}
 
 				// If line is empty, this is last line of the header; skip its CRLF and break
 				if (strlen(line) == 0) {
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found last line of header.");
+					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: found last line of header.");
 					part_pos += 2;
 					break;
 				}
@@ -332,50 +327,123 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 			}
 
 			// Move past the CRLF of the empty line to start reading data
-			if ((part_data_end = memstr(part_pos, boundary, rb - part_pos + content_length)) == NULL) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Unable to find next boundary in body: %s", boundary);
-				ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-				return;				
+			if ((part_end = memstr(part_pos, boundary, rb - part_pos + content_length)) == NULL) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: unable to find next boundary: %s", boundary);
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
-			part_data_end -= 4;	// Go back the CRLF "--" that preceed the boundary
-			
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "DATA LENGTH FOR PART %l: %l", cnt_part, part_data_end - part_pos);
+			part_end -= 4;	// Go back the "CRLF--" that preceed the boundary	
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: data length for part %l: %l", cnt_part, part_end - part_pos);
 
-			// Remember data begin and end if this part was the file part
+			// If this is a file part, remember data begin and end
 			if (part_filename) {
-				filename = part_filename;
+				metadata->filename = part_filename;
 				metadata->content_type = part_content_type;
 				file_content_transfer_encoding = part_content_transfer_encoding;
 				file_data_begin = part_pos;
-				metadata->length = part_data_end - file_data_begin;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Filename %s uploaded data %l", filename, metadata->length);
+				metadata->length = part_end - part_pos;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: filename %s size %l", filename, metadata->length);
 			}
 
+			// Check if field name is file data
+			else if (! strcmp(part_field_name), "d") {
+				file_data_begin = part_pos;
+				metadata->length = part_end - part_pos;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: raw data size %l", metadata->length);
+			}
+
+			// Check if field name is a file name
+			else if (! strcmp(part_field_name), "n")
+				metadata->filename = mpfd_get_field(r, part_pos, part_end - part_pos);
+
+			// Check if field name is content type
+			else if (! strcmp(part_field_name), "ct")
+				metadata->content_type = mpfd_get_field(r, part_pos, part_end - part_pos);
+
+			// Check if field name is content disposition
+			else if (! strcmp(part_field_name), "cd")
+				metadata->content_disposition = mpfd_get_field(r, part_pos, part_end - part_pos);
+
 			// Move the part forward
-			part = part_data_end;
+			part = part_end;
 		}
 
 		// If we did not find a file, bail out
 		if (! file_data_begin) {
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Unable to find uploaded file");
-			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-			return;
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: unable to find uploaded file");
+			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		}
+
+		// FIXME: Decode file if needed?
+		if (file_content_transfer_encoding) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: content transfer encoding %s not supported (yet)", file_content_transfer_encoding);
+			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
 	}
 
 	// Process application/x-www-form-urlencoded
-	// FIXME: Implement
 	else if (upload_content_type == UPLOAD_CONTENT_TYPE_AXWFU) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload type %s not supported (yet)", CONTENT_TYPE_AXWFU);
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;		
-	}
+		// Init CURL
+		curl = curl_easy_init();
 
-	// FIXME: Decode file if needed?
-	if (file_content_transfer_encoding) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Transfer encoding %s not supported (yet)", file_content_transfer_encoding);
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;	
+		// Traverse the request body
+		part = rb;
+		while(part) {
+			// Find next =
+			char *part_end;
+			if ((part_pos = memchr(part, '=', rb - part + content_length)) == NULL) {
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request AXWFU: could not find next key-value delimiter");
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			}
+			part_end = part_pos - 1;
+			
+			// Extract form field name
+			char *form_field_name;
+			if ((form_field_name = ngx_pcalloc(r->pool, part_end - part + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for for field name.", part_end - part -1 + 1);
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			}
+			strncpy(form_field_name, part, part_end - part);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: found field name %s", form_field_name);
+
+			// Jump over the =
+			part_pos ++;
+
+			// Find next &
+			if ((part = memchr(part, '&', rb - part_pos + content_length)) == NULL) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: reached last form field");
+				part_end = rb + content_length;
+			}
+			else
+				par_end = part - 1;
+
+			// Extract form field value
+			char *form_field_value;
+			if ((form_field_value = ngx_pcalloc(r->pool, par_end - part_pos + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for for field name.", par_end - part_pos + 1);
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			}
+			strncpy(form_field_value, part_pos, part_end - part_pos);
+
+			// URL decode the value
+			int form_field_value_len;
+			char *form_field_value_decoded = curl_easy_unescape(curl, form_field_value, 0, &form_field_value_len);
+			if (form_field_value_len <1024)
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: field name %s value %s", form_field_name, form_field_value_decoded);
+			else
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: field name %s value is %l bytes", form_field_name, form_field_value_len);
+
+			// Decide what to do with the field
+			if (! strcmp(part_field_name), "d") {
+				file_data_begin = form_field_value_decoded;
+				metadata->length = form_field_value_len;
+			}
+			else if (! strcmp(part_field_name), "n")
+				curl_filename = form_field_value_decoded;
+			else if (! strcmp(part_field_name), "ct")
+				curl_content_type = form_field_value_decoded;
+			else if (! strcmp(part_field_name), "cd")
+				curl_content_disposition = form_field_value_decoded;
+		}	
 	}
 
 	// Create hash salt: No of seconds for today with ms precision, mulitplied by server id =< 49
@@ -391,51 +459,87 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	// Convert hash to hex string
 	if ((metadata->file = ngx_pcalloc(r->pool, 33)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate 33 bytes for file ID.");
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 	sprintf(metadata->file, "%016lx%016lx", hash[0], hash[1]);
 
 	// Obtain file path
-	if (get_path(session, metadata, r) > 0) {
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
-	}
+	if (get_path(session, metadata, r) > 0)
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
 	// Save file to CDN
 	if ((file_fd = open(metadata->path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to create file %s: %s", metadata->path, strerror(errno));
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to create file %s: %s", metadata->path, strerror(errno));
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 	if (write(file_fd, (const void *)file_data_begin, metadata->length) < metadata->length) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write %l bytes to file %s: %s", metadata->length, metadata->path, strerror(errno));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to write %l bytes to file %s: %s", metadata->length, metadata->path, strerror(errno));
 		close(file_fd);
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		return;
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 	close(file_fd);
 
 	// FIXME: Process JWT/sess_id here to get auth_value
 
+	// Metadata: merge of defaults if some values are missing
+	if (! metadata->filename) {
+		if (curl_filename)
+			metadata->filename = curl_filename;
+		else {
+			if ((metadata->filename = ngx_pcalloc(r->pool, strlen(s) + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(s) + 1);
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			}
+			strcpy(metadata->filename, DEFAULT_FILE_NAME);
+		}
+	}
+
+	if (! metadata->content_type) {
+		if (curl_content_type)
+			metadata->content_type = curl_content_type;
+		else {
+			if ((metadata->content_type = ngx_pcalloc(r->pool, strlen(s) + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(s) + 1);
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			}
+			strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
+		}
+	}
+
+	if (! metadata->content_disposition) {
+		if (curl_content_disposition)
+			metadata->content_disposition = curl_content_disposition;
+	}
+
 	// FIXME: Save metadata - to SQL/Mongo or send JSON/XML
 
-	// Cleanup
-	if (rb_malloc)
-		free(rb);
+	// Clean up CURL if it got used
+	if (curl) {
+		if (curl_filename)
+			curl_free(curl_filename);
+		if (curl_content_type)
+			curl_free(curl_content_type);
+		if (curl_content_disposition)
+			curl_free(curl_content_disposition);
+		curl_easy_cleanup(session->curl);
+	}
 
 	// Prepare output chain
 	out = ngx_alloc_chain_link(r->pool);
 	if (out == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for buffer chain.", sizeof(ngx_chain_t));
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
 	// Prepare output buffer
 	if ((b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
-		ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
+
+	// Clean up
+	if (rb_malloc)
+		free(rb);
 
 	// Prepare output chain; hook the buffer
 	out->buf = b;
@@ -452,8 +556,8 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	r->headers_out.content_length_n = b->last - b->pos;
 
 	// Content-Type 
-	r->headers_out.content_type.len = strlen("text/plain");
-	r->headers_out.content_type.data = (u_char*)"text/plain";
+	r->headers_out.content_type.len = strlen(CONTENT_TYPE_TEXT_PLAIN);
+	r->headers_out.content_type.data = (u_char*) CONTENT_TYPE_TEXT_PLAIN;
 
 	ret = ngx_http_send_header(r);
 	ret = ngx_http_output_filter(r, out);
