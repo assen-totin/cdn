@@ -100,19 +100,29 @@ char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
 }
 
 /**
+ * POST cleanup
+ */
+void upload_cleanup(ngx_http_request_t *r, char *rb, bool rb_malloc, int status) {
+	if (rb_malloc)
+		free(rb);
+	ngx_http_finalize_request(r, status);
+}
+
+/**
  * Read a chunk of data (form field value) into string
  */
-char *mpfd_get_field(ngx_http_request_t *r, char *from, int len) {
+char *mpfd_get_field(ngx_http_request_t *r, char *rb, bool rb_malloc, char *from, int len) {
 	char *ret;
 
 	if ((ret = ngx_pcalloc(r->pool, len + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for upload field value.", len + 1);
-		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return NULL;
 	}
 
 	strncpy(ret, from, len + 1);
 
-	retrun ret;
+	return ret;
 }
 
 

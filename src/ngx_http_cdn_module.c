@@ -134,15 +134,6 @@ char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
 }
 
 /**
- * POST cleanup
- */
-void upload_cleanup(ngx_http_request_t *r, char *rb, bool rb_malloc, int status) {
-	if (rb_malloc)
-		free(rb);
-	ngx_http_finalize_request(r, status);
-}
-
-/**
  * POST request body processing callback
  */
 static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
@@ -153,6 +144,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	char *content_length_z, *content_type, *boundary, *line, *rb = NULL, *part = NULL;
 	char *file_data_begin = NULL, *file_content_transfer_encoding = NULL;
 	char *part_pos = NULL, *part_field_name = NULL, *part_filename = NULL, *part_content_type = NULL, *part_content_transfer_encoding = NULL, *part_end;
+	char *curl_filename = NULL, *curl_content_type = NULL, *curl_content_disposition = NULL;
 	int upload_content_type, file_fd, cnt_part = 0, cnt_header;
 	long content_length, rb_pos = 0;
 	uint64_t hash[2];
@@ -173,7 +165,7 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 
 	metadata->content_type = NULL;
 	metadata->content_disposition = NULL;
-	metadata->file_name = NULL;
+	metadata->filename = NULL;
 	metadata->length = 0;
 
 	// Init session
@@ -341,27 +333,27 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 				file_content_transfer_encoding = part_content_transfer_encoding;
 				file_data_begin = part_pos;
 				metadata->length = part_end - part_pos;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: filename %s size %l", filename, metadata->length);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: filename %s size %l", metadata->filename, metadata->length);
 			}
 
 			// Check if field name is file data
-			else if (! strcmp(part_field_name), "d") {
+			else if (! strcmp(part_field_name, "d")) {
 				file_data_begin = part_pos;
 				metadata->length = part_end - part_pos;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: raw data size %l", metadata->length);
 			}
 
 			// Check if field name is a file name
-			else if (! strcmp(part_field_name), "n")
-				metadata->filename = mpfd_get_field(r, part_pos, part_end - part_pos);
+			else if (! strcmp(part_field_name, "n"))
+				metadata->filename = mpfd_get_field(r, rb, rb_malloc, part_pos, part_end - part_pos);
 
 			// Check if field name is content type
-			else if (! strcmp(part_field_name), "ct")
-				metadata->content_type = mpfd_get_field(r, part_pos, part_end - part_pos);
+			else if (! strcmp(part_field_name, "ct"))
+				metadata->content_type = mpfd_get_field(r, rb, rb_malloc, part_pos, part_end - part_pos);
 
 			// Check if field name is content disposition
-			else if (! strcmp(part_field_name), "cd")
-				metadata->content_disposition = mpfd_get_field(r, part_pos, part_end - part_pos);
+			else if (! strcmp(part_field_name, "cd"))
+				metadata->content_disposition = mpfd_get_field(r, rb, rb_malloc, part_pos, part_end - part_pos);
 
 			// Move the part forward
 			part = part_end;
@@ -397,13 +389,12 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 			part_end = part_pos - 1;
 			
 			// Extract form field name
-			char *form_field_name;
-			if ((form_field_name = ngx_pcalloc(r->pool, part_end - part + 1)) == NULL) {
+			if ((part_field_name = ngx_pcalloc(r->pool, part_end - part + 1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for for field name.", part_end - part -1 + 1);
 				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
-			strncpy(form_field_name, part, part_end - part);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: found field name %s", form_field_name);
+			strncpy(part_field_name, part, part_end - part);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: found field name %s", part_field_name);
 
 			// Jump over the =
 			part_pos ++;
@@ -414,12 +405,12 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 				part_end = rb + content_length;
 			}
 			else
-				par_end = part - 1;
+				part_end = part - 1;
 
 			// Extract form field value
 			char *form_field_value;
-			if ((form_field_value = ngx_pcalloc(r->pool, par_end - part_pos + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for for field name.", par_end - part_pos + 1);
+			if ((form_field_value = ngx_pcalloc(r->pool, part_end - part_pos + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for for field name.", part_end - part_pos + 1);
 				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 			strncpy(form_field_value, part_pos, part_end - part_pos);
@@ -427,21 +418,23 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 			// URL decode the value
 			int form_field_value_len;
 			char *form_field_value_decoded = curl_easy_unescape(curl, form_field_value, 0, &form_field_value_len);
-			if (form_field_value_len <1024)
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: field name %s value %s", form_field_name, form_field_value_decoded);
-			else
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: field name %s value is %l bytes", form_field_name, form_field_value_len);
+			if (form_field_value_len < 1024) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: field name %s value %s", part_field_name, form_field_value_decoded);
+			}
+			else {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: field name %s value is %l bytes", part_field_name, form_field_value_len);
+			}
 
 			// Decide what to do with the field
-			if (! strcmp(part_field_name), "d") {
+			if (! strcmp(part_field_name, "d")) {
 				file_data_begin = form_field_value_decoded;
 				metadata->length = form_field_value_len;
 			}
-			else if (! strcmp(part_field_name), "n")
+			else if (! strcmp(part_field_name, "n"))
 				curl_filename = form_field_value_decoded;
-			else if (! strcmp(part_field_name), "ct")
+			else if (! strcmp(part_field_name, "ct"))
 				curl_content_type = form_field_value_decoded;
-			else if (! strcmp(part_field_name), "cd")
+			else if (! strcmp(part_field_name, "cd"))
 				curl_content_disposition = form_field_value_decoded;
 		}	
 	}
@@ -486,8 +479,8 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		if (curl_filename)
 			metadata->filename = curl_filename;
 		else {
-			if ((metadata->filename = ngx_pcalloc(r->pool, strlen(s) + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(s) + 1);
+			if ((metadata->filename = ngx_pcalloc(r->pool, strlen(DEFAULT_FILE_NAME) + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(DEFAULT_FILE_NAME) + 1);
 				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 			strcpy(metadata->filename, DEFAULT_FILE_NAME);
@@ -498,8 +491,8 @@ static void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 		if (curl_content_type)
 			metadata->content_type = curl_content_type;
 		else {
-			if ((metadata->content_type = ngx_pcalloc(r->pool, strlen(s) + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(s) + 1);
+			if ((metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(DEFAULT_CONTENT_TYPE) + 1);
 				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 			strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
