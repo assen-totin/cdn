@@ -32,6 +32,39 @@ char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 }
 
 /**
+ * Helper: get the full path from a file name
+ */
+ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	int i, len, pos=0;
+
+	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
+	if ((metadata->path = ngx_pcalloc(r->pool, len)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
+		return NGX_ERROR;
+	}
+	memset(metadata->path, '\0', len);
+
+	memcpy(metadata->path, session->fs_root, strlen(session->fs_root));
+	pos += strlen(session->fs_root);
+
+	memcpy(metadata->path + pos, "/", 1);
+	pos ++;
+
+	for (i=0; i < session->fs_depth; i++) {
+		memcpy(metadata->path + pos, metadata->file + i, 1);
+		pos ++;
+		memcpy(metadata->path + pos, "/", 1);
+		pos ++;
+	}
+
+	memcpy(metadata->path + pos, metadata->file, strlen(metadata->file));
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, metadata->path);
+
+	return NGX_OK;
+}
+
+/**
  * Helper: Set metadata field from char value
  */
 ngx_int_t set_metadata_field (ngx_http_request_t *r, char **field, char *field_name, const char *value) {

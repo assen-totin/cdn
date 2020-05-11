@@ -17,7 +17,6 @@ ngx_int_t send_file(session_t *session, metadata_t *dnld_file, ngx_http_request_
 void ngx_http_cdn_cleanup(void *a);
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
 ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r);
-ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r);
 ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 void cleanup(metadata_t *metadata, ngx_http_request_t *r);
