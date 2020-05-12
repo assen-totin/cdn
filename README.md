@@ -2,11 +2,11 @@
 
 The module implements an optimised, custom delivery of authorised content (e.g., user files etc.). 
 
-The module only serves files (including deletion of files). Their upload must be handled separately; it is quite easy, though - see File Uploads below.
+The module performs all tasks needed to manage the content: upload, serve and delete.
 
-Each file request must be authorised before served. Authorisation is handled by an external body to which the module connects. 
+Each file request for must be authorised before served. Authorisation is handled by an external body to which the module connects. 
 
-The business logic for authorisation consists of two main elements:
+The business logic for authorisation consists of three main elements:
 
 - Authorisation method: we support JWT, session ID  and transparent (completely offloaded)
 - Request type: specifies the format of the request that will be sent to the external authorisation body; we support SQL, JSON, XML and Mongo.
@@ -418,5 +418,9 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
 # Create empty CDN tree using tools/mkcdn.sh
 ```
+
+# TODO
+
+- Add support for PostgreSQL transport
 
 

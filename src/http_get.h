@@ -5,5 +5,5 @@
  */
 
 // Prototypes
-ngx_int_t auth_session(session_t *session, ngx_http_request_t *r);
+ngx_int_t cdn_handler_get(ngx_http_request_t *r);
 

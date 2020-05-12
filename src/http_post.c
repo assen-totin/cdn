@@ -1,9 +1,12 @@
+/**
+ * Nginx CDN module
+ *
+ * @author: Assen Totin assen.totin@gmail.com
+ */
+
 #include "common.h"
 #include "murmur3.h"
 #include "utils.h"
-
-// We need this here as a declaration only; it is defined in main header file which will resolve it at runtime.
-ngx_module_t ngx_http_cdn_module;
 
 /**
  * Read a line from current position
@@ -132,12 +135,11 @@ char *mpfd_get_field(ngx_http_request_t *r, char *rb, bool rb_malloc, char *from
 /**
  * POST request body processing callback
  */
-void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
+void cdn_handler_post (ngx_http_request_t *r) {
 	off_t len = 0, len_buf;
 	ngx_buf_t *b = NULL;
 	ngx_chain_t *out, *bufs;
 	ngx_int_t ret;
-	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	char *content_length_z, *content_type, *boundary, *line, *rb = NULL, *part = NULL;
 	char *file_data_begin = NULL, *file_content_transfer_encoding = NULL;
 	char *part_pos = NULL, *part_field_name = NULL, *part_filename = NULL, *part_content_type = NULL, *part_content_transfer_encoding = NULL, *part_end;
@@ -145,36 +147,22 @@ void ngx_http_cdn_body_handler (ngx_http_request_t *r) {
 	int upload_content_type, file_fd, cnt_part = 0, cnt_header;
 	long content_length, rb_pos = 0;
 	uint64_t hash[2];
-	session_t *session;
-	metadata_t *metadata;
 	bool rb_malloc = false;
 	CURL *curl = NULL;
+	session_t *session;
+	metadata_t *metadata;
 
 	// Check if we have body
 	if (r->request_body == NULL)
 		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
-	// Init metadata
-	if ((metadata = ngx_pcalloc(r->pool, sizeof(metadata_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata.", sizeof(metadata_t));
-		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
-	}
-
-	metadata->content_type = NULL;
-	metadata->content_disposition = NULL;
-	metadata->filename = NULL;
-	metadata->length = 0;
-
 	// Init session
-	if ((session = ngx_pcalloc(r->pool, sizeof(session_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for session.", sizeof(session_t));
+	if ((session = init_session(r)) == NULL)
 		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
-	}
 
-	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
-	session->server_id = atoi(from_ngx_str(r->pool, cdn_loc_conf->server_id)) % MAX_SERVER_ID + 1;
-	session->fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
-	session->fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
+	// Init metadata
+	if ((metadata = init_metadata(r)) == NULL)
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body is ready for processing.");
 

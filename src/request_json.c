@@ -1,3 +1,9 @@
+/**
+ * Nginx CDN module
+ *
+ * @author: Assen Totin assen.totin@gmail.com
+ */
+
 #include "common.h"
 #include "utils.h"
 

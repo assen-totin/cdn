@@ -181,6 +181,7 @@ typedef struct {
 	char *fs_root;
 	char *http_method;
 	char *request_type;
+	char *cors_origin;
 	char *transport_type;
 	char *all_cookies;
 	char *all_headers;
@@ -202,6 +203,7 @@ typedef struct {
 	char *jwt_field;
 	char *db_dsn;
 	char *sql_query;
+	char *sql_query2;
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
 	char *unix_socket;
