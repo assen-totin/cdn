@@ -5,5 +5,6 @@
  */
 
 // Prototypes
-ngx_int_t request_sql(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t request_get_sql(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t request_post_sql(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 

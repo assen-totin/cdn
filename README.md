@@ -166,7 +166,7 @@ The field `http_method` will be either `GET` for GET/HEAD HTTP requests or `DELE
 	"status": int, optional, http code; use 200, 304, 404, 500; if missing, file will be served if found (unless 304 can be returned), else 404
 	"filename": string, optional, the file name to give the user; the value of "file" will be used if missing
 	"content_type": string, optional, "application/octet-stream" will be used if missing
-	"content_dispostion": string, optional, if set to "attachment", "attachment" will be used; else file will be served inline (default)
+	"content_disposition": string, optional, if set to "attachment", "attachment" will be used; else file will be served inline (default)
 	"etag": string, optional, "00000000000000000000000000000000" will be used if missing
 	"length": int, optional, stat() wil be used if missing
 	"upload_date": int, optional, Unix timestamp of mtime; stat() wil be used if missing
@@ -227,7 +227,7 @@ See the JSON section above for fields meaning and values.
 	<status></status>
 	<filename></filename>
 	<content_type></content_type>
-	<content_dispostion></content_dispostion>
+	<content_disposition></content_disposition>
 	<etag></etag>
 	<length></length>
 	<upload_date></upload_date>
@@ -237,7 +237,15 @@ See the JSON section above for fields meaning and values.
 
 ## SQL
 
-Set the SQL queries to run in the configuration option `cnd_sql_select` (used to authorise a get or delete request) and `cdn_sql_delete` (used to delete metadata when deleting a file). It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
+### Upload
+
+Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It must have eight `%s` placeholders which will be filled with the following values in the given order (see the JSON response above for details on each): `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`.
+
+NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s, %s, %s, %s, %s, %s, %s)`.
+
+### Download
+
+Set the SQL SELECT query to run in the configuration option `cdn_sql_select`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
 
 The SQL query should return a single row with column names matching the keys in the JSON response above.
 
@@ -245,11 +253,30 @@ NB: Oracle returns the column names in caps. This is OK.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
+### Delete
+
+Set the SQL DELETE query to run in the configuration option `cdn_sql_delete`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
+
+NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
+
+
 ## MongoDB
 
-Because MongoDB does not allow for textual queries, both file metadata and authorisation data must reside in a single collection with one document per file. Each document must have the same properties as the JSON response above plus two extra: `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). When asking for authorisation and data, CDN will compose a Mongo query with a filter that will have both these properties set: `{file_id: 1234-567-89, auth_value: abcd-efgh-ijkl}`; there should either be one exact match (if access is authorised) or no match.
-
 Set the database name in the configuration option `cnd_mongo_db`. Set the collection name the configuration option `cnd_mongo_collection`.
+
+Because MongoDB does not allow for textual queries, both file metadata and authorisation data must reside in a single collection with one document per file.
+
+### Upload
+
+The CDN will create a document with the same properties as the JSON response above plus two extra: `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). 
+
+### Download
+
+The CDN will compose a Mongo query with a filter that will have both properties `file_id` and `auth_value` set: `{file_id: 1234-567-89, auth_value: abcd-efgh-ijkl}`; there should either be one exact match (if access is authorised) or no match.
+
+### Delete
+
+The CDN will compose and execute the same query as with download. The document, if found, will be deleted.
 
 # Transport types
 

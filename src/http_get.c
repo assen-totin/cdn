@@ -522,15 +522,15 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 
 	// Prepare request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
-		ret = request_json(session, metadata, r);
+		ret = request_get_json(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO))
-		ret = request_mongo(session, metadata, r);
+		ret = request_get_mongo(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
-		ret = request_sql(session, metadata, r);
+		ret = request_get_sql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
-		ret = request_sql(session, metadata, r);
+		ret = request_get_sql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
-		ret = request_xml(session, metadata, r);
+		ret = request_get_xml(session, metadata, r);
 
 	if (ret)
 		return ret;
@@ -543,7 +543,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
-		ret = transport_oracle(session, r, METADATA_DELETE);
+		ret = transport_oracle(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
 		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
@@ -559,18 +559,18 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 
 	// Process response (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
-		ret = response_json(session, metadata, r);
+		ret = response_get_json(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
-		ret = response_json(session, metadata, r);
+		ret = response_get_json(session, metadata, r);
 		bson_free(session->auth_response);
 		session->auth_response = NULL;
 	}
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
-		ret = response_mysql(session, metadata, r);
+		ret = response_get_mysql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
-		ret = response_oracle(session, metadata, r);
+		ret = response_get_oracle(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
-		ret = response_xml(session, metadata, r);
+		ret = response_get_xml(session, metadata, r);
 
 	if (session->auth_response)
 		free(session->auth_response);
@@ -593,9 +593,6 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			cleanup(metadata, r);
 			return ret;
 		}
-	}
-	else if (r->method & (NGX_HTTP_POST)) {
-		// FIXME
 	}
 	else if (r->method & (NGX_HTTP_DELETE)) {
 		// Delete the file

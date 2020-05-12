@@ -52,33 +52,43 @@ ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r, int mode) {
 		return close_mongo(query, conn, NULL, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
-	// Run the query
+	// Find document with optional delete after
+	if ((mode == METADATA_SELECT) || (mode == METADATA_DELETE)) {
+		// Run the query
 #ifdef RHEL7
-	cursor = mongoc_collection_find (collection, MONGOC_QUERY_NONE, 0, 1, 1, query, NULL, NULL);
+		cursor = mongoc_collection_find (collection, MONGOC_QUERY_NONE, 0, 1, 1, query, NULL, NULL);
 #endif
 #ifdef RHEL8
-	cursor = mongoc_collection_find_with_opts (collection, query, NULL, NULL);
+		cursor = mongoc_collection_find_with_opts (collection, query, NULL, NULL);
 #endif
 
-	if (! cursor) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to get cursor for collection %s", session->mongo_collection);
-		return close_mongo(query, conn, collection, NGX_HTTP_INTERNAL_SERVER_ERROR);
-	}
+		if (! cursor) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to get cursor for collection %s", session->mongo_collection);
+			return close_mongo(query, conn, collection, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		}
 
-	// If nothing was found, the filter did not match, so reject the request
-	if (! mongoc_cursor_next (cursor, &doc)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Metadata not found in collection %s", session->mongo_collection);
-		return close_mongo(query, conn, collection, NGX_HTTP_NOT_FOUND);
-	}
+		// If nothing was found, the filter did not match, so reject the request
+		if (! mongoc_cursor_next (cursor, &doc)) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Metadata not found in collection %s", session->mongo_collection);
+			return close_mongo(query, conn, collection, NGX_HTTP_NOT_FOUND);
+		}
 
-	// Act as per mode
-	if (mode == METADATA_SELECT)
-		// If invoked to select data, convert it
-		session->auth_response = bson_as_json(doc, NULL);
-	else if (mode == METADATA_DELETE)
-		// If invoked to delete, ignore error
-		if (! mongoc_collection_delete_one (collection, query, NULL, NULL, &error))
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to delete metadata for file %s from Mongo collection %s: %s", metadata->fil, session->mongo_collection, &error.message[0]);
+		// Act as per mode
+		if (mode == METADATA_SELECT)
+			// If invoked to select data, convert it
+			session->auth_response = bson_as_json(doc, NULL);
+		else if (mode == METADATA_DELETE)
+			// If invoked to delete, ignore error
+			if (! mongoc_collection_delete_one (collection, query, NULL, NULL, &error))
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to delete metadata for file %s from Mongo collection %s: %s", metadata->file, session->mongo_collection, &error.message[0]);
+	}
+	// Insert new document
+	else if (mode == METADATA_INSERT) {
+		if (! mongoc_collection_insert_one (collection, query, NULL, NULL, &error)) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to insert metadata for file %s into Mongo collection %s: %s", metadata->file, session->mongo_collection, &error.message[0]);
+			return close_mongo(query, conn, collection, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		}
+	}
 
 	close_mongo(query, conn, collection, NGX_OK);
 #endif

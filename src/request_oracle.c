@@ -10,7 +10,7 @@
 /**
  * Process Oracle response
  */
-ngx_int_t response_oracle(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+ngx_int_t response_get_oracle(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_ORACLE
 	ngx_int_t ret;
 

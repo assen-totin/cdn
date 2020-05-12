@@ -5,7 +5,20 @@
  */
 
 #include "common.h"
+#include "auth_jwt.h"
+#include "auth_session.h"
 #include "murmur3.h"
+#include "request_json.h"
+#include "request_mongo.h"
+#include "request_mysql.h"
+#include "request_oracle.h"
+#include "request_sql.h"
+#include "request_xml.h"
+#include "transport_http.h"
+#include "transport_mongo.h"
+#include "transport_mysql.h"
+#include "transport_oracle.h"
+#include "transport_socket.h"
 #include "utils.h"
 
 /**
@@ -139,7 +152,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	off_t len = 0, len_buf;
 	ngx_buf_t *b = NULL;
 	ngx_chain_t *out, *bufs;
-	ngx_int_t ret;
+	ngx_int_t ret = NGX_OK;
 	char *content_length_z, *content_type, *boundary, *line, *rb = NULL, *part = NULL;
 	char *file_data_begin = NULL, *file_content_transfer_encoding = NULL;
 	char *part_pos = NULL, *part_field_name = NULL, *part_filename = NULL, *part_content_type = NULL, *part_content_transfer_encoding = NULL, *part_end;
@@ -462,7 +475,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// FIXME: Process JWT/sess_id here to get auth_value
 
-	// Metadata: merge of defaults if some values are missing
+	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
 		if (curl_filename)
 			metadata->filename = curl_filename;
@@ -475,6 +488,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 	}
 
+	// Metadata: merge of defaults if some values are missing: content_type
 	if (! metadata->content_type) {
 		if (curl_content_type)
 			metadata->content_type = curl_content_type;
@@ -487,12 +501,90 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 	}
 
+	// Metadata: merge of defaults if some values are missing: content_disposition
 	if (! metadata->content_disposition) {
 		if (curl_content_disposition)
 			metadata->content_disposition = curl_content_disposition;
+		else {
+			if ((metadata->content_disposition = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_DISPOSITION) + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(DEFAULT_CONTENT_TYPE) + 1);
+				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			}
+			strcpy(metadata->content_disposition, DEFAULT_CONTENT_DISPOSITION);
+		}
 	}
 
+	// Metadata: set upload_date
+	metadata->upload_date = time(NULL);
+
+	// Metadata: set etag to the file ID
+	metadata->etag = metadata->file;
+
 	// FIXME: Save metadata - to SQL/Mongo or send JSON/XML
+
+	// Prepare metadata request (as per the configured request type)
+//	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
+//		ret = request_post_json(session, metadata, r);
+	/*else*/ if (! strcmp(session->request_type, REQUEST_TYPE_MONGO))
+		ret = request_post_mongo(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
+		ret = request_post_sql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
+		ret = request_post_sql(session, metadata, r);
+//	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
+//		ret = request_post_xml(session, metadata, r);
+
+	if (ret)
+		return upload_cleanup(r, rb, rb_malloc, ret);
+
+	// Query for metadata based on transport
+//	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
+//		ret = transport_http(session, r);
+	/*else*/ if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
+		ret = transport_mongo(session, r, METADATA_INSERT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
+		ret = transport_mysql(session, r, METADATA_INSERT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
+		ret = transport_oracle(session, r, METADATA_INSERT);
+//	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
+//		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
+//	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
+//		ret = transport_socket(session, r, SOCKET_TYPE_UNUX);
+
+	if (session->auth_request) {
+		if ((! strcmp(session->request_type, REQUEST_TYPE_JSON)) || (! strcmp(session->request_type, REQUEST_TYPE_MONGO)))
+			bson_free(session->auth_request);
+	}
+
+	if (ret)
+		return upload_cleanup(r, rb, rb_malloc, ret);
+
+	// Process metadata response (as per the configured request type)
+//	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
+//		ret = response_post_json(session, metadata, r);
+	/*else*/ if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
+		metadata->status = NGX_HTTP_OK;
+		ret = NGX_OK;
+	}
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL)) {
+		metadata->status = NGX_HTTP_OK;
+		ret = NGX_OK;
+	}
+	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE)) {
+		metadata->status = NGX_HTTP_OK;
+		ret = NGX_OK;
+	}
+//	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
+//		ret = response_post_xml(session, metadata, r);
+
+	if (session->auth_response)
+		free(session->auth_response);
+
+	if (ret)
+		return upload_cleanup(r, rb, rb_malloc, ret);
+
+	if (metadata->status != NGX_HTTP_OK)
+		return upload_cleanup(r, rb, rb_malloc, metadata->status);
 
 	// Clean up CURL if it got used
 	if (curl) {

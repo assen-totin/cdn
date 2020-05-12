@@ -58,35 +58,34 @@
 #endif
 
 // Definitions
-#define DEFAULT_CONTENT_TYPE "application/octet-stream"
-#define DEFAULT_ETAG "00000000000000000000000000000000"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN "*"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS "If-None-Match, If-Modified-Since"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, POST, OPTIONS, DELETE"
-#define DEFAULT_HTTP_CODE 500
-#define DEFAULT_SERVER_ID "1"
-#define DEFAULT_FS_DEPTH "4"
-#define DEFAULT_FS_ROOT "/opt/cdn"
-#define DEFAULT_TCP_HOST "example.com"
-#define DEFAULT_TCP_PORT "12345"
-#define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
-#define DEFAULT_HTTP_URL "http://example.com"
-#define DEFAULT_REQUEST_TYPE "none"
-#define DEFAULT_TRANSPORT_TYPE "none"
+#define DEFAULT_ALL_COOKIES "no"
+#define DEFAULT_ALL_HEADERS "no"
 #define DEFAULT_AUTH_HEADER "none"
 #define DEFAULT_AUTH_COOKIE "none"
 #define DEFAULT_AUTH_METOD "none"
+#define DEFAULT_CONTENT_TYPE "application/octet-stream"
+#define DEFAULT_CONTENT_DISPOSITION "none"
+#define DEFAULT_DB_DSN "none"
+#define DEFAULT_ETAG "00000000000000000000000000000000"
+#define DEFAULT_FILE_NAME "unnamed"
+#define DEFAULT_FS_DEPTH "4"
+#define DEFAULT_FS_ROOT "/opt/cdn"
+#define DEFAULT_HTTP_CODE 500
+#define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
-#define DEFAULT_ALL_COOKIES "no"
-#define DEFAULT_ALL_HEADERS "no"
-#define DEFAULT_DB_DSN "none"
-#define DEFAULT_SQL_QUERY "none"
-#define DEFAULT_MONGO_DB "none"
 #define DEFAULT_MONGO_COLLECTION "none"
-#define DEFAULT_FILE_NAME "unnamed"
-
-#define MAX_SERVER_ID 48
+#define DEFAULT_MONGO_DB "none"
+#define DEFAULT_REQUEST_TYPE "none"
+#define DEFAULT_SERVER_ID "1"
+#define DEFAULT_SQL_QUERY "none"
+#define DEFAULT_TCP_HOST "example.com"
+#define DEFAULT_TCP_PORT "12345"
+#define DEFAULT_TRANSPORT_TYPE "none"
+#define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
 
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
@@ -99,18 +98,24 @@
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
 #define ERROR_MESSAGE_LENGTH 1024
 
-#define SOCKET_BUFFER_CHUNK 1500
-#define SOCKET_TYPE_TCP 1
-#define SOCKET_TYPE_UNUX 2
+#define MAX_SERVER_ID 48
 
 #define AUTH_TYPE_JWT "jwt"
 #define AUTH_TYPE_SESSION "session"
+
+#define CONTENT_TYPE_MPFD "multipart/form-data"
+#define CONTENT_TYPE_AXWFU "application/x-www-form-urlencoded"
+#define CONTENT_TYPE_TEXT_PLAIN "text/plain"
 
 #define REQUEST_TYPE_JSON "json"
 #define REQUEST_TYPE_MONGO "mongo"
 #define REQUEST_TYPE_MYSQL "mysql"
 #define REQUEST_TYPE_ORACLE "oracle"
 #define REQUEST_TYPE_XML "xml"
+
+#define SOCKET_BUFFER_CHUNK 1500
+#define SOCKET_TYPE_TCP 1
+#define SOCKET_TYPE_UNUX 2
 
 #define TRANSPORT_TYPE_HTTP "http"
 #define TRANSPORT_TYPE_MONGO "mongo"
@@ -119,9 +124,7 @@
 #define TRANSPORT_TYPE_TCP "tcp"
 #define TRANSPORT_TYPE_UNIX "unix"
 
-#define CONTENT_TYPE_MPFD "multipart/form-data"
-#define CONTENT_TYPE_AXWFU "application/x-www-form-urlencoded"
-#define CONTENT_TYPE_TEXT_PLAIN "text/plain"
+
 
 // Structures
 typedef struct {
@@ -241,8 +244,8 @@ typedef struct {
 enum {
 	METADATA_NONE = 0,
 	METADATA_SELECT,
-	METADATA_DELETE,
-	METADATA_INSERT
+	METADATA_INSERT,
+	METADATA_DELETE
 };
 
 enum {

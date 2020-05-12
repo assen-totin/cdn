@@ -10,7 +10,7 @@
 /**
  * Process MySQL response
  */
-ngx_int_t response_mysql(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+ngx_int_t response_get_mysql(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_MYSQL
 	int i, fields_num;
 	MYSQL_FIELD *fields;
