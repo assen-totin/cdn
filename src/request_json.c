@@ -8,7 +8,7 @@
 #include "utils.h"
 
 /**
- * Prepare JSON request
+ * Prepare JSON request GET
  */
 ngx_int_t request_get_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int i;
@@ -62,7 +62,34 @@ ngx_int_t request_get_json(session_t *session, metadata_t *metadata, ngx_http_re
 }
 
 /**
- * Process JSON response
+ * Prepare JSON request POST
+ */
+ngx_int_t request_post_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	bson_t doc;
+
+	// Init a BSON
+	bson_init (&doc);
+
+	// Add the values
+	BSON_APPEND_UTF8 (&doc, "http_method", session->http_method);
+	BSON_APPEND_UTF8 (&doc, "file_id", metadata->file);
+	BSON_APPEND_UTF8 (&doc, "auth_value", session->auth_value);
+	BSON_APPEND_UTF8 (&doc, "filename", metadata->filename);
+	BSON_APPEND_INT32 (&doc, "length", metadata->length);
+	BSON_APPEND_UTF8 (&doc, "content_type", metadata->content_type);
+	BSON_APPEND_UTF8 (&doc, "content_dispostion", metadata->content_disposition);
+	BSON_APPEND_TIME_T (&doc, "upload_date", metadata->upload_date);
+	BSON_APPEND_UTF8 (&doc, "etag", metadata->etag);
+
+	session->auth_request = bson_as_json (&doc, NULL);
+
+	bson_destroy(&doc);
+
+	return NGX_OK;
+}
+
+/**
+ * Process JSON response GET
  */
 ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	bson_t doc;
@@ -127,6 +154,42 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 		else if ((! strcmp(bson_key, "upload_date")) && (bson_iter_type(&iter) == BSON_TYPE_DATE_TIME)) {
 			metadata->upload_date = bson_iter_date_time (&iter);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
+		}
+	}
+
+	bson_destroy(&doc);
+
+	return NGX_OK;
+}
+
+/**
+ * Process JSON response POST
+ */
+ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	bson_t doc;
+	bson_error_t error;
+	bson_iter_t iter;
+	const char *bson_key;
+	ngx_int_t ret;
+
+	// Walk around the JSON which we received from the authentication server, session->auth_response
+	if (! bson_init_from_json(&doc, session->auth_response, strlen(session->auth_response), &error)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->auth_response);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	if (! bson_iter_init (&iter, &doc)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to initialise BSON iterator");
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	while(bson_iter_next(&iter)) {
+		bson_key = bson_iter_key (&iter);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
+
+		if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
+			metadata->status = bson_iter_int32 (&iter);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 		}
 	}
 

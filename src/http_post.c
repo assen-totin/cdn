@@ -523,9 +523,9 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	// FIXME: Save metadata - to SQL/Mongo or send JSON/XML
 
 	// Prepare metadata request (as per the configured request type)
-//	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
-//		ret = request_post_json(session, metadata, r);
-	/*else*/ if (! strcmp(session->request_type, REQUEST_TYPE_MONGO))
+	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
+		ret = request_post_json(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO))
 		ret = request_post_mongo(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
 		ret = request_post_sql(session, metadata, r);
@@ -538,18 +538,18 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, rb, rb_malloc, ret);
 
 	// Query for metadata based on transport
-//	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
-//		ret = transport_http(session, r);
-	/*else*/ if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
+	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
+		ret = transport_http(session, r);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
 		ret = transport_mongo(session, r, METADATA_INSERT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(session, r, METADATA_INSERT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_oracle(session, r, METADATA_INSERT);
-//	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
-//		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
-//	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
-//		ret = transport_socket(session, r, SOCKET_TYPE_UNUX);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
+		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
+		ret = transport_socket(session, r, SOCKET_TYPE_UNUX);
 
 	if (session->auth_request) {
 		if ((! strcmp(session->request_type, REQUEST_TYPE_JSON)) || (! strcmp(session->request_type, REQUEST_TYPE_MONGO)))
@@ -560,9 +560,9 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, rb, rb_malloc, ret);
 
 	// Process metadata response (as per the configured request type)
-//	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
-//		ret = response_post_json(session, metadata, r);
-	/*else*/ if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
+	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
+		ret = response_post_json(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
 		metadata->status = NGX_HTTP_OK;
 		ret = NGX_OK;
 	}
