@@ -73,13 +73,15 @@ ngx_int_t request_post_json(session_t *session, metadata_t *metadata, ngx_http_r
 	// Add the values
 	BSON_APPEND_UTF8 (&doc, "http_method", session->http_method);
 	BSON_APPEND_UTF8 (&doc, "file_id", metadata->file);
-	BSON_APPEND_UTF8 (&doc, "auth_value", session->auth_value);
 	BSON_APPEND_UTF8 (&doc, "filename", metadata->filename);
 	BSON_APPEND_INT32 (&doc, "length", metadata->length);
 	BSON_APPEND_UTF8 (&doc, "content_type", metadata->content_type);
-	BSON_APPEND_UTF8 (&doc, "content_dispostion", metadata->content_disposition);
+	BSON_APPEND_UTF8 (&doc, "content_disposition", metadata->content_disposition);
 	BSON_APPEND_TIME_T (&doc, "upload_date", metadata->upload_date);
 	BSON_APPEND_UTF8 (&doc, "etag", metadata->etag);
+
+	if (session->auth_value)
+		BSON_APPEND_UTF8 (&doc, "auth_value", session->auth_value);
 
 	session->auth_request = bson_as_json (&doc, NULL);
 
@@ -165,12 +167,11 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 /**
  * Process JSON response POST
  */
-ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+ngx_int_t response_post_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	bson_t doc;
 	bson_error_t error;
 	bson_iter_t iter;
 	const char *bson_key;
-	ngx_int_t ret;
 
 	// Walk around the JSON which we received from the authentication server, session->auth_response
 	if (! bson_init_from_json(&doc, session->auth_response, strlen(session->auth_response), &error)) {

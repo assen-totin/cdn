@@ -43,71 +43,6 @@ static void ngx_http_cdn_cleanup(void *a) {
 }
 
 /**
- * Extract authentication token
- */
-static ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
-	char *hdr_authorization;
-	bool match = false;
-	int i, j;
-	ngx_int_t ret;
-	ngx_str_t cookie_name, cookie_value;
-	ngx_table_elt_t *h;
-	ngx_list_part_t *part;
-
-	// First, check Authorization header
-	if (r->headers_in.authorization) {
-		hdr_authorization = from_ngx_str(r->pool, r->headers_in.authorization->value);
-
-		if (strstr(hdr_authorization, "Bearer")) {
-			if ((session->auth_token = ngx_pcalloc(r->pool, strlen(hdr_authorization) + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for Authorization header.", strlen(hdr_authorization) + 1);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-
-			strncpy(session->auth_token, hdr_authorization + 7, strlen(hdr_authorization) - 7);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in Authorization header: %s", session->auth_token);
-		}
-	}
-
-	// Next try a custom header, if defined
-	if (strcmp(session->auth_header, DEFAULT_AUTH_HEADER)) {
-		part = &r->headers_in.headers.part;
-		for (i=0; i < r->headers_in.headers.nalloc; i++) {
-			h = part->elts;
-			for (j=0; j < part->nelts; j++) {
-				if (! ngx_strncasecmp( h[j].key.data, (u_char *) session->auth_header, h[j].key.len)) {
-					session->auth_token = from_ngx_str(r->pool, h[j].value);
-					match = true;
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in header %s: %s", session->auth_header, session->auth_token);
-					break;
-				}
-			}
-
-			if (match)
-				break;
-
-			part = part->next;
-		}
-	}
-
-	// If cookie name given in config, try to find the cookie and to extract auth token from it
-	if (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE)) {
-		cookie_name.len = strlen(session->auth_cookie);
-		cookie_name.data = (u_char *) session->auth_cookie;
-
-		ret = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, &cookie_value);
-		if (ret == NGX_DECLINED) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Cookie %s for auth token not found", session->auth_cookie);
-		}
-		else {
-			session->auth_token = from_ngx_str(r->pool, cookie_value);
-		}
-	}
-
-	return NGX_OK;
-}
-
-/**
  * Check metdata for errors
  */
 static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
@@ -504,20 +439,18 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			return ret;
 	}
 
-	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {
-		// Try to find an authorisation token
-		if ((ret = get_auth_token(session, r)) > 0)
-			return ret;
+	// Try to find an authorisation token
+	if ((ret = get_auth_token(session, r)) > 0)
+		return ret;
 
-		// Extract authentcation token to value
-		if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
-			if ((ret = auth_jwt(session, r)) > 0)
-				return ret;
-		}
-		else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
-			if ((ret = auth_session(session, r)) > 0)
-				return ret;
-		}
+	// Extract authentication token to value
+	if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
+		if ((ret = auth_jwt(session, r)) > 0)
+			return ret;
+	}
+	else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
+		if ((ret = auth_session(session, r)) > 0)
+			return ret;
 	}
 
 	// Prepare request (as per the configured request type)

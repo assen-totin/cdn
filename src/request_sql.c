@@ -18,7 +18,11 @@ ngx_int_t request_get_sql(session_t *session, metadata_t *metadata, ngx_http_req
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for query.", strlen(query) + strlen(session->auth_value) + 1);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
-	sprintf(session->sql_query, query, metadata->file, session->auth_value);
+
+	if (session->auth_value)
+		sprintf(session->sql_query, query, metadata->file, session->auth_value);
+	else
+		sprintf(session->sql_query, query, metadata->file, "");
 
 	return NGX_OK;
 }
@@ -35,8 +39,12 @@ ngx_int_t request_post_sql(session_t *session, metadata_t *metadata, ngx_http_re
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for query.", strlen(query) + strlen(session->auth_value) + 1);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
-	sprintf(session->sql_query, query, session->auth_value, metadata->file, metadata->filename, metadata->length, metadata->content_type, metadata->content_disposition, metadata->upload_date, metadata->etag);
 
+	if (session->auth_value)
+		sprintf(session->sql_query, query, session->auth_value, metadata->file, metadata->filename, metadata->length, metadata->content_type, metadata->content_disposition, metadata->upload_date, metadata->etag);
+	else
+		sprintf(session->sql_query, query, "", metadata->file, metadata->filename, metadata->length, metadata->content_type, metadata->content_disposition, metadata->upload_date, metadata->etag);
+	
 	return NGX_OK;
 }
 

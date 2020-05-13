@@ -457,23 +457,19 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 	sprintf(metadata->file, "%016lx%016lx", hash[0], hash[1]);
 
-	// Obtain file path
-	if (get_path(session, metadata, r) > 0)
+	// Try to find an authorisation token
+	if ((ret = get_auth_token(session, r)) > 0)
 		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
-	// Save file to CDN
-	if ((file_fd = open(metadata->path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to create file %s: %s", metadata->path, strerror(errno));
-		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	// Extract authentication token to value
+	if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
+		if ((ret = auth_jwt(session, r)) > 0)
+			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
-	if (write(file_fd, (const void *)file_data_begin, metadata->length) < metadata->length) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to write %l bytes to file %s: %s", metadata->length, metadata->path, strerror(errno));
-		close(file_fd);
-		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
+		if ((ret = auth_session(session, r)) > 0)
+			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
-	close(file_fd);
-
-	// FIXME: Process JWT/sess_id here to get auth_value
 
 	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
@@ -519,8 +515,6 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file;
-
-	// FIXME: Save metadata - to SQL/Mongo or send JSON/XML
 
 	// Prepare metadata request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
@@ -596,6 +590,22 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			curl_free(curl_content_disposition);
 		curl_easy_cleanup(session->curl);
 	}
+
+	// Obtain file path
+	if (get_path(session, metadata, r) > 0)
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+
+	// Save file to CDN
+	if ((file_fd = open(metadata->path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to create file %s: %s", metadata->path, strerror(errno));
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	}
+	if (write(file_fd, (const void *)file_data_begin, metadata->length) < metadata->length) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to write %l bytes to file %s: %s", metadata->length, metadata->path, strerror(errno));
+		close(file_fd);
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	}
+	close(file_fd);
 
 	// Prepare output chain
 	out = ngx_alloc_chain_link(r->pool);

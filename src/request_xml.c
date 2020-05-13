@@ -127,7 +127,7 @@ ngx_int_t request_get_xml(session_t *session, metadata_t *metadata, ngx_http_req
  * Prepare XML request POST
  */
 ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
-	int i, ret;
+	int ret;
 	xmlTextWriterPtr writer;
 	xmlBufferPtr buf;
 
@@ -161,31 +161,33 @@ ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_re
 		return error_xml(r, writer, buf, "http_method");
 
 	// Add authorisation value
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "auth_value", (const xmlChar *) session->auth_value)) < 0)
-		return error_xml(r, writer, buf, "auth_value");
+	if (session->auth_value) {
+		if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "auth_value", (const xmlChar *) session->auth_value)) < 0)
+			return error_xml(r, writer, buf, "auth_value");
+	}
 
 	// Add filename
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "filename", (const xmlChar *) session->filename)) < 0)
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "filename", (const xmlChar *) metadata->filename)) < 0)
 		return error_xml(r, writer, buf, "filename");
 
 	// Add length
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "length", (const xmlChar *) session->length)) < 0)
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "length", (const xmlChar *) metadata->length)) < 0)
 		return error_xml(r, writer, buf, "length");
 
 	// Add content_type
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "content_type", (const xmlChar *) session->content_type)) < 0)
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "content_type", (const xmlChar *) metadata->content_type)) < 0)
 		return error_xml(r, writer, buf, "content_type");
 
-	// Add content_dispostion
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "content_dispostion", (const xmlChar *) session->content_dispostion)) < 0)
-		return error_xml(r, writer, buf, "content_dispostion");
+	// Add content_disposition
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "content_disposition", (const xmlChar *) metadata->content_disposition)) < 0)
+		return error_xml(r, writer, buf, "content_disposition");
 
 	// Add upload_date
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "upload_date", (const xmlChar *) session->upload_date)) < 0)
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "upload_date", (const xmlChar *) metadata->upload_date)) < 0)
 		return error_xml(r, writer, buf, "upload_date");
 
 	// Add etag
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "etag", (const xmlChar *) session->etag)) < 0)
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "etag", (const xmlChar *) metadata->etag)) < 0)
 		return error_xml(r, writer, buf, "etag");
 
 	// Close root element
@@ -280,7 +282,6 @@ ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_re
 ngx_int_t response_post_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL, *cur_node = NULL;
-	ngx_int_t ret;
 
 	if ((doc = xmlReadMemory(session->auth_response, strlen(session->auth_response), "noname.xml", XML_ENCODING, 0)) == NULL) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse XML: %s", session->auth_response);
