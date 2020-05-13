@@ -115,127 +115,9 @@ This method may be used with some complex request types like JSON or XML. It is 
 
 # Request types
 
-## JSON
-
-This request type is usually used with transport type set to `unix` (Unix socket) or `tcp` (TCP socket).
-
-### Request format
-
-Field `headers` is only included if configuration option `cdn_all_headers` is set to `yes`.
-
-Field `cookies` is only included if configuration option `cdn_all_cookies` is set to `yes`.
-
-The field `auth_value` from authentication token is included only if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
-
-The field `http_method` will be either `GET` for GET/HEAD HTTP requests or `DELETE` for DELETE HTTP requests.
-
-```
-{
-	"file_id" : "1234-567-89",
-	"http_method" : "GET"
-	"auth_value" : "12345"
-	"headers" : [
-		{
-			"name": "Some-Header",
-			"value": "some-value",
-		},
-		{
-			"name": "Other-Header",
-			"value": "other-value"
-		},
-		...
-	],
-	"cookies": [
-		{
-			"name": "some_cookie_name",
-			"value": "some_cookie_value"
-		},
-		{
-			"name": "other_cookie_name",
-			"value": "other_cookie_value"
-		},
-		...
-	]
-}
-```
-
-### Response format
-
-```
-{
-	"status": int, optional, http code; use 200, 304, 404, 500; if missing, file will be served if found (unless 304 can be returned), else 404
-	"filename": string, optional, the file name to give the user; the value of "file" will be used if missing
-	"content_type": string, optional, "application/octet-stream" will be used if missing
-	"content_disposition": string, optional, if set to "attachment", "attachment" will be used; else file will be served inline (default)
-	"etag": string, optional, "00000000000000000000000000000000" will be used if missing
-	"length": int, optional, stat() wil be used if missing
-	"upload_date": int, optional, Unix timestamp of mtime; stat() wil be used if missing
-	"error"	: string, optional, will be logged by Nginx
-}
-```
-
-## XML
-
-This request type is usually used with transport type set to `unix` (Unix socket) or `tcp` (TCP socket).
-
-### Request format
-
-Element `headers` is only included if configuration option `cdn_all_headers` is set to `yes`.
-
-Element `cookies` is only included if configuration option `cdn_all_cookies` is set to `yes`.
-
-The element `auth_value` from authentication token is included only if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
-
-The element `http_method` will be either `GET` for GET/HEAD HTTP requests or `DELETE` for DELETE HTTP requests.
-
-```
-<request>
-	<file_id>1234-567-89</file_id>
-	<http_method>12345</http_method>
-	<auth_value>12345</auth_value>
-	<headers>
-		<header>
-			<name>Some-Header</name>
-			<value>some-value</value>
-		</header>
-		<header>
-			<name>Other-Header</name>
-			<value>other-value</value>
-		</header>
-		...
-	</headers>
-	<cookies>
-		<cookie>
-			<name>some_cookie_name</name>
-			<value>ome_cookie_value</value>
-		</cookie>
-		<cookie>
-			<name>other_cookie_name</name>
-			<value>other_cookie_value</value>
-		</cookie>
-		...
-	</cookies>
-</request>
-```
-
-### Response format
-
-See the JSON section above for fields meaning and values.
-
-```
-<response>
-	<status></status>
-	<filename></filename>
-	<content_type></content_type>
-	<content_disposition></content_disposition>
-	<etag></etag>
-	<length></length>
-	<upload_date></upload_date>
-	<error></error>
-</response>
-```
-
 ## SQL
+
+This request type can be used with transport type set to `mysql` (MySQL, MariaDB), `postgresql` (PostgreSQL) or `oracle` (Oracle).
 
 ### Upload
 
@@ -259,8 +141,9 @@ Set the SQL DELETE query to run in the configuration option `cdn_sql_delete`. It
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
-
 ## MongoDB
+
+This request type can only be used with transport type set to `mongo` (Mongo).
 
 Set the database name in the configuration option `cnd_mongo_db`. Set the collection name the configuration option `cnd_mongo_collection`.
 
@@ -277,6 +160,181 @@ The CDN will compose a Mongo query with a filter that will have both properties 
 ### Delete
 
 The CDN will compose and execute the same query as with download. The document, if found, will be deleted.
+
+## JSON
+
+This request type can be used with transport type set to `unix` (Unix socket), `tcp` (TCP socket) or `http` (HTTP request).
+
+### Upload
+
+*Request format*
+
+```
+{
+	"http_method": string, "POST"
+	"auth_value": string, optional, the authentication value (e.g., user ID) extracted from the authorisation token if any
+	"file_id": string, the ID for the file that is being uploaded
+	"filename": string, original filename
+	"content_type": string, content type for the file
+	"content_disposition": string, content disposition
+	"etag": string, the etag for the file
+	"length": int, the length of the file in bytes
+	"upload_date": int, Unix timestamp for current time
+}
+```
+
+*Response format*
+
+Return status of `200` to approve the upload or any other numeric value to deny it.
+
+```
+{
+	"status": int, mandatory, http code; use 200 to approve the upload or any other value to deny it
+}
+```
+
+### Download 
+
+*Request format*
+
+See _Upload_ above for meaning of each field.
+
+Field `headers` is only included if configuration option `cdn_all_headers` is set to `yes`.
+
+Field `cookies` is only included if configuration option `cdn_all_cookies` is set to `yes`.
+
+The field `auth_value` from authentication token is included only if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
+
+```
+{
+	"file_id" : "1234-567-89",
+	"http_method" : "GET"
+	"auth_value" : "12345"
+	"headers" : [
+		{
+			"name": "Some-Header",
+			"value": "some-value",
+		},
+		...
+	],
+	"cookies": [
+		{
+			"name": "some_cookie_name",
+			"value": "some_cookie_value"
+		},
+		...
+	]
+}
+```
+
+*Response format*
+
+```
+{
+	"status": int, optional, http code; use 200, 304, 404, 500; if missing, file will be served if found (unless 304 can be returned), else 404
+	"filename": string, optional, the file name to give the user; the value of "file" will be used if missing
+	"content_type": string, optional, "application/octet-stream" will be used if missing
+	"content_disposition": string, optional, if set to "attachment", "attachment" will be used; else file will be served inline (default)
+	"etag": string, optional, "00000000000000000000000000000000" will be used if missing
+	"length": int, optional, stat() wil be used if missing
+	"upload_date": int, optional, Unix timestamp of mtime; stat() wil be used if missing
+	"error"	: string, optional, will be logged by Nginx
+}
+```
+### Delete
+
+The authorisation request will be the same as with download, but the `http_method` will be set to DELETE.
+
+The response should be the same as with upload (only status code, but mandatory).
+
+## XML
+
+This request type can be used with transport type set to `unix` (Unix socket), `tcp` (TCP socket) or `http` (HTTP request).
+
+### Upload
+
+See the JSON section above for fields meaning and values.
+
+*Request format*
+
+```
+<request>
+	<http_method>POST</http_method>
+	<auth_value>12345</auth_value>
+	<file_id>1234-567-89</file_id>
+	<filename>my super file.txt</filename>
+	<content_type>application/octet-stream</content_type>
+	<content_disposition>attachment</content_disposition>
+	<etag>12345</etag>
+	<length>12345</length>
+	<upload_date>12345</upload_date>
+</request>
+```
+
+*Request format*
+
+Return status `200` to approve the upload or any other numeric value to deny it.
+
+```
+<response>
+	<status>200</status>
+</response>
+```
+
+### Download
+
+*Request format*
+
+Element `headers` is only included if configuration option `cdn_all_headers` is set to `yes`.
+
+Element `cookies` is only included if configuration option `cdn_all_cookies` is set to `yes`.
+
+The element `auth_value` from authentication token is included only if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
+
+```
+<request>
+	<http_method>GET</http_method>
+	<auth_value>12345</auth_value>
+	<file_id>1234-567-89</file_id>
+	<headers>
+		<header>
+			<name>Some-Header</name>
+			<value>some-value</value>
+		</header>
+		...
+	</headers>
+	<cookies>
+		<cookie>
+			<name>some_cookie_name</name>
+			<value>ome_cookie_value</value>
+		</cookie>
+		...
+	</cookies>
+</request>
+```
+
+*Response format*
+
+See the JSON section above for fields meaning and values.
+
+```
+<response>
+	<status></status>
+	<filename></filename>
+	<content_type></content_type>
+	<content_disposition></content_disposition>
+	<etag></etag>
+	<length></length>
+	<upload_date></upload_date>
+	<error></error>
+</response>
+```
+
+### Delete
+
+The authorisation request will be the same as with download, but the `http_method` will be set to DELETE.
+
+The response should be the same as with upload (only status code, but mandatory).
 
 # Transport types
 

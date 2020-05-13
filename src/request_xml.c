@@ -24,7 +24,7 @@ static ngx_int_t error_xml(ngx_http_request_t *r, xmlTextWriterPtr writer, xmlBu
 
 
 /**
- * Prepare XML request
+ * Prepare XML request GET
  */
 ngx_int_t request_get_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int i, ret;
@@ -124,7 +124,90 @@ ngx_int_t request_get_xml(session_t *session, metadata_t *metadata, ngx_http_req
 }
 
 /**
- * Process XML response
+ * Prepare XML request POST
+ */
+ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	int i, ret;
+	xmlTextWriterPtr writer;
+	xmlBufferPtr buf;
+
+	// Init XML buffer
+	if ((buf = xmlBufferCreate()) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to create XML buffer");
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Init XML writer
+	if ((writer = xmlNewTextWriterMemory(buf, 0)) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to create XML writer");
+		xmlBufferFree(buf);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Start document
+	if ((ret = xmlTextWriterStartDocument(writer, NULL, XML_ENCODING, NULL)) < 0)
+		return error_xml(r, writer, buf, "xmlTextWriterStartDocument");
+
+	// Root element
+	if ((ret = xmlTextWriterStartElement(writer, BAD_CAST "request")) < 0)
+		return error_xml(r, writer, buf, "request");
+
+	// File ID
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "file_id", (const xmlChar *) metadata->file)) < 0)
+		return error_xml(r, writer, buf, "file_id");
+
+	// HTTP method
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "http_method", (const xmlChar *) session->http_method)) < 0)
+		return error_xml(r, writer, buf, "http_method");
+
+	// Add authorisation value
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "auth_value", (const xmlChar *) session->auth_value)) < 0)
+		return error_xml(r, writer, buf, "auth_value");
+
+	// Add filename
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "filename", (const xmlChar *) session->filename)) < 0)
+		return error_xml(r, writer, buf, "filename");
+
+	// Add length
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "length", (const xmlChar *) session->length)) < 0)
+		return error_xml(r, writer, buf, "length");
+
+	// Add content_type
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "content_type", (const xmlChar *) session->content_type)) < 0)
+		return error_xml(r, writer, buf, "content_type");
+
+	// Add content_dispostion
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "content_dispostion", (const xmlChar *) session->content_dispostion)) < 0)
+		return error_xml(r, writer, buf, "content_dispostion");
+
+	// Add upload_date
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "upload_date", (const xmlChar *) session->upload_date)) < 0)
+		return error_xml(r, writer, buf, "upload_date");
+
+	// Add etag
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "etag", (const xmlChar *) session->etag)) < 0)
+		return error_xml(r, writer, buf, "etag");
+
+	// Close root element
+	if ((ret = xmlTextWriterEndElement(writer)) < 0)
+		return error_xml(r, writer, buf, "xmlTextWriterEndElement");
+
+	session->auth_request = ngx_pcalloc(r->pool, strlen((const char *) buf->content) + 1);
+	if (session->auth_request == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for XML auth request.", strlen((const char *) buf->content) + 1);
+		return NGX_ERROR;
+	}
+	strcpy(session->auth_request, (const char *) buf->content);
+
+	xmlFreeTextWriter(writer);
+	xmlBufferFree(buf);
+
+	return NGX_OK;
+}
+
+
+/**
+ * Process XML response GET
  */
 ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	xmlDoc *doc = NULL;
@@ -180,6 +263,39 @@ ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_re
 			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"upload_date")) {
 				metadata->upload_date = atoi((const char *) cur_node->children->content);
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
+			}
+		}
+	}
+
+	// Cleanup
+	xmlFreeDoc(doc);
+	xmlCleanupParser();
+
+	return NGX_OK;
+}
+
+/**
+ * Process XML response POST
+ */
+ngx_int_t response_post_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	xmlDoc *doc = NULL;
+	xmlNode *root_element = NULL, *cur_node = NULL;
+	ngx_int_t ret;
+
+	if ((doc = xmlReadMemory(session->auth_response, strlen(session->auth_response), "noname.xml", XML_ENCODING, 0)) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse XML: %s", session->auth_response);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Get the root element node
+	root_element = xmlDocGetRootElement(doc);
+
+	// Walk around the XML which we received from the authentication servier, session->auth_response
+	for (cur_node = root_element->children; cur_node; cur_node = cur_node->next) {
+		if ((cur_node->type == XML_ELEMENT_NODE) && (cur_node->children)) {
+			if (! xmlStrcmp(cur_node->name, (const xmlChar *)"status")) {
+				metadata->status = atoi((const char *) cur_node->children->content);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 			}
 		}
 	}

@@ -531,8 +531,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = request_post_sql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = request_post_sql(session, metadata, r);
-//	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
-//		ret = request_post_xml(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
+		ret = request_post_xml(session, metadata, r);
 
 	if (ret)
 		return upload_cleanup(r, rb, rb_malloc, ret);
@@ -574,8 +574,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		metadata->status = NGX_HTTP_OK;
 		ret = NGX_OK;
 	}
-//	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
-//		ret = response_post_xml(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
+		ret = response_post_xml(session, metadata, r);
 
 	if (session->auth_response)
 		free(session->auth_response);
