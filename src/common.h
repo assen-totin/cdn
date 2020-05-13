@@ -73,7 +73,7 @@
 #define DEFAULT_FILE_NAME "unnamed"
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
-#define DEFAULT_HTTP_CODE 500
+#define DEFAULT_HTTP_CODE 200
 #define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
@@ -123,8 +123,6 @@
 #define TRANSPORT_TYPE_ORACLE "oracle"
 #define TRANSPORT_TYPE_TCP "tcp"
 #define TRANSPORT_TYPE_UNIX "unix"
-
-
 
 // Structures
 typedef struct {
@@ -196,7 +194,7 @@ typedef struct {
 	char *auth_header;
 	char *auth_type;
 	char *auth_token;
-	const char *auth_value;
+	char *auth_value;
 	char *auth_request;
 	char *auth_response;
 	int auth_response_len;

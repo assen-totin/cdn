@@ -343,49 +343,50 @@ session_t *init_session(ngx_http_request_t *r) {
 	// Get config
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
-	// Set common options (for GET|HEAD|DELETE and POST -- also land on OPTIONS, although not needed there)
+	// Set options for OPTIONS
+	if (r->method & (NGX_HTTP_OPTIONS)) {
+		session->cors_origin = from_ngx_str(r->pool, cdn_loc_conf->cors_origin);
+		return session;
+	}
+
+	// Set common options (for GET|HEAD|DELETE and POST)
 	session->server_id = atoi(from_ngx_str(r->pool, cdn_loc_conf->server_id)) % MAX_SERVER_ID + 1;
 	session->fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
 	session->fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
-
-	// Set options for OPTIONS
-	if (r->method & (NGX_HTTP_OPTIONS))
-		session->cors_origin = from_ngx_str(r->pool, cdn_loc_conf->cors_origin);
+	session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
+	session->transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
+	session->auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
+	session->auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
+	session->auth_type = from_ngx_str(r->pool, cdn_loc_conf->auth_type);
+	session->auth_token = NULL;
+	session->auth_value = NULL;
+	session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
+	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
+	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
+	session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
+	session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
+	session->tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
+	session->http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
+	session->auth_request = NULL;
+	session->auth_response = NULL;
+	session->curl = NULL;
+	session->jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
+	session->jwt_field = from_ngx_str(r->pool, cdn_loc_conf->jwt_field);
+	session->jwt_json = NULL;
+	session->http_method = ngx_pcalloc(r->pool, 8);
 
 	// Set options for GET, HEAD and DELETE
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {
-		session->server_id = atoi(from_ngx_str(r->pool, cdn_loc_conf->server_id)) % MAX_SERVER_ID + 1;
-		session->fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
-		session->fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
-		session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
-		session->transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
-		session->auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
-		session->auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
-		session->auth_type = from_ngx_str(r->pool, cdn_loc_conf->auth_type);
-		session->auth_token = NULL;
-		session->auth_value = NULL;
 		session->all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
 		session->all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
-		session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
 		session->headers = NULL;
 		session->headers_count = 0;
 		session->cookies = NULL;
 		session->cookies_count = 0;
 		session->hdr_if_none_match = NULL;
 		session->hdr_if_modified_since = -1;
-		session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
-		session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
-		session->tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
-		session->http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
-		session->auth_request = NULL;
-		session->auth_response = NULL;
-		session->curl = NULL;
-		session->jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
-		session->jwt_json = NULL;
-		session->jwt_field = NULL;
 
 		// Method-specific init
-		session->http_method = ngx_pcalloc(r->pool, 8);
 		if (r->method & (NGX_HTTP_DELETE)) {
 			sprintf(session->http_method, "DELETE");
 			session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
@@ -397,6 +398,8 @@ session_t *init_session(ngx_http_request_t *r) {
 			session->sql_query2 = from_ngx_str(r->pool, cdn_loc_conf->sql_delete);
 		}
 	}
+	else if (r->method & (NGX_HTTP_POST))
+		sprintf(session->http_method, "POST");
 
 	return session;
 }

@@ -47,7 +47,7 @@ ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r, int mode) {
 	}
 
 	// Get collection
-	if ((collection = mongoc_client_get_collection (conn, session->mongo_db, session->mongo_collection)) = NULL) {
+	if ((collection = mongoc_client_get_collection (conn, session->mongo_db, session->mongo_collection)) == NULL) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to get Mongo collection %s", session->mongo_collection);
 		return close_mongo(query, conn, NULL, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
@@ -70,7 +70,7 @@ ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r, int mode) {
 		// If nothing was found, the filter did not match, so reject the request
 		if (! mongoc_cursor_next (cursor, &doc)) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Metadata not found in collection %s", session->mongo_collection);
-			return close_mongo(query, conn, collection, NGX_HTTP_NOT_FOUND);
+			return close_mongo(query, conn, collection, NGX_HTTP_FORBIDDEN);
 		}
 
 		// Act as per mode
@@ -80,12 +80,12 @@ ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r, int mode) {
 		else if (mode == METADATA_DELETE)
 			// If invoked to delete, ignore error
 			if (! mongoc_collection_delete_one (collection, query, NULL, NULL, &error))
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to delete metadata for file %s from Mongo collection %s: %s", metadata->file, session->mongo_collection, &error.message[0]);
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to delete metadata from Mongo collection %s: %s", session->mongo_collection, &error.message[0]);
 	}
 	// Insert new document
 	else if (mode == METADATA_INSERT) {
 		if (! mongoc_collection_insert_one (collection, query, NULL, NULL, &error)) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to insert metadata for file %s into Mongo collection %s: %s", metadata->file, session->mongo_collection, &error.message[0]);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to insert metadata into Mongo collection %s: %s", session->mongo_collection, &error.message[0]);
 			return close_mongo(query, conn, collection, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
 	}

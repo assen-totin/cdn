@@ -109,7 +109,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 	// Check if we have the HTTP response code and use the default one if missing
 	if (metadata->status < 0) {
 		metadata->status = DEFAULT_HTTP_CODE;
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %s", metadata->file, DEFAULT_HTTP_CODE);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %l", metadata->file, DEFAULT_HTTP_CODE);
 	}
 
 	// Return 304 in certain cases
@@ -482,9 +482,16 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
 		ret = transport_socket(session, r, SOCKET_TYPE_UNUX);
 
+	// Clean up BSON if used
 	if (session->auth_request) {
-		if ((! strcmp(session->request_type, REQUEST_TYPE_JSON)) || (! strcmp(session->request_type, REQUEST_TYPE_MONGO)))
+		// For JSON, clean always
+		if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
 			bson_free(session->auth_request);
+		// For Mongo, only clean if we are not deleteting the file; we'll re-use the request to delete the data
+		if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
+			if (! (r->method & NGX_HTTP_DELETE))
+				bson_free(session->auth_request);
+		}
 	}
 
 	if (ret)
@@ -536,9 +543,12 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 
 		// Delete metadata (only for MongoDB and SQL)
 		// NB: we ignore errors here
-		if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
+		if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO)) {
 			// NB: Our MongoDB request was already prepared above for the AUTH step
 			ret = transport_mongo(session, r, METADATA_DELETE);
+			if (session->auth_request)
+				bson_free(session->auth_request);
+		}
 		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL)) {
 			// Switch query to DELETE one and rebuild it
 			session->sql_query = session->sql_query2;
@@ -549,6 +559,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			session->sql_query = session->sql_query2;
 			ret = transport_oracle(session, r, METADATA_DELETE);
 		}
+
+		return NGX_HTTP_NO_CONTENT;
 	}
 
 	// NB: The mapped file will be unmapped by the cleanup handler once data is sent to client

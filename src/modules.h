@@ -14,6 +14,6 @@
 //#define CDN_ENABLE_ORACLE 1
 
 // To enable the MongoDB transport and request, uncomment the following line
-//#define CDN_ENABLE_MONGO 1
+#define CDN_ENABLE_MONGO 1
 
 

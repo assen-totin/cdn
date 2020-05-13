@@ -154,7 +154,7 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 		}
 
 		else if ((! strcmp(bson_key, "upload_date")) && (bson_iter_type(&iter) == BSON_TYPE_DATE_TIME)) {
-			metadata->upload_date = bson_iter_date_time (&iter);
+			metadata->upload_date = bson_iter_date_time (&iter) / 1000;
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
 		}
 	}

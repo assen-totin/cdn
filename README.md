@@ -44,6 +44,7 @@ location /
 	cdn_tcp_port;                       // Transport "tcp": port of the authorisation service
 	cdn_http_url;                       // Transport "http": URL of the authorisation service
 	cdn_db_dsn dsn-or-url               // Transport "mysql", "oracle", "mongo": DSN of the database service (see docs for db-specific format)
+	cdn_sql_insert                      // Transport "mysql", "oracle": SQL query to execute when uploading a file (with placeholders)
 	cdn_sql_select                      // Transport "mysql", "oracle": SQL query to execute when fetching a file (with placeholders)
 	cdn_sql_delete                      // Transport "mysql", "oracle": SQL query to execute when deleting a file (with placeholders)
 	cdn_mongo_collection                // Transport "mongo": name of the Mongo collection where the metadata is
@@ -94,6 +95,8 @@ To use this method, set the configuration option `cdn_auth_type` to `jwt`.
 Also, set the JWT signature verification key in configuration option `cdn_jwt_key`.
 
 Finally, specify the JWT payload field to use for authorisation in configuration option `cdn_jwt_field`.
+
+The JWT must have a claim named `exp`, containing the Unix timestamp for the expiration time of the token.
 
 For JWT you'll need the JWT decoding library: https://github.com/benmcollins/libjwt
 
