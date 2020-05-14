@@ -2,7 +2,7 @@
 
 The module implements an optimised, custom delivery of authorised content (e.g., user files etc.). 
 
-The module performs all tasks needed to manage the content: upload, serve and delete.
+The module performs all tasks needed to manage the content: upload, download and delete. You may still implement the uploads and deletions yourself if preferred; the CDN may be put in read-only mode in this case.
 
 Each file request for must be authorised before served. Authorisation is handled by an external body to which the module connects. 
 
@@ -22,11 +22,12 @@ CDN URL for a file should be similar to `http://cdn.example.com/some-file-id`
 
 ```
 location /
-	cdn;                                // Enable CDN module
+	cdn;                                // Enable CDN module (mandatory)
+	cdn_fs_root /usr/share/curaden/fs;  // Root directgory of CDN  (mandatory)
+	cdn_fs_depth 4;                     // CDN tree depth (mandatory)
 	cdn_server_id 1;                    // ID of the server instance, 1-48 (optional, default 1)
-	cdn_fs_root /usr/share/curaden/fs;  // Root directgory of CDN 
-	cdn_fs_depth 4;                     // CDN tree depth
-	cdn_cors_origin host.example.com;   // Allowerd CORS origin (optional, default *)
+	cdn_cors_origin host.example.com;   // Allowed CORS origin (optional, default *)
+	cdn_read_only no;                   // Read-only mode prohibits uploads and deletions; set "yes" to enable (optional, default "no")
 
 	cdn_auth_type;                      // Type of authorisation to use: "jwt", "session" (optional)
 	cdn_auth_cookie my_cookie;          // Cookie where to find the authorisation token (optional)

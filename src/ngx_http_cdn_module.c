@@ -105,6 +105,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->mongo_db, parent->mongo_db, DEFAULT_MONGO_DB);
 	ngx_conf_merge_str_value(child->mongo_collection, parent->mongo_collection, DEFAULT_MONGO_COLLECTION);
 	ngx_conf_merge_str_value(child->cors_origin, parent->cors_origin, DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN);
+	ngx_conf_merge_str_value(child->read_only, parent->read_only, DEFAULT_READ_ONLY);
 
 	return NGX_CONF_OK;
 }

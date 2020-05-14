@@ -374,6 +374,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->jwt_field = from_ngx_str(r->pool, cdn_loc_conf->jwt_field);
 	session->jwt_json = NULL;
 	session->http_method = ngx_pcalloc(r->pool, 8);
+	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
 
 	// Set options for GET, HEAD and DELETE
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {

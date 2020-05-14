@@ -368,6 +368,10 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	// Attach metadata to request for further use
 	ngx_http_set_ctx(r, metadata, ngx_http_cdn_module);
 
+	// Reject DELETE in read-only mode
+	if ((! strcmp(session->read_only, "yes")) && (r->method & (NGX_HTTP_DELETE)))
+		return NGX_HTTP_BAD_REQUEST;
+
 	// URI
 	uri = from_ngx_str(r->pool, r->uri);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", uri);

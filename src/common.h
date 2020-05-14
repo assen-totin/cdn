@@ -79,6 +79,7 @@
 #define DEFAULT_JWT_FIELD "none"
 #define DEFAULT_MONGO_COLLECTION "none"
 #define DEFAULT_MONGO_DB "none"
+#define DEFAULT_READ_ONLY "no"
 #define DEFAULT_REQUEST_TYPE "none"
 #define DEFAULT_SERVER_ID "1"
 #define DEFAULT_SQL_QUERY "none"
@@ -153,6 +154,7 @@ typedef struct {
 	ngx_str_t mongo_db;
 	ngx_str_t mongo_collection;
 	ngx_str_t cors_origin;
+	ngx_str_t read_only;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -180,6 +182,7 @@ typedef struct {
 	uint server_id;
 	uint fs_depth;
 	char *fs_root;
+	char *read_only;
 	char *http_method;
 	char *request_type;
 	char *cors_origin;

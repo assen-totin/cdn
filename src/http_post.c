@@ -177,6 +177,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	if ((metadata = init_metadata(r)) == NULL)
 		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
+	// Reject in read-only mode
+	if (! strcmp(session->read_only, "yes"))
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_BAD_REQUEST);
+
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body is ready for processing.");
 
 	// Extract content type from header
