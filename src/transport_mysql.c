@@ -23,13 +23,11 @@ static ngx_int_t close_mysql(MYSQL *conn, ngx_int_t ret) {
  */
 ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_MYSQL
-	db_dsn_t dsn;
 	MYSQL conn;
 	ngx_int_t ret;
 
 	// Parse DNS
-	ret = parse_dsn(session, r, &dsn);
-	if (ret)
+	if ((ret = parse_dsn(session, r)) > 0)
 		return ret;
 
 	// Init MySQL
@@ -39,12 +37,13 @@ ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r, int mode) {
 	}
 
 	// Connect MySQL
-	if (mysql_real_connect(&conn, dsn.host, dsn.user, dsn.password, dsn.db, dsn.port, dsn.socket, 0) == NULL) {
+	if (mysql_real_connect(&conn, session->dsn->host, session->dsn->user, session->dsn->password, session->dsn->db, session->dsn->port, session->dsn->socket, 0) == NULL) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to connect to MySQL: %s", mysql_error(&conn));
 		return close_mysql(&conn, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
 	// Run the query
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, session->sql_query);
 	if (mysql_query(&conn, session->sql_query)) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to execute query %s: %s", session->sql_query, mysql_error(&conn));
 		return close_mysql(&conn, NGX_HTTP_INTERNAL_SERVER_ERROR);

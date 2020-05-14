@@ -35,7 +35,7 @@ location /
 	cdn_jwt_key 0123456789ABCDEF;       // Authorisation "jwt": JWT key authorisation token
 	cdn_jwt_field user_id;              // Authorisation "jwt": Name of the JWT payload field which contains the authorisation value
 
-	cdn_request_type json;              // Type of authorisation request to perform: "json", "xml", "sql", "mongo"
+	cdn_request_type json;              // Type of authorisation request to perform: "json", "xml", "mysql", "oracle", "mongo"
 	cdn_all_cookies yes;                // Request "json", "xml": include all cookies in request to authentication service
 	cdn_all_headers yes;                // Request "json", "xml": include all HTTP headers in request to authentication service
 
@@ -119,15 +119,17 @@ This method may be used with some complex request types like JSON or XML. It is 
 
 # Request types
 
-## SQL
+## SQL (MySQL, PostgreSQL, Oracle)
 
-This request type can be used with transport type set to `mysql` (MySQL, MariaDB), `postgresql` (PostgreSQL) or `oracle` (Oracle).
+Set the request type according to the SQL engine - `mysql`, `postgresql` or `oracle`. 
+
+Set the transport to the same value.
 
 ### Upload
 
-Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It must have eight `%s` placeholders which will be filled with the following values in the given order (see the JSON response above for details on each): `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`.
+Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It must have eight placeholders which will be filled with the following values in the given order (see the JSON response above for details on each): `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`. All these placeholders should be `'%s'` (for strings) except for the fourth and seventh which should be `%u` (because they are integers); don't forget the single quotes around the string placeholder.
 
-NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s, %s, %s, %s, %s, %s, %s)`.
+NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure('%s', '%s', '%s', %u, '%s', '%s', %u, '%s')`.
 
 ### Download
 
@@ -141,7 +143,7 @@ NB: for complex queries, create a stored procedure and use stanza like `CALL my_
 
 ### Delete
 
-Set the SQL DELETE query to run in the configuration option `cdn_sql_delete`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
+Set the SQL DELETE query to run in the configuration option `cdn_sql_delete`. It must have a single `%s` placeholder, which will be filled with the file ID.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
@@ -344,9 +346,9 @@ The response should be the same as with upload (only status code, but mandatory)
 
 ## Unix socket
 
-Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writable by the Nginx user. 
-
 This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML exchange).
+
+Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writable by the Nginx user. 
 
 The Unix socket must be of type `stream`. The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
 
@@ -354,9 +356,9 @@ NB: The `examples` directory contains a sample Unix domain socket server in Node
 
 ## TCP socket
 
-Set the host and port for TCP connection in configuration options `cdn_tcp_host` and `cdn_tcp_port`.
-
 This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
+
+Set the host and port for TCP connection in configuration options `cdn_tcp_host` and `cdn_tcp_port`.
 
 The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
 
@@ -366,9 +368,9 @@ NB: The `examples` directory contains a sample Unix domain socket server in Node
 
 ## HTTP
 
-Set the URL in configuration option `cdn_http_url`. If using HTTPS, the local libcurl (used to make the HTTP request) must be able to verify the TLS certificate of the remote end. Authentication to this URL is currently unsupported.
-
 This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
+
+Set the URL in configuration option `cdn_http_url`. If using HTTPS, the local libcurl (used to make the HTTP request) must be able to verify the TLS certificate of the remote end. Authentication to this URL is currently unsupported.
 
 The HTTP request will be of type POST.
 
@@ -376,9 +378,13 @@ NB: HTTP is naturally slower than both Unix domain socket an TCP socket.
 
 ## MySQL
 
+This transport is only useful when request type is set to `mysql`.
+
 Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `host:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number.
 
 ## Oracle
+
+This transport is only useful when request type is set to `oracle`.
 
 Set the DSN in the configuration option `cnd_db_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service` fields `port` and `database` are ignored.
 
@@ -387,6 +393,8 @@ You'll need to manually install Oracle Instant Client library; make sure you hav
 You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the ORACLE_HOME variable.
 
 ## MongoDB
+
+Only useful when request type is set to `mongo`.
 
 Set the database connection string in the configuration option `cnd_db_dsn` using the standard MongoDB driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
 

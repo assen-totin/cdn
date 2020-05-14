@@ -12,16 +12,14 @@
  */
 ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_ORACLE
-	db_dsn_t dsn;
 	ngx_int_t ret;
 
 	// Parse DNS
-	ret = parse_dsn(session, r, &dsn);
-	if (ret)
+	if ((ret = parse_dsn(session, r)) > 0)
 		return ret;
 
 	// Connect Oracle
-	session->oracle_connection = OCI_ConnectionCreate(dsn.host, dsn.user, dsn.password, OCI_SESSION_DEFAULT);
+	session->oracle_connection = OCI_ConnectionCreate(session->dsn->host, session->dsn->user, session->dsn->password, OCI_SESSION_DEFAULT);
 	if (! session->oracle_connection) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to connect to Oracle: %s", OCI_ErrorGetString(OCI_GetLastError()));
 		OCI_Cleanup();

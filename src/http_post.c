@@ -140,7 +140,7 @@ char *mpfd_get_field(ngx_http_request_t *r, char *rb, bool rb_malloc, char *from
 		return NULL;
 	}
 
-	strncpy(ret, from, len + 1);
+	strncpy(ret, from, len);
 
 	return ret;
 }

@@ -257,14 +257,14 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 static inline ngx_int_t property_sql(ngx_http_request_t *r, char **field, char *field_name, char *value) {
 	char *f;
 
-	f = ngx_pcalloc(r->pool, strlen(value) + 1);
-	if (f == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for MySQL property %s: %s.", strlen(value) + 1, field_name, value);
+	if ((f = ngx_pcalloc(r->pool, strlen(value) + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for SQL property %s: %s.", strlen(value) + 1, field_name, value);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	strcpy(f, value);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found MySQL property %s: %s", field_name, f);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found SQL property %s: %s", field_name, f);
+	*field = f;
 
 	return NGX_OK;
 }
@@ -272,19 +272,28 @@ static inline ngx_int_t property_sql(ngx_http_request_t *r, char **field, char *
 /**
  * SQL DSN parser
  */
-ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r, db_dsn_t *dsn) {
+ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r) {
 	int i;
 	char *token, *saveptr, *str;
 	ngx_int_t ret;
 
+	// If DNS is already defined, just return
+	if (session->dsn)
+		return NGX_OK;
+
+	if ((session->dsn = ngx_pcalloc(r->pool, sizeof(db_dsn_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for dsn->", sizeof(db_dsn_t));
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
 	// Init
-	dsn->host = NULL;
-	dsn->port_str = NULL;
-	dsn->port = 0;
-	dsn->socket = NULL;
-	dsn->user = NULL;
-	dsn->password = NULL;
-	dsn->db = NULL;
+	session->dsn->host = NULL;
+	session->dsn->port_str = NULL;
+	session->dsn->port = 0;
+	session->dsn->socket = NULL;
+	session->dsn->user = NULL;
+	session->dsn->password = NULL;
+	session->dsn->db = NULL;
 
 	// host:port|socket:user:password:db
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing MySQL DSN: %s", session->db_dsn);
@@ -295,34 +304,33 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r, db_dsn_t *dsn) {
 
 		switch(i) {
 			case 0:
-				if ((ret = property_sql(r, &dsn->host, "host", token)) > 0)
+				if ((ret = property_sql(r, &session->dsn->host, "host", token)) > 0)
 					return ret;
 				break;
 			case 1:
-				if ((ret = property_sql(r, &dsn->port_str, "port_str", token)) > 0)
+				if ((ret = property_sql(r, &session->dsn->port_str, "port_str", token)) > 0)
 					return ret;
 				break;
 			case 2:
-				if ((ret = property_sql(r, &dsn->user, "user", token)) > 0)
+				if ((ret = property_sql(r, &session->dsn->user, "user", token)) > 0)
 					return ret;
 				break;
 			case 3:
-				if ((ret = property_sql(r, &dsn->password, "password", token)) > 0)
+				if ((ret = property_sql(r, &session->dsn->password, "password", token)) > 0)
 					return ret;
 				break;
 			case 4:
-				if ((ret = property_sql(r, &dsn->db, "db", token)) > 0)
+				if ((ret = property_sql(r, &session->dsn->db, "db", token)) > 0)
 					return ret;
 				break;
 		}
-
-        printf("%s\n", token);
     }
 
 	// Detect if we were given a port or a socket
-	dsn->port = atoi(dsn->port_str);
-	if (dsn->port == 0)
-		dsn->socket = dsn->port_str;
+	session->dsn->port = atoi(session->dsn->port_str);
+
+	if (session->dsn->port == 0)
+		session->dsn->socket = session->dsn->port_str;
 
 	return NGX_OK;
 }
@@ -361,6 +369,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->auth_token = NULL;
 	session->auth_value = NULL;
 	session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
+	session->dsn = NULL;
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
 	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
 	session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
@@ -388,19 +397,20 @@ session_t *init_session(ngx_http_request_t *r) {
 		session->hdr_if_modified_since = -1;
 
 		// Method-specific init
-		if (r->method & (NGX_HTTP_DELETE)) {
-			sprintf(session->http_method, "DELETE");
-			session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
-			// NB: We'll init the SQL DELETE query later
-		}
-		else if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
+		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
 			sprintf(session->http_method, "GET");
+			session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
+		}
+		else if (r->method & (NGX_HTTP_DELETE)) {
+			sprintf(session->http_method, "DELETE");
 			session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
 			session->sql_query2 = from_ngx_str(r->pool, cdn_loc_conf->sql_delete);
 		}
 	}
-	else if (r->method & (NGX_HTTP_POST))
+	else if (r->method & (NGX_HTTP_POST)) {
 		sprintf(session->http_method, "POST");
+		session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_insert);
+	}
 
 	return session;
 }

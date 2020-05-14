@@ -463,9 +463,9 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO))
 		ret = request_get_mongo(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
-		ret = request_get_sql(session, metadata, r);
+		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
-		ret = request_get_sql(session, metadata, r);
+		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = request_get_xml(session, metadata, r);
 
@@ -556,11 +556,13 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL)) {
 			// Switch query to DELETE one and rebuild it
 			session->sql_query = session->sql_query2;
+			ret = request_get_sql(session, metadata, r, METADATA_DELETE);
 			ret = transport_mysql(session, r, METADATA_DELETE);
 		}
 		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE)) {
 			// Switch query to DELETE one and rebuild it
 			session->sql_query = session->sql_query2;
+			ret = request_get_sql(session, metadata, r, METADATA_DELETE);
 			ret = transport_oracle(session, r, METADATA_DELETE);
 		}
 

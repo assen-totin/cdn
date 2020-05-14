@@ -177,6 +177,16 @@ typedef struct {
 } cdn_kvp_t;
 
 typedef struct {
+	char *host;
+	char *port_str;
+	int port;
+	char *socket;
+	char *user;
+	char *password;
+	char *db;
+} db_dsn_t;
+
+typedef struct {
 	ngx_http_request_t *r;
 	time_t exp;
 	uint server_id;
@@ -205,9 +215,10 @@ typedef struct {
 	char *jwt_key;
 	char *jwt_json;
 	char *jwt_field;
-	char *db_dsn;
 	char *sql_query;
 	char *sql_query2;
+	char *db_dsn;
+	db_dsn_t *dsn;
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
 	char *unix_socket;
@@ -231,16 +242,6 @@ typedef struct {
 	OCI_Resultset *oracle_result;
 #endif
 } session_t;
-
-typedef struct {
-	char *host;
-	char *port_str;
-	int port;
-	char *socket;
-	char *user;
-	char *password;
-	char *db;
-} db_dsn_t;
 
 enum {
 	METADATA_NONE = 0,
