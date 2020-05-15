@@ -532,7 +532,6 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
 # TODO
 
-- Regression test for PostgreSQL transport
 - Regression test for Oracle transport
 - Regression test for Unix transport + JSON
 - Regression test for Unix transport + XML

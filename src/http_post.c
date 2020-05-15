@@ -321,7 +321,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			// If this is a file part, remember data begin and end
 			if (part_filename) {
 				metadata->filename = part_filename;
-				metadata->content_type = part_content_type;
+				if (! metadata->content_type)
+					metadata->content_type = part_content_type;
 				file_content_transfer_encoding = part_content_transfer_encoding;
 				file_data_begin = part_pos;
 				metadata->length = part_end - part_pos;
@@ -498,7 +499,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			metadata->content_disposition = curl_content_disposition;
 		else {
 			if ((metadata->content_disposition = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_DISPOSITION) + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(DEFAULT_CONTENT_TYPE) + 1);
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(DEFAULT_CONTENT_DISPOSITION) + 1);
 				return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 			strcpy(metadata->content_disposition, DEFAULT_CONTENT_DISPOSITION);
