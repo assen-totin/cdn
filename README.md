@@ -356,7 +356,7 @@ NB: The `examples` directory contains a sample Unix domain socket server in Node
 
 ## TCP socket
 
-This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
+This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML exchange).
 
 Set the host and port for TCP connection in configuration options `cdn_tcp_host` and `cdn_tcp_port`.
 
@@ -403,6 +403,14 @@ You'll also need the OCI library from https://github.com/vrogier/ocilib. In orde
 Only useful when request type is set to `mongo`.
 
 Set the database connection string in the configuration option `cnd_db_dsn` using the standard MongoDB driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
+
+## Internal
+
+This transport is usually used when request type is `json` (JSON file format, preferred) or `xml` (XML file format).
+
+The metadata will be saved into a local file alongside the uploaded file itself, as either JSON (preferred as it is faster) or XML.
+
+There are no configuration options for this transport.
 
 # File uploads
 
@@ -528,7 +536,7 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 - Regression test for Oracle transport
 - Regression test for Unix transport + JSON
 - Regression test for Unix transport + XML
-- Implement local metadata storage (with JSON in files)
+- Regression test for internal transport (with JSON in files)
 - Implement in-memory cache for local metadata storage with 128-bit b-tree
 - Implement in-memory cache for local metadata storage with 16-byte b-tree
 - Implement Redis transport

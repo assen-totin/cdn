@@ -6,9 +6,7 @@
 
 #include "common.h"
 #include "ngx_http_cdn_module.h"
-#include "http_get.h"
-#include "http_options.h"
-#include "http_post.h"
+#include "http.h"
 #include "utils.h"
 
 /**

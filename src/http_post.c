@@ -5,28 +5,26 @@
  */
 
 #include "common.h"
-#include "auth_jwt.h"
-#include "auth_session.h"
+#include "auth.h"
 #include "murmur3.h"
-#include "request_json.h"
-#include "request_mongo.h"
-#include "request_mysql.h"
-#include "request_oracle.h"
-#include "request_postgresql.h"
-#include "request_sql.h"
-#include "request_xml.h"
-#include "transport_http.h"
-#include "transport_mongo.h"
-#include "transport_mysql.h"
-#include "transport_oracle.h"
-#include "transport_postgresql.h"
-#include "transport_socket.h"
+#include "request.h"
+#include "transport.h"
 #include "utils.h"
+
+
+/**
+ * POST cleanup
+ */
+static void upload_cleanup(ngx_http_request_t *r, char *rb, bool rb_malloc, int status) {
+	if (rb_malloc)
+		free(rb);
+	ngx_http_finalize_request(r, status);
+}
 
 /**
  * Read a line from current position
  */
-char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
+static char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
 	char *end, *ret; 
 
 	end = strstr(begin, "\r\n");
@@ -54,7 +52,7 @@ char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
  * Find a value from a key=value pair, present in a bigger string (haystack), when given the key
  * E.g. knowing 'key' from 'lala; key="value"; bebe' returns "value"
  */
-char *mpfd_get_value(ngx_http_request_t *r, char *haystack, char *needle) {
+static char *mpfd_get_value(ngx_http_request_t *r, char *haystack, char *needle) {
 	char *begin, *end, *ret;
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Looking for needle %s in haystack %s", needle, haystack);
@@ -94,7 +92,7 @@ char *mpfd_get_value(ngx_http_request_t *r, char *haystack, char *needle) {
 /**
  * Read the value from a header up to the first semicolon, if any
  */
-char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
+static char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
 	char *begin, *end, *ret;
 
 	// Check if we are the proper header
@@ -122,18 +120,9 @@ char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
 }
 
 /**
- * POST cleanup
- */
-void upload_cleanup(ngx_http_request_t *r, char *rb, bool rb_malloc, int status) {
-	if (rb_malloc)
-		free(rb);
-	ngx_http_finalize_request(r, status);
-}
-
-/**
  * Read a chunk of data (form field value) into string
  */
-char *mpfd_get_field(ngx_http_request_t *r, char *rb, bool rb_malloc, char *from, int len) {
+static char *mpfd_get_field(ngx_http_request_t *r, char *rb, bool rb_malloc, char *from, int len) {
 	char *ret;
 
 	if ((ret = ngx_pcalloc(r->pool, len + 1)) == NULL) {
@@ -542,6 +531,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	// Query for metadata based on transport
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(session, r);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL))
+		ret = transport_internal(session, metadata, r, METADATA_INSERT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
 		ret = transport_mongo(session, r, METADATA_INSERT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))

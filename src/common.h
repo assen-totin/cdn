@@ -124,6 +124,7 @@
 #define SOCKET_TYPE_UNUX 2
 
 #define TRANSPORT_TYPE_HTTP "http"
+#define TRANSPORT_TYPE_INTERNAL "internal"
 #define TRANSPORT_TYPE_MONGO "mongo"
 #define TRANSPORT_TYPE_MYSQL "mysql"
 #define TRANSPORT_TYPE_ORACLE "oracle"

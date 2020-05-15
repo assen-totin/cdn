@@ -5,21 +5,9 @@
  */
 
 #include "common.h"
-#include "auth_jwt.h"
-#include "auth_session.h"
-#include "request_json.h"
-#include "request_mongo.h"
-#include "request_mysql.h"
-#include "request_oracle.h"
-#include "request_postgresql.h"
-#include "request_sql.h"
-#include "request_xml.h"
-#include "transport_http.h"
-#include "transport_mongo.h"
-#include "transport_mysql.h"
-#include "transport_oracle.h"
-#include "transport_postgresql.h"
-#include "transport_socket.h"
+#include "auth.h"
+#include "request.h"
+#include "transport.h"
 #include "utils.h"
 
 // We need this here as a declaration only; it is defined in main header file which will resolve it at runtime.
@@ -479,6 +467,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	// Query for metadata based on transport
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(session, r);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL))
+		ret = transport_internal(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
 		ret = transport_mongo(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
@@ -555,7 +545,11 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 
 		// Delete metadata (only for MongoDB and SQL)
 		// NB: we ignore errors here
-		if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO)) {
+		if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) {
+			// NB: Our MongoDB request was already prepared above for the AUTH step
+			ret = transport_internal(session, metadata, r, METADATA_DELETE);
+		}
+		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO)) {
 			// NB: Our MongoDB request was already prepared above for the AUTH step
 			ret = transport_mongo(session, r, METADATA_DELETE);
 			if (session->auth_request)
