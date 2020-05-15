@@ -436,6 +436,7 @@ metadata_t *init_metadata(ngx_http_request_t *r) {
 	metadata->length = -1;
 	metadata->upload_date = -1;
 	metadata->status = -1;
+	metadata->auth_value = NULL;
 
 	return metadata;
 }

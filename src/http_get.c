@@ -514,6 +514,12 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_get_xml(session, metadata, r);
 
+	// For Internal transport (which uses JSON or XML), validate permission
+	if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) {
+		if (strcmp(session->auth_value, metadata->auth_value))
+			return NGX_HTTP_FORBIDDEN;
+	}
+
 	if (session->auth_response)
 		free(session->auth_response);
 

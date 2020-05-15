@@ -172,6 +172,7 @@ typedef struct {
 	char *content_disposition;
 	char *etag;
 	char *error;
+	char *auth_value;
 	u_char *data;
 	time_t upload_date; 
 	int32_t status;

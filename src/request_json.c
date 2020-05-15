@@ -120,6 +120,11 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 				return ret;
 		}
 
+		else if ((! strcmp(bson_key, "auth_value")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
+			if ((ret = set_metadata_field(r, &metadata->auth_value, "auth_value", bson_iter_utf8 (&iter, NULL))) > 0)
+				return ret;
+		}
+
 		else if ((! strcmp(bson_key, "error")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			if ((ret = set_metadata_field(r, &metadata->error, "error", bson_iter_utf8 (&iter, NULL))) > 0)
 				return ret;

@@ -237,6 +237,11 @@ ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_re
 					return ret;
 			}
 
+			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"auth_value")) {
+				if ((ret = set_metadata_field(r, &metadata->auth_value, "auth_value", (const char *) cur_node->children->content)) > 0)
+					return ret;
+			}
+
 			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"content_type")) {
 				if ((ret = set_metadata_field(r, &metadata->filename, "content_type", (const char *) cur_node->children->content)) > 0)
 					return ret;
