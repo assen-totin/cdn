@@ -520,8 +520,11 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			return NGX_HTTP_FORBIDDEN;
 	}
 
-	if (session->auth_response)
-		free(session->auth_response);
+	// Clean up auth reponse unless using internal transport
+	if (session->auth_response) {
+		if (strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL))
+			free(session->auth_response);
+	}
 
 	if (ret)
 		return ret;

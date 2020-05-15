@@ -535,7 +535,6 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 - Regression test for Oracle transport
 - Regression test for Unix transport + JSON
 - Regression test for Unix transport + XML
-- Regression test for internal transport (with JSON in files)
 - Implement in-memory cache for local metadata storage with 128-bit b-tree
 - Implement in-memory cache for local metadata storage with 16-byte b-tree
 - Implement Redis transport

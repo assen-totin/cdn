@@ -178,6 +178,12 @@ ngx_int_t response_post_json(session_t *session, metadata_t *metadata, ngx_http_
 	bson_iter_t iter;
 	const char *bson_key;
 
+	// Some transports will not provide a response (like internal) - so skip
+	if (! session->auth_response) {
+		metadata->status = DEFAULT_HTTP_CODE;
+		return NGX_OK;
+	}
+
 	// Walk around the JSON which we received from the authentication server, session->auth_response
 	if (! bson_init_from_json(&doc, session->auth_response, strlen(session->auth_response), &error)) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse JSON (%s): %s", error.message, session->auth_response);

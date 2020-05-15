@@ -110,8 +110,7 @@ ngx_int_t request_get_xml(session_t *session, metadata_t *metadata, ngx_http_req
 	if ((ret = xmlTextWriterEndElement(writer)) < 0)
 		return error_xml(r, writer, buf, "xmlTextWriterEndElement");
 
-	session->auth_request = ngx_pcalloc(r->pool, strlen((const char *) buf->content) + 1);
-	if (session->auth_request == NULL) {
+	if ((session->auth_request = ngx_pcalloc(r->pool, strlen((const char *) buf->content) + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for XML auth request.", strlen((const char *) buf->content) + 1);
 		return NGX_ERROR;
 	}
@@ -128,8 +127,19 @@ ngx_int_t request_get_xml(session_t *session, metadata_t *metadata, ngx_http_req
  */
 ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int ret;
+	char *s1, *s2;
 	xmlTextWriterPtr writer;
 	xmlBufferPtr buf;
+
+	// Prepare chars for int values
+	if ((s1 = ngx_pcalloc(r->pool, 24)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for XML int conversion.", 24);
+		return NGX_ERROR;
+	}
+	if ((s2 = ngx_pcalloc(r->pool, 24)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for XML int conversion.", 24);
+		return NGX_ERROR;
+	}
 
 	// Init XML buffer
 	if ((buf = xmlBufferCreate()) == NULL) {
@@ -171,7 +181,8 @@ ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_re
 		return error_xml(r, writer, buf, "filename");
 
 	// Add length
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "length", (const xmlChar *) metadata->length)) < 0)
+	sprintf(s1, "%li", metadata->length);
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "length", (const xmlChar *) s1)) < 0)
 		return error_xml(r, writer, buf, "length");
 
 	// Add content_type
@@ -183,7 +194,8 @@ ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_re
 		return error_xml(r, writer, buf, "content_disposition");
 
 	// Add upload_date
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "upload_date", (const xmlChar *) metadata->upload_date)) < 0)
+	sprintf(s2, "%li", metadata->upload_date);
+	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "upload_date", (const xmlChar *) s2)) < 0)
 		return error_xml(r, writer, buf, "upload_date");
 
 	// Add etag
@@ -194,6 +206,8 @@ ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_re
 	if ((ret = xmlTextWriterEndElement(writer)) < 0)
 		return error_xml(r, writer, buf, "xmlTextWriterEndElement");
 
+	xmlFreeTextWriter(writer);
+
 	session->auth_request = ngx_pcalloc(r->pool, strlen((const char *) buf->content) + 1);
 	if (session->auth_request == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for XML auth request.", strlen((const char *) buf->content) + 1);
@@ -201,7 +215,6 @@ ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_re
 	}
 	strcpy(session->auth_request, (const char *) buf->content);
 
-	xmlFreeTextWriter(writer);
 	xmlBufferFree(buf);
 
 	return NGX_OK;
@@ -243,17 +256,17 @@ ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_re
 			}
 
 			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"content_type")) {
-				if ((ret = set_metadata_field(r, &metadata->filename, "content_type", (const char *) cur_node->children->content)) > 0)
+				if ((ret = set_metadata_field(r, &metadata->content_type, "content_type", (const char *) cur_node->children->content)) > 0)
 					return ret;
 			}
 
 			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"content_disposition")) {
-				if ((ret = set_metadata_field(r, &metadata->filename, "error", (const char *) cur_node->children->content)) > 0)
+				if ((ret = set_metadata_field(r, &metadata->content_disposition, "content_disposition", (const char *) cur_node->children->content)) > 0)
 					return ret;
 			}
 
 			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"etag")) {
-				if ((ret = set_metadata_field(r, &metadata->filename, "error", (const char *) cur_node->children->content)) > 0)
+				if ((ret = set_metadata_field(r, &metadata->etag, "etag", (const char *) cur_node->children->content)) > 0)
 					return ret;
 			}
 
@@ -287,6 +300,12 @@ ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_re
 ngx_int_t response_post_xml(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL, *cur_node = NULL;
+
+	// Some transports will not provide a response (like internal) - so skip
+	if (! session->auth_response) {
+		metadata->status = DEFAULT_HTTP_CODE;
+		return NGX_OK;
+	}
 
 	if ((doc = xmlReadMemory(session->auth_response, strlen(session->auth_response), "noname.xml", XML_ENCODING, 0)) == NULL) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse XML: %s", session->auth_response);

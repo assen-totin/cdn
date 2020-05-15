@@ -453,6 +453,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 	sprintf(metadata->file, "%016lx%016lx", hash[0], hash[1]);
 
+	// Obtain file path
+	if (get_path(session, metadata, r) > 0)
+		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+
 	// Try to find an authorisation token
 	if ((ret = get_auth_token(session, r)) > 0)
 		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -596,10 +600,6 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			curl_free(curl_content_disposition);
 		curl_easy_cleanup(session->curl);
 	}
-
-	// Obtain file path
-	if (get_path(session, metadata, r) > 0)
-		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
 	// Save file to CDN
 	if ((file_fd = open(metadata->path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
