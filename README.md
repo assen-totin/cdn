@@ -39,7 +39,7 @@ location /
 	cdn_all_cookies yes;                // Request "json", "xml": include all cookies in request to authentication service
 	cdn_all_headers yes;                // Request "json", "xml": include all HTTP headers in request to authentication service
 
-	cdn_transport_type unix;            // Type of transport for authorisation: "unix", "tcp", "http", "mysql", "oracle", "mongo"
+	cdn_transport_type unix;            // Type of transport for authorisation: "unix", "tcp", "http", "mysql", "oracle", "postgresql", "mongo", "internal"
 	cdn_unix_socket /path/to/unix.sock; // Transport "unix": path to the Unix socket of the authorisation service
 	cdn_tcp_host;                       // Transport "tcp": hostname of the authorisation service
 	cdn_tcp_port;                       // Transport "tcp": port of the authorisation service
