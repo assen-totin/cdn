@@ -11,12 +11,14 @@
 #include "request_mongo.h"
 #include "request_mysql.h"
 #include "request_oracle.h"
+#include "request_postgresql.h"
 #include "request_sql.h"
 #include "request_xml.h"
 #include "transport_http.h"
 #include "transport_mongo.h"
 #include "transport_mysql.h"
 #include "transport_oracle.h"
+#include "transport_postgresql.h"
 #include "transport_socket.h"
 #include "utils.h"
 
@@ -466,6 +468,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
+		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = request_get_xml(session, metadata, r);
 
@@ -481,6 +485,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = transport_mysql(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_oracle(session, r, METADATA_SELECT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL))
+		ret = transport_postgresql(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
 		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
@@ -513,6 +519,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = response_get_mysql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = response_get_oracle(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
+		ret = response_get_postgresql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_get_xml(session, metadata, r);
 
@@ -564,6 +572,12 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			session->sql_query = session->sql_query2;
 			ret = request_get_sql(session, metadata, r, METADATA_DELETE);
 			ret = transport_oracle(session, r, METADATA_DELETE);
+		}
+		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL)) {
+			// Switch query to DELETE one and rebuild it
+			session->sql_query = session->sql_query2;
+			ret = request_get_sql(session, metadata, r, METADATA_DELETE);
+			ret = transport_postgresql(session, r, METADATA_DELETE);
 		}
 
 		return NGX_HTTP_NO_CONTENT;

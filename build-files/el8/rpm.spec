@@ -23,11 +23,13 @@ BuildRequires: libbson-devel, libcurl-devel, libxml2-devel
 #BuildRequires: mongo-c-driver-devel
 #BuildRequires: mariadb-connector-c-devel
 #BuildRequires: ocilib-devel
+#BuildRequires: libpq-devel
 Requires: nginx, libcurl, libbson, libxml2
 #Requires: libjwt
 #Requires: mongo-c-driver
-#Requires: mariadb-connector-c-devel
+#Requires: mariadb-connector-c
 #Requires: ocilib
+#Requires: libpq
 
 %description
 CDN Nginx module

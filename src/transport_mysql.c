@@ -43,7 +43,6 @@ ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r, int mode) {
 	}
 
 	// Run the query
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, session->sql_query);
 	if (mysql_query(&conn, session->sql_query)) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to execute query %s: %s", session->sql_query, mysql_error(&conn));
 		return close_mysql(&conn, NGX_HTTP_INTERNAL_SERVER_ERROR);

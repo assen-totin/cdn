@@ -24,6 +24,10 @@ CMDL_JOB_NAME+=("--cdn-enable-mysql")
 CMDL_JOB_FLAG+=(0)
 CMDL_JOB_HELP+=("Link against libmysqlclient.so")
 
+CMDL_JOB_NAME+=("--cdn-enable-postgresql")
+CMDL_JOB_FLAG+=(0)
+CMDL_JOB_HELP+=("Link against libpq.so")
+
 CMDL_JOB_NAME+=("--cdn-enable-oracle")
 CMDL_JOB_FLAG+=(0)
 CMDL_JOB_HELP+=("Link against Oracle wrapper liboci.so")
@@ -72,6 +76,10 @@ if [ x$ARG_CND_ENABLE_MYSQL != 'x' ] ; then
 	EXTRA_LIBS="$EXTRA_LIBS -lmysqlclient"
 	EXTRA_INCLUDES="$EXTRA_INCLUDES -I /usr/include/mysql"
 	sed -i 's|^.*CDN_ENABLE_MYSQL.*$|#define CDN_ENABLE_MYSQL|' src/modules.h
+fi
+if [ x$ARG_CND_ENABLE_POSTGRESQL != 'x' ] ; then
+	EXTRA_LIBS="$EXTRA_LIBS -lpq"
+	sed -i 's|^.*CDN_ENABLE_POSTGRESQL.*$|#define CDN_ENABLE_POSTGRESQL|' src/modules.h
 fi
 if [ x$ARG_CND_ENABLE_ORACLE != 'x' ] ; then
 	export LD_LIBRARY_PATH=$ARG_CDN_ENABLE_ORACLE_HOME/lib
@@ -131,6 +139,16 @@ if [ x$ARG_CND_ENABLE_MYSQL != 'x' ] ; then
 	if [ x$EL_VERSION == 'x8' ] ; then
 		sed -i 's|^.*BuildRequires: mariadb-connector-c-devel.*$|BuildRequires: mariadb-connector-c-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 		sed -i 's|^.*Requires: mariadb-connector-c-devel.*$|Requires: mariadb-connector-c-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	fi
+fi
+if [ x$ARG_CND_ENABLE_POSTGRESQL != 'x' ] ; then
+	if [ x$EL_VERSION == 'x7' ] ; then
+		sed -i 's|^.*BuildRequires: postgresql-devel.*$|BuildRequires: postgresql-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+		sed -i 's|^.*Requires: postgresql.*$|Requires: postgresql|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	fi
+	if [ x$EL_VERSION == 'x8' ] ; then
+		sed -i 's|^.*BuildRequires: libpq-devel.*$|BuildRequires: libpq-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+		sed -i 's|^.*Requires: libpq.*$|Requires: libpq|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 	fi
 fi
 if [ x$ARG_CND_ENABLE_ORACLE != 'x' ] ; then

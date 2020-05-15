@@ -380,7 +380,13 @@ NB: HTTP is naturally slower than both Unix domain socket an TCP socket.
 
 This transport is only useful when request type is set to `mysql`.
 
-Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `host:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number.
+Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `hostname:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number.
+
+## PostgreSQL
+
+This transport is only useful when request type is set to `postgresql`.
+
+Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `postgresql://user:password@hostname:port/dbname`.
 
 ## Oracle
 
@@ -518,6 +524,13 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
 # TODO
 
-- Add support for PostgreSQL transport
-
+- Regression test for PostgreSQL transport
+- Regression test for Oracle transport
+- Regression test for Unix transport + JSON
+- Regression test for Unix transport + XML
+- Implement local metadata storage (with JSON in files)
+- Implement in-memory cache for local metadata storage with 128-bit b-tree
+- Implement in-memory cache for local metadata storage with 16-byte b-tree
+- Implement Redis transport
+- Regression test for Redis transport + JSON
 

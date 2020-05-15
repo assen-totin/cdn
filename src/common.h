@@ -43,6 +43,10 @@
 #include <ocilib.h>
 #endif
 
+#ifdef CDN_ENABLE_POSTGRESQL
+#include <libpq-fe.h>
+#endif
+
 // RHEL 7 or newer
 #if __GLIBC_MINOR__ == 17
 	#define RHEL7
@@ -112,6 +116,7 @@
 #define REQUEST_TYPE_MONGO "mongo"
 #define REQUEST_TYPE_MYSQL "mysql"
 #define REQUEST_TYPE_ORACLE "oracle"
+#define REQUEST_TYPE_POSTGRESQL "postgresql"
 #define REQUEST_TYPE_XML "xml"
 
 #define SOCKET_BUFFER_CHUNK 1500
@@ -122,6 +127,7 @@
 #define TRANSPORT_TYPE_MONGO "mongo"
 #define TRANSPORT_TYPE_MYSQL "mysql"
 #define TRANSPORT_TYPE_ORACLE "oracle"
+#define TRANSPORT_TYPE_POSTGRESQL "postgresql"
 #define TRANSPORT_TYPE_TCP "tcp"
 #define TRANSPORT_TYPE_UNIX "unix"
 
@@ -240,6 +246,10 @@ typedef struct {
     OCI_Connection *oracle_connection;
     OCI_Statement *oracle_statement;
 	OCI_Resultset *oracle_result;
+#endif
+#ifdef CDN_ENABLE_POSTGRESQL
+	PGconn *postgresql_connection;
+	PGresult *postgresql_result;
 #endif
 } session_t;
 

@@ -12,12 +12,14 @@
 #include "request_mongo.h"
 #include "request_mysql.h"
 #include "request_oracle.h"
+#include "request_postgresql.h"
 #include "request_sql.h"
 #include "request_xml.h"
 #include "transport_http.h"
 #include "transport_mongo.h"
 #include "transport_mysql.h"
 #include "transport_oracle.h"
+#include "transport_postgresql.h"
 #include "transport_socket.h"
 #include "utils.h"
 
@@ -529,6 +531,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = request_post_sql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = request_post_sql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
+		ret = request_post_sql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = request_post_xml(session, metadata, r);
 
@@ -544,6 +548,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = transport_mysql(session, r, METADATA_INSERT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_oracle(session, r, METADATA_INSERT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL))
+		ret = transport_postgresql(session, r, METADATA_INSERT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
 		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
@@ -569,6 +575,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = NGX_OK;
 	}
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE)) {
+		metadata->status = NGX_HTTP_OK;
+		ret = NGX_OK;
+	}
+	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL)) {
 		metadata->status = NGX_HTTP_OK;
 		ret = NGX_OK;
 	}

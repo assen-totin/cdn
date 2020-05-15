@@ -8,7 +8,7 @@
 #include "utils.h"
 
 /**
- * Process MySQL response
+ * Process MySQL response GET
  */
 ngx_int_t response_get_mysql(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_MYSQL
