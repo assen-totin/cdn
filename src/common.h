@@ -47,6 +47,10 @@
 #include <libpq-fe.h>
 #endif
 
+#ifdef CDN_ENABLE_REDIS
+#include <hiredis/hiredis.h>
+#endif
+
 // RHEL 7 or newer
 #if __GLIBC_MINOR__ == 17
 	#define RHEL7
@@ -129,6 +133,7 @@
 #define TRANSPORT_TYPE_MYSQL "mysql"
 #define TRANSPORT_TYPE_ORACLE "oracle"
 #define TRANSPORT_TYPE_POSTGRESQL "postgresql"
+#define TRANSPORT_TYPE_REDIS "redis"
 #define TRANSPORT_TYPE_TCP "tcp"
 #define TRANSPORT_TYPE_UNIX "unix"
 

@@ -72,8 +72,6 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		// NULL-terminate what we just read
 		session->auth_response[statbuf.st_size] = '\0';
 
-ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "RESP: %s", session->auth_response);
-
 		close(file_fd);
 	}
 

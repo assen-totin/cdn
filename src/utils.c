@@ -296,7 +296,7 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r) {
 	session->dsn->db = NULL;
 
 	// host:port|socket:user:password:db
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing MySQL DSN: %s", session->db_dsn);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing DSN: %s", session->db_dsn);
 	for (str = session->db_dsn, i = 0; ; str = NULL, i++) {
 		token = strtok_r(str, ":", &saveptr);
 		if (token == NULL)

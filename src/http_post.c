@@ -546,6 +546,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = transport_oracle(session, r, METADATA_INSERT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL))
 		ret = transport_postgresql(session, r, METADATA_INSERT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_REDIS))
+		ret = transport_redis(session, metadata, r, METADATA_INSERT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
 		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))

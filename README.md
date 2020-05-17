@@ -10,7 +10,7 @@ The business logic for authorisation consists of three main elements:
 
 - Authorisation method: we support JWT, session ID  and transparent (completely offloaded)
 - Request type: specifies the format of the request that will be sent to the external authorisation body; we support SQL, JSON, XML and Mongo.
-- Transport type: specifies how to connect to the external authorisation body; we support MySQL, Oracle, Mongo, HTTP, TCP and Unix domain socket.
+- Transport type: specifies how to connect to the external authorisation body; we support MySQL, PostgreSQL, Oracle, Mongo, Redis, Internal, HTTP, TCP and Unix domain socket.
 
 # Initialise
 
@@ -39,12 +39,12 @@ location /
 	cdn_all_cookies yes;                // Request "json", "xml": include all cookies in request to authentication service
 	cdn_all_headers yes;                // Request "json", "xml": include all HTTP headers in request to authentication service
 
-	cdn_transport_type unix;            // Type of transport for authorisation: "unix", "tcp", "http", "mysql", "oracle", "postgresql", "mongo", "internal"
+	cdn_transport_type unix;            // Type of transport for auth: "unix", "tcp", "http", "mysql", "oracle", "postgresql", "mongo", "redis",  "internal"
 	cdn_unix_socket /path/to/unix.sock; // Transport "unix": path to the Unix socket of the authorisation service
 	cdn_tcp_host;                       // Transport "tcp": hostname of the authorisation service
 	cdn_tcp_port;                       // Transport "tcp": port of the authorisation service
 	cdn_http_url;                       // Transport "http": URL of the authorisation service
-	cdn_db_dsn dsn-or-url               // Transport "mysql", "oracle", "mongo": DSN of the database service (see docs for db-specific format)
+	cdn_db_dsn dsn-or-url               // Transport "mysql", "oracle", "mongo", "redis": DSN of the database service (see below for db-specific format)
 	cdn_sql_insert                      // Transport "mysql", "oracle": SQL query to execute when uploading a file (with placeholders)
 	cdn_sql_select                      // Transport "mysql", "oracle": SQL query to execute when fetching a file (with placeholders)
 	cdn_sql_delete                      // Transport "mysql", "oracle": SQL query to execute when deleting a file (with placeholders)
@@ -392,7 +392,7 @@ Set the DSN in the configuration option `cnd_db_dsn` using the following syntax:
 
 This transport is only useful when request type is set to `oracle`.
 
-Set the DSN in the configuration option `cnd_db_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service` fields `port` and `database` are ignored.
+Set the DSN in the configuration option `cnd_db_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service`; fields `port` and `database` are ignored.
 
 You'll need to manually install Oracle Instant Client library; make sure you have a version which knows how to talk to your Oracle server.
 
@@ -403,6 +403,14 @@ You'll also need the OCI library from https://github.com/vrogier/ocilib. In orde
 Only useful when request type is set to `mongo`.
 
 Set the database connection string in the configuration option `cnd_db_dsn` using the standard MongoDB driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
+
+## Redis
+
+This transport is usually used when request type is `json` (JSON file format, preferred) or `xml` (XML file format).
+
+The metadata will be saved into a Redis instance as either JSON (preferred as it is faster) or XML.
+
+Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `hostname:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number; fields `username`, `password` and `database` are ignored.
 
 ## Internal
 
@@ -532,11 +540,7 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
 # TODO
 
+- Regression test for TCP transport
 - Regression test for Oracle transport
-- Regression test for Unix transport + JSON
-- Regression test for Unix transport + XML
-- Implement in-memory cache for local metadata storage with 128-bit b-tree
-- Implement in-memory cache for local metadata storage with 16-byte b-tree
-- Implement Redis transport
-- Regression test for Redis transport + JSON
+- Implement in-memory cache for local metadata storage (with 128-bit b-tree or 16-byte b-tree)
 

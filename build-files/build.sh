@@ -28,6 +28,10 @@ CMDL_JOB_NAME+=("--cdn-enable-postgresql")
 CMDL_JOB_FLAG+=(0)
 CMDL_JOB_HELP+=("Link against libpq.so")
 
+CMDL_JOB_NAME+=("--cdn-enable-redis")
+CMDL_JOB_FLAG+=(0)
+CMDL_JOB_HELP+=("Link against libhiredis.so")
+
 CMDL_JOB_NAME+=("--cdn-enable-oracle")
 CMDL_JOB_FLAG+=(0)
 CMDL_JOB_HELP+=("Link against Oracle wrapper liboci.so")
@@ -85,6 +89,11 @@ if [ x$ARG_CND_ENABLE_ORACLE != 'x' ] ; then
 	export LD_LIBRARY_PATH=$ARG_CDN_ENABLE_ORACLE_HOME/lib
 	EXTRA_LIBS="$EXTRA_LIBS -locilib"
 	sed -i 's|^.*CDN_ENABLE_ORACLE.*$|#define CDN_ENABLE_ORACLE|' src/modules.h
+fi
+if [ x$ARG_CND_ENABLE_REDIS != 'x' ] ; then
+	EXTRA_INCLUDES="$EXTRA_INCLUDES -I /usr/include/hiredis"
+	EXTRA_LIBS="$EXTRA_LIBS -lhiredis"
+	sed -i 's|^.*CDN_ENABLE_REDIS.*$|#define CDN_ENABLE_REDIS|' src/modules.h
 fi
 
 # Download the Nginx source
@@ -154,6 +163,10 @@ fi
 if [ x$ARG_CND_ENABLE_ORACLE != 'x' ] ; then
 	sed -i 's|^.*ocilib-devel.*$|BuildRequires: ocilib-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 	sed -i 's|^.*ocilib$|Requires: ocilib|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+fi
+if [ x$ARG_CND_ENABLE_REDIS != 'x' ] ; then
+	sed -i 's|^.*hiredis-devel.*$|BuildRequires: hiredis-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	sed -i 's|^.*Requires: hiredis.$|Requires: hiredis|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 fi
 
 # Build the RPM and SRPM

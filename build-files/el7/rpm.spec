@@ -24,12 +24,14 @@ BuildRequires: libbson-devel, libcurl-devel, libxml2-devel
 #BuildRequires: mariadb-devel
 #BuildRequires: ocilib-devel
 #BuildRequires: postgresql-devel
+#BuildRequires: hiredis-devel
 Requires: nginx, libcurl, libbson, libxml2
 #Requires: libjwt
 #Requires: mongo-c-driver
 #Requires: mariadb-libs
 #Requires: ocilib
 #Requires: postgresql
+#Requires: hiredis
 
 %description
 CDN Nginx module

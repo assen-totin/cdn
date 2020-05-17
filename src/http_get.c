@@ -477,6 +477,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = transport_oracle(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL))
 		ret = transport_postgresql(session, r, METADATA_SELECT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_REDIS))
+		ret = transport_redis(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
 		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
@@ -514,15 +516,15 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_get_xml(session, metadata, r);
 
-	// For Internal transport (which uses JSON or XML), validate permission
-	if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) {
+	// For Internal and Redis transport (which uses JSON or XML), validate permission
+	if ((! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) || (! strcmp(session->transport_type, TRANSPORT_TYPE_REDIS))){
 		if (strcmp(session->auth_value, metadata->auth_value))
 			return NGX_HTTP_FORBIDDEN;
 	}
 
-	// Clean up auth reponse unless using internal transport
+	// Clean up auth reponse unless using transport Internal or Redis
 	if (session->auth_response) {
-		if (strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL))
+		if ((strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) && (strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)))
 			free(session->auth_response);
 	}
 
@@ -555,7 +557,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		// Delete metadata (only for MongoDB and SQL)
 		// NB: we ignore errors here
 		if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) {
-			// NB: Our MongoDB request was already prepared above for the AUTH step
+			// NB: Our JSON/XML request was already prepared above for the AUTH step
 			ret = transport_internal(session, metadata, r, METADATA_DELETE);
 		}
 		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO)) {
@@ -582,6 +584,11 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			ret = request_get_sql(session, metadata, r, METADATA_DELETE);
 			ret = transport_postgresql(session, r, METADATA_DELETE);
 		}
+		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)) {
+			// NB: Our JSON/XML request was already prepared above for the AUTH step
+			ret = transport_redis(session, metadata, r, METADATA_DELETE);
+		}
+
 
 		return NGX_HTTP_NO_CONTENT;
 	}

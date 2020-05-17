@@ -1,0 +1,95 @@
+/**
+ * Nginx CDN module
+ *
+ * @author: Assen Totin assen.totin@gmail.com
+ */
+
+#include "common.h"
+#include "utils.h"
+
+/**
+ * File metadata from redis
+ */
+ngx_int_t transport_redis(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode) {
+#ifdef CDN_ENABLE_REDIS
+	redisContext *context;
+	redisReply *reply;
+	ngx_int_t ret;
+	struct timeval timeout = {5, 0}; 
+
+	// Parse DNS
+	if ((ret = parse_dsn(session, r)) > 0)
+		return ret;
+
+	// Connect Redis w/ 5 sec timeout
+	if (session->dsn->socket) {
+		// Connect via Unix socket
+		if ((context = redisConnectUnixWithTimeout(session->dsn->socket, timeout)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unable to create Redis context.");
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+	}
+	else {
+		if ((context = redisConnectWithTimeout(session->dsn->host, session->dsn->port, timeout)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unable to create Redis context.");
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+	}
+
+	if (context->err) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Error connecting to Redis: %s", context->errstr);
+		redisFree(context);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Save, delete or read metadata
+	if (mode == METADATA_INSERT) {
+		// Save metadata to Redis
+		if ((reply = redisCommand(context, "SET %s %s", metadata->file, session->auth_request)) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Redis transport: failed to write metadata %s for file %s: %s", session->auth_request, metadata->file, context->errstr);
+			freeReplyObject(reply);
+			redisFree(context);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		redisFree(context);
+	}
+
+	else if (mode == METADATA_DELETE) {
+		// Delete metadata to Redis
+		if ((reply = redisCommand(context, "DEL %s", metadata->file)) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Redis transport: failed to delete metadata for file %s: %s", metadata->file, context->errstr);
+			freeReplyObject(reply);
+			redisFree(context);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		redisFree(context);
+	}
+
+	else {
+		// Read metadata
+		if ((reply = redisCommand(context, "GET %s", metadata->file)) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Redis transport: failed to delete metadata for file %s: %s", metadata->file, context->errstr);
+			freeReplyObject(reply);
+			redisFree(context);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		// Prepare buffer to read the file
+		if ((session->auth_response = ngx_pcalloc(r->pool, strlen(reply->str) + 1)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(reply->str) + 1);
+			freeReplyObject(reply);
+			redisFree(context);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		strcpy(session->auth_response, reply->str);
+
+		redisFree(context);
+	}
+#endif
+
+	return NGX_OK;
+}
+
