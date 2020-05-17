@@ -12,6 +12,10 @@ CMDL_JOB_NAME+=("--nginx-version")
 CMDL_JOB_FLAG+=(1)
 CMDL_JOB_HELP+=("The version of Nginx to build for")
 
+CMDL_JOB_NAME+=("--rpm-package")
+CMDL_JOB_FLAG+=(1)
+CMDL_JOB_HELP+=("The name of the RPM package to produce")
+
 CMDL_JOB_NAME+=("--cdn-enable-jwt")
 CMDL_JOB_FLAG+=(0)
 CMDL_JOB_HELP+=("Link against libjwt.so")
