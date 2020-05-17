@@ -44,10 +44,6 @@ CMDL_JOB_NAME+=("--cdn-oracle-home")
 CMDL_JOB_FLAG+=(1)
 CMDL_JOB_HELP+=("ORACLE_HOME directory")
 
-# Package-specific constants
-RPM_PACKAGE="nginx-cdn"
-[ x$ARG_RPM_PACKAGE != 'x' ] && RPM_PACKAGE=$ARG_RPM_PACKAGE
-
 # Find build-common.sh and source it
 CURR_DIR=`pwd`
 PROJECT_DIR=`dirname $CURR_DIR`
@@ -61,6 +57,10 @@ fi
 
 # Call the common entry point
 build_common $@
+
+# Package-specific constants
+RPM_PACKAGE="nginx-cdn"
+[ x$ARG_RPM_PACKAGE != 'x' ] && RPM_PACKAGE=$ARG_RPM_PACKAGE
 
 # Check out proper version
 git_checkout
