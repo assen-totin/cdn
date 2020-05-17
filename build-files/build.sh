@@ -171,6 +171,7 @@ if [ x$ARG_CDN_ENABLE_REDIS != 'x' ] ; then
 fi
 
 # Build the RPM and SRPM
+set_rpm_version
 RPMBUILD_ARGS=("_cdn_name $RPM_PACKAGE" "_cdn_version $ARG_RPM_VERSION" "_cdn_release $RPM_RELEASE")
 build_rpms
 
