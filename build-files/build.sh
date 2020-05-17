@@ -41,7 +41,7 @@ CMDL_JOB_FLAG+=(1)
 CMDL_JOB_HELP+=("ORACLE_HOME directory")
 
 # Package-specific constants
-RPM_PACKAGE="curaden-medicloud-cdn-nginx"
+RPM_PACKAGE="curaden-cdn"
 
 # Find build-common.sh and source it
 CURR_DIR=`pwd`
