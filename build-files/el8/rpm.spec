@@ -6,7 +6,7 @@
 %{!?_cdn_release:%define _cdn_release 0}
 
 Summary: CDN Nginx module
-Name: cdn-nginx
+Name: %{_cdn_name}
 Version: %{_cdn_version}
 %if "%{?dist:%{dist}}%{!?dist:0}" == ".rel"
 Release: %{_cdn_release}%{?dist}.el%{rhel}
