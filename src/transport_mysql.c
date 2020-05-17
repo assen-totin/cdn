@@ -10,8 +10,9 @@
 /**
  * Helper: MySQL error handler
  */
-static ngx_int_t close_mysql(MYSQL *conn, ngx_int_t ret) {
+static ngx_int_t close_mysql(void *con, ngx_int_t ret) {
 #ifdef CDN_ENABLE_MYSQL
+	MYSQL *conn = (MYSQL *) con;
 	mysql_close(conn);
 	mysql_thread_end();
 #endif
