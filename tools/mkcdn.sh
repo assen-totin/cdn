@@ -5,6 +5,8 @@
 DIRS="0 1 2 3 4 5 6 7 8 9 a b c d e f"
 DEFAULT_DEPTH=4
 DEFAULT_ROOT="/opt/cdn"
+DEFAULT_USER=root
+DEFAULT_GROUP=root
 
 # Make directories at current level
 make_dirs() {
@@ -33,10 +35,18 @@ while [ "$1" != "" ]; do
 			shift
 			ARG_ROOT=$1
 			;;
+		--user )   
+			shift
+			ARG_USER=$1
+			;;
+		--group )   
+			shift
+			ARG_GROUP=$1
+			;;
 		* )   
 			echo "Unknown argument $1."
-			echo "Usage: $0 [--depth N] [--root /some/path]"
-			echo "Default values: depth $DEFAULT_DEPTH, root $DEFAULT_ROOT"
+			echo "Usage: $0 [--depth N] [--root /some/path] [--user some_username] [--group some_groupname]"
+			echo "Default values: depth $DEFAULT_DEPTH, root $DEFAULT_ROOT, user root, group root"
 			exit 1
 			;;
 	esac
@@ -46,6 +56,8 @@ done
 
 [ x$ARG_DEPTH == 'x' ] && ARG_DEPTH=$DEFAULT_DEPTH
 [ x$ARG_ROOT == 'x' ] && ARG_ROOT=$DEFAULT_ROOT
+[ x$ARG_USER == 'x' ] && ARG_USER=$DEFAULT_ROOT
+[ x$ARG_GROUP == 'x' ] && ARG_GROUP=$DEFAULT_GROUP
 
 mkdir -p $ARG_ROOT
 pushd $ARG_ROOT
@@ -54,7 +66,9 @@ echo "Building CDN tree in $ARG_ROOT with depth of $ARG_DEPTH. Please, wait - th
 
 make_dirs 0
 
-echo "Done."
-
 popd
+
+chown -R $ARG_USER:$ARG_GROUP $ARG_ROOT
+
+echo "Done."
 
