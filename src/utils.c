@@ -385,8 +385,6 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
-#endif
-#ifdef CDN_ENABLE_MYSQL
 	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
 #endif
 

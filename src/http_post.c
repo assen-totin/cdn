@@ -472,6 +472,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
+	// Apply filter to auth_value, if any
+	if ((ret = filter_auth_value(session, r)) > 0)
+		return upload_cleanup(r, rb, rb_malloc, ret);
+
 	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
 		if (curl_filename)
@@ -516,10 +520,6 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file;
-
-	// Apply filter to auth_value, if any
-	if ((ret = filter_auth_value(session, r)) > 0)
-		return upload_cleanup(r, rb, rb_malloc, ret);
 
 	// Prepare metadata request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))

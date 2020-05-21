@@ -9,25 +9,25 @@
 /**
  * Filter: tokenise by char and return particular token
  */
-char *filter_token(ngx_http_request_t *r, char *string, char *delimiter, int pos) {
+char *filter_token(ngx_http_request_t *r, char *string, char *delimiter, int position) {
 	int i;
 	char *ret, *prev, *next;
 
 	if (! string)
 		return NULL;
 
-	if (! delimiter || ! pos)
+	if (! delimiter || ! position)
 		return string;
 
 	prev = string;
 	next = string + strlen(string);
-	for (i=0; i < pos; i++) {
+	for (i=0; i < position; i++) {
 		if (i > 0)
 			prev = next + 1;
 		next = strstr(prev, delimiter);
 		if (! next) {
 			// If last loop, go to last char of string; else return "not found"
-			if (i == (pos - 1))
+			if (i == (position - 1))
 				next = string + strlen(string);
 			else
 				return NULL;
@@ -66,10 +66,10 @@ ngx_int_t filter_auth_value(session_t *session, ngx_http_request_t *r) {
 	if (! strcmp(filter_name, "filter_token")) {
 		// Extract the delimiter and position
 		char *delimiter = filter_token(r, session->auth_filter, ",", 2);
-		int pos = atoi(filter_token(r, session->auth_filter, ",", 3));
+		int position = atoi(filter_token(r, session->auth_filter, ",", 3));
 
 		// Apply filter
-		session->auth_value = filter_token(r, session->auth_value, delimiter, pos);
+		session->auth_value = filter_token(r, session->auth_value, delimiter, position);
 	}
 	else {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unknown filter specified: %s", filter_name);
