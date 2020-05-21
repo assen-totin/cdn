@@ -91,6 +91,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->auth_cookie, parent->auth_cookie, DEFAULT_AUTH_COOKIE);
 	ngx_conf_merge_str_value(child->auth_header, parent->auth_header, DEFAULT_AUTH_HEADER);
 	ngx_conf_merge_str_value(child->auth_type, parent->auth_type, DEFAULT_AUTH_METOD);
+	ngx_conf_merge_str_value(child->auth_filter, parent->auth_filter, DEFAULT_AUTH_FILTER);
 	ngx_conf_merge_str_value(child->jwt_key, parent->jwt_key, DEFAULT_JWT_KEY);
 	ngx_conf_merge_str_value(child->jwt_field, parent->jwt_field, DEFAULT_JWT_FIELD);
 	ngx_conf_merge_str_value(child->all_headers, parent->all_headers, DEFAULT_ALL_HEADERS);

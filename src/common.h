@@ -73,6 +73,7 @@
 #define DEFAULT_ALL_HEADERS "no"
 #define DEFAULT_AUTH_HEADER "none"
 #define DEFAULT_AUTH_COOKIE "none"
+#define DEFAULT_AUTH_FILTER "none"
 #define DEFAULT_AUTH_METOD "none"
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
 #define DEFAULT_CONTENT_DISPOSITION "none"
@@ -154,6 +155,7 @@ typedef struct {
 	ngx_str_t auth_cookie;
 	ngx_str_t auth_header;
 	ngx_str_t auth_type;
+	ngx_str_t auth_filter;
 	ngx_str_t jwt_key;
 	ngx_str_t jwt_field;
 	ngx_str_t all_cookies;
@@ -221,6 +223,7 @@ typedef struct {
 	char *auth_type;
 	char *auth_token;
 	char *auth_value;
+	char *auth_filter;
 	char *auth_request;
 	char *auth_response;
 	int auth_response_len;

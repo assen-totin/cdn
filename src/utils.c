@@ -368,10 +368,9 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->auth_type = from_ngx_str(r->pool, cdn_loc_conf->auth_type);
 	session->auth_token = NULL;
 	session->auth_value = NULL;
+	session->auth_filter = from_ngx_str(r->pool, cdn_loc_conf->auth_filter);
 	session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
 	session->dsn = NULL;
-	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
-	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
 	session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
 	session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
 	session->tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
@@ -384,6 +383,12 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->jwt_json = NULL;
 	session->http_method = ngx_pcalloc(r->pool, 8);
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
+#ifdef CDN_ENABLE_MONGO
+	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
+#endif
+#ifdef CDN_ENABLE_MYSQL
+	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
+#endif
 
 	// Set options for GET, HEAD and DELETE
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {

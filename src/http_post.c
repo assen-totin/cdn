@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "auth.h"
+#include "filter.h"
 #include "murmur3.h"
 #include "request.h"
 #include "transport.h"
@@ -515,6 +516,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file;
+
+	// Apply filter to auth_value, if any
+	if ((ret = filter_auth_value(session, r)) > 0)
+		return upload_cleanup(r, rb, rb_malloc, ret);
 
 	// Prepare metadata request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))

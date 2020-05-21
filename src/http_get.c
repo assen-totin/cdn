@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "auth.h"
+#include "filter.h"
 #include "request.h"
 #include "transport.h"
 #include "utils.h"
@@ -446,6 +447,12 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		if ((ret = auth_session(session, r)) > 0)
 			return ret;
 	}
+
+	// Apply filter to auth_value, if any; if auth_value was request, but is empty after the filter, deny request
+	if ((ret = filter_auth_value(session, r)) > 0)
+		return ret;
+	if (session->auth_type && ! session->auth_value)
+		return NGX_HTTP_FORBIDDEN;
 
 	// Prepare request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))

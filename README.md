@@ -32,6 +32,7 @@ location /
 	cdn_auth_type;                      // Type of authorisation to use: "jwt", "session" (optional)
 	cdn_auth_cookie my_cookie;          // Cookie where to find the authorisation token (optional)
 	cdn_auth_header X-Custom-Auth;      // HTTP header where to find the authorisation token (optional)
+	cdn_auth_filter filter_token,-,1;   // Name of the filter and it sparameters to apply to authorisation value (optional)
 	cdn_jwt_key 0123456789ABCDEF;       // Authorisation "jwt": JWT key authorisation token
 	cdn_jwt_field user_id;              // Authorisation "jwt": Name of the JWT payload field which contains the authorisation value
 
@@ -116,6 +117,14 @@ This method allows you to send some extra info to the authorisation body. This e
 This method will automatically include in the request the authorisation value if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
 
 This method may be used with some complex request types like JSON or XML. It is not applicable for SQL request type.
+
+## Authorisation value filters
+
+If the authorisation value needs processing, you may configure a build-in filter to be applied to it. The name of the filter and its parameters are given as comma-separated list in the `cdn_auth_filter` configuration parameter.
+
+The following filters are currently defined:
+
+- filter_token: splits the authorisation value by a one-byte delimiter and returns the N-th token. First parameter is the delimiter, second parameter is which token to return (first is counted as 1, second as 2 etc.). If delimiter is not found, the authorisation value is retained as-is. If the delimiter is found, but not as many time as requested in token count, the authorisation value is reset to NULL, which will deny the request.
 
 # Request types
 
@@ -540,6 +549,7 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
 # TODO
 
+- Regression test for filter_token
 - Regression test for TCP transport
 - Regression test for Oracle transport
 - Implement in-memory cache for local metadata storage (with 128-bit b-tree or 16-byte b-tree)
