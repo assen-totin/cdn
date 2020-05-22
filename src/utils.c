@@ -401,7 +401,7 @@ session_t *init_session(ngx_http_request_t *r) {
 		fstat(fd, &statbuf);
 
 		if ((jwt_key = ngx_pcalloc(r->pool, statbuf.st_size + 1)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", sizeof(db_dsn_t));
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", statbuf.st_size + 1);
 			return NULL;
 		}
 
