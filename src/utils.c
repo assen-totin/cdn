@@ -282,7 +282,7 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r) {
 		return NGX_OK;
 
 	if ((session->dsn = ngx_pcalloc(r->pool, sizeof(db_dsn_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for dsn->", sizeof(db_dsn_t));
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for dsn", sizeof(db_dsn_t));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -341,6 +341,9 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r) {
 session_t *init_session(ngx_http_request_t *r) {
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	session_t *session;
+	int fd;
+	char *jwt_key;
+	struct stat statbuf;
 
 	// Init session
 	if ((session = ngx_pcalloc(r->pool, sizeof(session_t))) == NULL) {
@@ -387,6 +390,33 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
 	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
 #endif
+
+	// Check if we need to load the JWT key from file (i.e. key starts with a "/", so it is a path)
+	if (strstr(session->jwt_key, "/") == session->jwt_key) {
+		if ((fd = open(session->jwt_key, O_RDONLY)) < 0) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to open JWT key file %s: %s", session->jwt_key, strerror(errno));
+			return NULL;
+		}
+
+		fstat(fd, &statbuf);
+
+		if ((jwt_key = ngx_pcalloc(r->pool, statbuf.st_size + 1)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", sizeof(db_dsn_t));
+			return NULL;
+		}
+
+		if (read(fd, jwt_key, statbuf.st_size) < statbuf.st_size) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to read %l bytes from JWT key file %s: %s", statbuf.st_size, session->jwt_key, strerror(errno));
+			return NULL;
+		}
+
+		if (close(fd) < 0)
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to close JWT key file %s: %s", session->jwt_key, strerror(errno));
+
+		jwt_key[statbuf.st_size] = '\0';
+
+		session->jwt_key = jwt_key;
+	}
 
 	// Set options for GET, HEAD and DELETE
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {

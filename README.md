@@ -33,7 +33,7 @@ location /
 	cdn_auth_cookie my_cookie;          // Cookie where to find the authorisation token (optional)
 	cdn_auth_header X-Custom-Auth;      // HTTP header where to find the authorisation token (optional)
 	cdn_auth_filter filter_token,-,1;   // Name of the filter and it sparameters to apply to authorisation value (optional)
-	cdn_jwt_key 0123456789ABCDEF;       // Authorisation "jwt": JWT key authorisation token
+	cdn_jwt_key 0123456789ABCDEF;       // Authorisation "jwt": JWT key or absolute path to a file with the key
 	cdn_jwt_field user_id;              // Authorisation "jwt": Name of the JWT payload field which contains the authorisation value
 
 	cdn_request_type json;              // Type of authorisation request to perform: "json", "xml", "mysql", "oracle", "mongo"
@@ -94,7 +94,7 @@ In this case the authorisation token is a JWT, which is extracted and validated 
 
 To use this method, set the configuration option `cdn_auth_type` to `jwt`.
 
-Also, set the JWT signature verification key in configuration option `cdn_jwt_key`.
+Also, set the JWT signature verification key in configuration option `cdn_jwt_key`; you may also set the full path to the file that has the key instead.
 
 Finally, specify the JWT payload field to use for authorisation in configuration option `cdn_jwt_field`.
 
