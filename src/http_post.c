@@ -460,16 +460,16 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// Try to find an authorisation token
 	if ((ret = get_auth_token(session, r)) > 0)
-		return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return upload_cleanup(r, rb, rb_malloc, ret);
 
 	// Extract authentication token to value
 	if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
 		if ((ret = auth_jwt(session, r)) > 0)
-			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			return upload_cleanup(r, rb, rb_malloc, ret);
 	}
 	else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
 		if ((ret = auth_session(session, r)) > 0)
-			return upload_cleanup(r, rb, rb_malloc, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			return upload_cleanup(r, rb, rb_malloc, ret);
 	}
 
 	// Apply filter to auth_value, if any
