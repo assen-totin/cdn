@@ -66,6 +66,8 @@ rm -rf $RPM_BUILD_ROOT $RPM_BUILD_DIR
 
 %post
 
+systemctl restart nginx
+
 %preun
 
 %postun
