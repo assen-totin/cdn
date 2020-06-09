@@ -44,7 +44,7 @@ ngx_int_t response_get_oracle(session_t *session, metadata_t *metadata, ngx_http
 	if (session->oracle_statement)
 		OCI_StatementFree(session->oracle_statement);
 	if (session->oracle_connection)
-		OCI_API OCI_ConnectionFree(session->oracle_connection);
+		OCI_ConnectionFree(session->oracle_connection);
 #endif
 
 	return NGX_OK;

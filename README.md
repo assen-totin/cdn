@@ -403,9 +403,9 @@ This transport is only useful when request type is set to `oracle`.
 
 Set the DSN in the configuration option `cnd_db_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service`; fields `port` and `database` are ignored.
 
-You'll need to manually install Oracle Instant Client library; make sure you have a version which knows how to talk to your Oracle server.
+You'll need to manually install Oracle Instant Client library; make sure you have a version which knows how to talk to your Oracle server. You will likely need to export `LD_LIBARY_PATH` with the path to the client library directory.
 
-You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the ORACLE_HOME variable.
+You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the `ORACLE_HOME` variable. You also must whitelist this environment by adding `env ORACLE_HOME` to the top level of your Nginx configuration file.
 
 ## MongoDB
 
@@ -550,6 +550,5 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 # TODO
 
 - Regression test for TCP transport
-- Regression test for Oracle transport
 - Implement in-memory cache for local metadata storage (with 128-bit b-tree or 16-byte b-tree)
 

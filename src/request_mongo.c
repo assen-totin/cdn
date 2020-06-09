@@ -10,6 +10,7 @@
  * Prepare Mongo auth request for GET
  */
 ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+#ifdef CDN_ENABLE_MONGO
 	bson_t filter;
 
 	// Prepare filter for query
@@ -23,6 +24,7 @@ ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_r
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Using BSON filter: %s", session->auth_request);
 
 	bson_destroy(&filter);
+#endif
 
 	return NGX_OK;
 }
@@ -31,6 +33,7 @@ ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_r
  * Prepare Mongo auth request for POST
  */
 ngx_int_t request_post_mongo(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+#ifdef CDN_ENABLE_MONGO
 	bson_t doc;
 
 	// Prepare filter for query
@@ -50,6 +53,7 @@ ngx_int_t request_post_mongo(session_t *session, metadata_t *metadata, ngx_http_
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Using BSON doc: %s", session->auth_request);
 
 	bson_destroy(&doc);
+#endif
 
 	return NGX_OK;
 }
