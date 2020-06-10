@@ -549,6 +549,5 @@ cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
 # TODO
 
-- Regression test for TCP transport
 - Implement in-memory cache for local metadata storage (with 128-bit b-tree or 16-byte b-tree)
 
