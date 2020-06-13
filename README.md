@@ -1,6 +1,6 @@
 # Concept
 
-The module implements an optimised, custom delivery of authorised content (e.g., user files etc.). 
+The module implements an optimised, custom delivery of authorised content (e.g., user files etc.). Using it is as easy as making a `GET`, `POST` or `DELETE` HTTP request.
 
 The module performs all tasks needed to manage the content: upload, download and delete. You may still implement the uploads and deletions yourself if preferred (e.g. if a custom post-processing of uploaded files like thumbnail generation is required); the CDN may be put in read-only mode in this case.
 
@@ -168,7 +168,7 @@ NB: for complex queries, create a stored procedure and use stanza like `CALL my_
 
 Set the SQL SELECT query to run in the configuration option `cdn_sql_select`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
 
-The SQL query should return a single row with column names matching the keys in the JSON response above.
+The SQL query should return a single row with column names matching the keys described above if the request is authorised and no rows if request is declined.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
@@ -190,7 +190,7 @@ Because MongoDB does not allow for textual queries, both file metadata and autho
 
 ### Upload
 
-The CDN will create a document with the same properties as the JSON response above plus two extra: `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). 
+The CDN will create a document with the same properties as given, including `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). 
 
 ### Download
 
@@ -447,7 +447,7 @@ Set the database connection string in the configuration option `cnd_db_dsn` usin
 
 ## Uploads via CDN
 
-Files can be uploaded via the CDN itself. File upload uses HTTP POST request. Only one file can be uploaded per request.
+Files can be uploaded via the CDN itself. File upload uses HTTP POST request. Only one file can be uploaded per request. The file must be accompanied by an authorisation token as per the chosen configuration (e.g., signed JWT with proper authorisation value and `exp` claim in the `Bearer` field of the `Authorization` header).
 
 The following upload methods are available via CDN:
 
@@ -494,6 +494,10 @@ Test your authorisation query to make sure metadata is properly returned.
 ### Example
 
 The `examples` directory contains a sample file upload server in NodeJS.
+
+# File download
+
+To get a file from the CDN, issue a `GET` HTTP request to the CDN endpoint, followed by the file ID, e.g. `http://cdn.example.com/some-file-id`. The request must be accompanied by an authorisation token as per the chosen configuration (e.g., signed JWT with proper authorisation value and `exp` claim in the `Bearer` field of the `Authorization` header).
 
 # File deletion
 
