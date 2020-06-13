@@ -2,9 +2,9 @@
 
 The module implements an optimised, custom delivery of authorised content (e.g., user files etc.). 
 
-The module performs all tasks needed to manage the content: upload, download and delete. You may still implement the uploads and deletions yourself if preferred; the CDN may be put in read-only mode in this case.
+The module performs all tasks needed to manage the content: upload, download and delete. You may still implement the uploads and deletions yourself if preferred (e.g. if a custom post-processing of uploaded files like thumbnail generation is required); the CDN may be put in read-only mode in this case.
 
-Each file request for must be authorised before served. Authorisation is handled by an external body to which the module connects. 
+Each file request for must be authorised before served. Authorisation is handled by an external body to which the module connects. The authorisation body should return some file metadata for an approved download.
 
 The business logic for authorisation consists of three main elements:
 
@@ -18,63 +18,70 @@ To create a blank filesystem storage, use `tools/mkcdn.sh`.
 
 # Nginx configuration
 
-CDN URL for a file should be similar to `http://cdn.example.com/some-file-id`
+All below Nginx parameters should be configured for the chosen `location`: 
 
-```
-location /
-	cdn;                                // Enable CDN module (mandatory)
-	cdn_fs_root /usr/share/curaden/fs;  // Root directgory of CDN  (mandatory)
-	cdn_fs_depth 4;                     // CDN tree depth (mandatory)
-	cdn_server_id 1;                    // ID of the server instance, 1-48 (optional, default 1)
-	cdn_cors_origin host.example.com;   // Allowed CORS origin (optional, default *)
-	cdn_read_only no;                   // Read-only mode prohibits uploads and deletions; set "yes" to enable (optional, default "no")
+## General parameters
 
-	cdn_auth_type;                      // Type of authorisation to use: "jwt", "session" (optional)
-	cdn_auth_cookie my_cookie;          // Cookie where to find the authorisation token (optional)
-	cdn_auth_header X-Custom-Auth;      // HTTP header where to find the authorisation token (optional)
-	cdn_auth_filter filter_token,-,1;   // Name of the filter and it sparameters to apply to authorisation value (optional)
-	cdn_jwt_key 0123456789ABCDEF;       // Authorisation "jwt": JWT key or absolute path to a file with the key
-	cdn_jwt_field user_id;              // Authorisation "jwt": Name of the JWT payload field which contains the authorisation value
+- `cdn`: Enable CDN module (mandatory)
+- `cdn_fs_root /opt/cdn`: Root directory of the CDN filesystem (mandatory)
+- `cdn_fs_depth 4`: depth of the CDN tree (mandatory)
+- `cdn_server_id 1`: the ID of the server instance, integer between 1 and 48 (optional, default 1)
+- `cdn_cors_origin host.example.com`: Allowed CORS origin (optional, default *)
+- `cdn_read_only no`: Read-only mode prohibits uploads and deletions; set to `yes` to enable (optional, default "no")
 
-	cdn_request_type json;              // Type of authorisation request to perform: "json", "xml", "mysql", "oracle", "mongo"
-	cdn_all_cookies yes;                // Request "json", "xml": include all cookies in request to authentication service
-	cdn_all_headers yes;                // Request "json", "xml": include all HTTP headers in request to authentication service
+## Authorisation parameters
 
-	cdn_transport_type unix;            // Type of transport for auth: "unix", "tcp", "http", "mysql", "oracle", "postgresql", "mongo", "redis",  "internal"
-	cdn_unix_socket /path/to/unix.sock; // Transport "unix": path to the Unix socket of the authorisation service
-	cdn_tcp_host;                       // Transport "tcp": hostname of the authorisation service
-	cdn_tcp_port;                       // Transport "tcp": port of the authorisation service
-	cdn_http_url;                       // Transport "http": URL of the authorisation service
-	cdn_db_dsn dsn-or-url               // Transport "mysql", "oracle", "mongo", "redis": DSN of the database service (see below for db-specific format)
-	cdn_sql_insert                      // Transport "mysql", "oracle": SQL query to execute when uploading a file (with placeholders)
-	cdn_sql_select                      // Transport "mysql", "oracle": SQL query to execute when fetching a file (with placeholders)
-	cdn_sql_delete                      // Transport "mysql", "oracle": SQL query to execute when deleting a file (with placeholders)
-	cdn_mongo_collection                // Transport "mongo": name of the Mongo collection where the metadata is
-	cdn_mongo_db                        // Transport "mongo": name of the Mongo database where the metadata collection is
+- `cdn_auth_type jwt`: Type of authorisation to use: `jwt` or `session` (optional, default none)
+- `cdn_auth_cookie my_cookie`: Name of the cookie where to find the authorisation token (optional)
+- `cdn_auth_header X-Custom-Auth`; Name of the HTTP header where to find the authorisation token (optional)
+- `cdn_auth_filter filter_token,-,1`: Name of the filter and its parameters to apply to authorisation value (optional)
+- `cdn_jwt_key 0123456789ABCDEF`: Only for authorisation `jwt` - either the JWT key or absolute path to a file with the key
+- `cdn_jwt_field user_id`: Only for authorisation `jwt`: Name of the JWT payload field which contains the authorisation value
+- `cdn_request_type json`: Type of authorisation request to perform, one of `json`, `xml`, `mysql`, `postgresql`, `oracle`, `mongo`
+- `cdn_all_cookies yes`: Only for request type `json` or `xml`: include all cookies in request to authorisation service
+- `cdn_all_headers yes`: Only for request type `json` or `xml`: include all HTTP headers in request to authorisation service
 
-```
+## Transport parameters
+
+- `cdn_transport_type unix`: Type of transport for authorisation, one of `unix`, `tcp`, `http`, `mysql`, `oracle`, `postgresql`, `mongo`, `redis`, `internal`
+- `cdn_unix_socket /path/to/unix.sock`: Only for transport type `unix`: path to the Unix socket of the authorisation service
+- `cdn_tcp_host`: only for transport type `tcp`: hostname of the authorisation service
+- `cdn_tcp_port`: only for transport type `tcp`: port of the authorisation service
+- `cdn_http_url`: only for transport type `http`: URL of the authorisation service
+- `cdn_db_dsn dsn-or-url`: only for transport type `mysql`, `oracle`, `postgresql`, `mongo`, `redis`: DSN of the database service (format is DB-specific, see below)
+- `cdn_sql_insert`: only for transport type `mysql`, `oracle`, `postgresql`: SQL query to execute when uploading a file (with placeholders)
+- `cdn_sql_select`: only for transport type `mysql`, `oracle`, `postgresql`: SQL query to execute when fetching a file (with placeholders)
+- `cdn_sql_delete`: only for transport type `mysql`, `oracle`, `postgresql`: SQL query to execute when deleting a file (with placeholders)
+- `cdn_mongo_collection`: only for transport type `mongo`: name of the Mongo collection which stored the metadata
+- `cdn_mongo_db`: only for transport type `mongo`: name of the Mongo database with the metadata collection
 
 The following general-purpose Nginx params may be useful:
-`client_body_buffer_size`: sets the size above which a temp file will be used for uploads; default is 16k, you may want to increase it.
-`client_max_body_size`: sets the maximum size of a single POST request used for uploads to CDN (i.e. larger files will not be accepted for upload); default is 1m, you may want to increase it.
 
+- `client_body_buffer_size`: sets the size above which a temp file will be used for uploads; default is 16k, you may want to increase it.
+- `client_max_body_size`: sets the maximum size of a single POST request used for uploads to CDN (i.e. larger files will not be accepted for upload); default is 1m, you may want to increase it.
 
-## Server ID
+The CDN URL for a file will be similar to `http://cdn.example.com/some-file-id`
+
+## Additional notes
+
+### Server ID
 
 Configuration parameter `cdn_server_id` denotes the ID of the server when multiple CND servers write to the same filesystem tree. It is used to guarantee the uniqueness of the uploaded file. Only used when uploading files via CDN. Default is 1.
 
-## CORS
+### CORS
 
 For cross-origin resource sharing (CORS) you configure one allowed host in the `cdn_cors_origin` configuration parameter. The default value for it is "*" (allow any host).
 
 # Build configuration
 
-To enable/disable some of the features (mostly such that require external libraries to be compiled and run), edit src/modules.h and comment/uncomment the respective line:
+To enable/disable some of the features (mostly such that require external libraries to be compiled and run), edit src/modules.h and uncomment the respective line:
 
 - JWT support
 - Mongo support
 - MySQL support
 - Oracle support
+- PostgreSQL support
+- Redis support
 
 # Authorisation method
 
@@ -104,19 +111,20 @@ For JWT you'll need the JWT decoding library: https://github.com/benmcollins/lib
 
 ## Authorisation by session ID
 
-In this case the authorisation token is a session ID, which used as authorisation value. As the session ID has no digital signature nor expiration time, its validity should be verified by the authorisation body.
+In this case the authorisation token is a session ID, which used as authorisation value. As the session ID has no digital signature nor expiration time, its validity should be verified by the authorisation body; this means authorisation by session ID is only useful with transparent authorisation.
 
 To use this method, set the configuration option `cdn_auth_type` to `session`.
 
 ## Transparent authorisation
 
 This method allows you to send some extra info to the authorisation body. This extra info may be:
+
 - All HTTP headers, if configuration option `cdn_all_headers` is set to `yes`.
 - All cookies, if configuration option `cdn_all_cookies` is set to `yes`.
 
 This method will automatically include in the request the authorisation value if configuration option `cdn_auth_type` is set to either `jwt` or `session`.
 
-This method may be used with some complex request types like JSON or XML. It is not applicable for SQL request type.
+This method may be used with some complex request types like `json` or `xml`. It is not applicable for SQL or Mongo request type.
 
 ## Authorisation value filters
 
@@ -124,9 +132,25 @@ If the authorisation value needs processing, you may configure a build-in filter
 
 The following filters are currently defined:
 
-- filter_token: splits the authorisation value by a one-byte delimiter and returns the N-th token. First parameter is the delimiter, second parameter is which token to return (first is counted as 1, second as 2 etc.). If delimiter is not found, the authorisation value is retained as-is. If the delimiter is found, but not as many time as requested in token count, the authorisation value is reset to NULL, which will deny the request.
+- `filter_token`: splits the authorisation value by a single-byte delimiter and returns the N-th token. First parameter is the delimiter, second parameter is which token to return (first is counted as 1, second as 2 etc.). If delimiter is not found, the authorisation value is retained as-is. If the delimiter is found, but not as many time as requested in token count, the authorisation value is reset to NULL, which will deny the request.
 
 # Request types
+
+## Common parameters
+
+The following parameter names are used throughout this document (both for requests and responses):
+
+- `http_method`: string, the name of the HTTP method used like `POST`, `GET`, `DELETE`. Uses capital letters.
+- `auth_value`: string, the authentication value (e.g., user ID) extracted from the authorisation token, if any
+- `file_id`: string, the ID for the file that is being uploaded, downloaded or deleted
+- `filename`: string, the original filename; default is `file`
+- `content_type`: string, content type for the file; default is `application/octet-stream`
+- `content_disposition"`: string, content disposition; if set to `attachment`, the file will be served as attachment; default is to serve inline.
+- `etag`: string, the Rtag for the file; default is `00000000000000000000000000000000`
+- `length`: int, the length of the file in bytes; default is to call `stat()` on the file
+- `upload_date`: int, Unix timestamp for the upload time; default is to call `stat()` on the file
+- `status`: int, HTTP-style code; use `200` or `304` to approve request, `403` to deny it, `500` to denote processing error
+- `error`: string, will be logged by Nginx if the `status` code indicates an error
 
 ## SQL (MySQL, PostgreSQL, Oracle)
 
@@ -136,7 +160,7 @@ Set the transport to the same value.
 
 ### Upload
 
-Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It must have eight placeholders which will be filled with the following values in the given order (see the JSON response above for details on each): `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`. All these placeholders should be `'%s'` (for strings) except for the fourth and seventh which should be `%u` (because they are integers); don't forget the single quotes around the string placeholder.
+Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It must have eight placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`. All these placeholders should be `'%s'` (for strings) except for the fourth and seventh which should be `%u` (because they are integers); don't forget the single quotes around the string placeholder.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure('%s', '%s', '%s', %u, '%s', '%s', %u, '%s')`.
 
@@ -146,9 +170,9 @@ Set the SQL SELECT query to run in the configuration option `cdn_sql_select`. It
 
 The SQL query should return a single row with column names matching the keys in the JSON response above.
 
-NB: Oracle returns the column names in caps. This is OK.
-
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
+
+NB: Oracle returns the column names in caps. This is OK.
 
 ### Delete
 
@@ -186,33 +210,29 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 
 ```
 {
-	"http_method": string, "POST"
-	"auth_value": string, optional, the authentication value (e.g., user ID) extracted from the authorisation token if any
-	"file_id": string, the ID for the file that is being uploaded
-	"filename": string, original filename
-	"content_type": string, content type for the file
-	"content_disposition": string, content disposition
-	"etag": string, the etag for the file
-	"length": int, the length of the file in bytes
-	"upload_date": int, Unix timestamp for current time
+	"http_method": "POST",
+	"auth_value": "12345",
+	"file_id": "1234-567-89",
+	"filename": "myfile.jpg",
+	"content_type": "image/jpeg",
+	"content_disposition": "attachment",
+	"etag": "12345678901234567890123456789012",
+	"length": 12345,
+	"upload_date": 1234567890
 }
 ```
 
 *Response format*
 
-Return status of `200` to approve the upload or any other numeric value to deny it.
-
 ```
 {
-	"status": int, mandatory, http code; use 200 to approve the upload or any other value to deny it
+	"status": 200
 }
 ```
 
 ### Download 
 
 *Request format*
-
-See _Upload_ above for meaning of each field.
 
 Field `headers` is only included if configuration option `cdn_all_headers` is set to `yes`.
 
@@ -246,29 +266,27 @@ The field `auth_value` from authentication token is included only if configurati
 
 ```
 {
-	"status": int, optional, http code; use 200, 304, 404, 500; if missing, file will be served if found (unless 304 can be returned), else 404
-	"filename": string, optional, the file name to give the user; the value of "file" will be used if missing
-	"content_type": string, optional, "application/octet-stream" will be used if missing
-	"content_disposition": string, optional, if set to "attachment", "attachment" will be used; else file will be served inline (default)
-	"etag": string, optional, "00000000000000000000000000000000" will be used if missing
-	"length": int, optional, stat() wil be used if missing
-	"upload_date": int, optional, Unix timestamp of mtime; stat() wil be used if missing
-	"error"	: string, optional, will be logged by Nginx
+	"status": 200,
+	"filename": "myfile.jpg",
+	"content_type": "image/jpeg",
+	"content_disposition": "attachment",
+	"etag": "12345678901234567890123456789012",
+	"length": 12345,
+	"upload_date": 1234567890
+	"error": "none"
 }
 ```
 ### Delete
 
 The authorisation request will be the same as with download, but the `http_method` will be set to DELETE.
 
-The response should be the same as with upload (only status code, but mandatory).
+The response should be the same as with upload.
 
 ## XML
 
 This request type can be used with transport type set to `unix` (Unix socket), `tcp` (TCP socket) or `http` (HTTP request).
 
 ### Upload
-
-See the JSON section above for fields meaning and values.
 
 *Request format*
 
@@ -277,18 +295,16 @@ See the JSON section above for fields meaning and values.
 	<http_method>POST</http_method>
 	<auth_value>12345</auth_value>
 	<file_id>1234-567-89</file_id>
-	<filename>my super file.txt</filename>
-	<content_type>application/octet-stream</content_type>
+	<filename>myfile.jpg</filename>
+	<content_type>image/jpeg</content_type>
 	<content_disposition>attachment</content_disposition>
-	<etag>12345</etag>
+	<etag>12345678901234567890123456789012</etag>
 	<length>12345</length>
-	<upload_date>12345</upload_date>
+	<upload_date>1234567890</upload_date>
 </request>
 ```
 
-*Request format*
-
-Return status `200` to approve the upload or any other numeric value to deny it.
+*Response format*
 
 ```
 <response>
@@ -330,18 +346,16 @@ The element `auth_value` from authentication token is included only if configura
 
 *Response format*
 
-See the JSON section above for fields meaning and values.
-
 ```
 <response>
-	<status></status>
-	<filename></filename>
-	<content_type></content_type>
-	<content_disposition></content_disposition>
-	<etag></etag>
-	<length></length>
-	<upload_date></upload_date>
-	<error></error>
+	<status>200</status>
+	<filename>myfile.jpg</filename>
+	<content_type>image/jpeg</content_type>
+	<content_disposition>attachment</content_disposition>
+	<etag>12345678901234567890123456789012</etag>
+	<length>12345</length>
+	<upload_date>1234567890</upload_date>
+	<error>none</error>
 </response>
 ```
 
@@ -355,17 +369,17 @@ The response should be the same as with upload (only status code, but mandatory)
 
 ## Unix socket
 
-This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML exchange).
+This transport is used when request type is `json` (JSON exchange) or `xml` (XML exchange).
 
-Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writable by the Nginx user. 
+Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writable by the Nginx system user. 
 
 The Unix socket must be of type `stream`. The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
 
-NB: The `examples` directory contains a sample Unix domain socket server in NodeJS which supports socket half-closing.
+NB: The `examples` directory contains a sample Unix domain socket server in NodeJS which shows socket half-closing.
 
 ## TCP socket
 
-This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML exchange).
+This transport is used when request type is `json` (JSON exchange) or `xml` (XML exchange).
 
 Set the host and port for TCP connection in configuration options `cdn_tcp_host` and `cdn_tcp_port`.
 
@@ -373,45 +387,17 @@ The module will half-close the connection once it has written its request and wi
 
 NB: TCP is naturally slower than Unix domain socket.
 
-NB: The `examples` directory contains a sample Unix domain socket server in NodeJS which supports socket half-closing. It can easily be converted to TCP socket.
+NB: The `examples` directory contains a sample Unix domain socket server in NodeJS which shows socket half-closing. It can easily be adapted to TCP socket.
 
 ## HTTP
 
-This transport is usually used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
+This transport is used when request type is `json` (JSON exchange) or `xml` (XML excahnge).
 
 Set the URL in configuration option `cdn_http_url`. If using HTTPS, the local libcurl (used to make the HTTP request) must be able to verify the TLS certificate of the remote end. Authentication to this URL is currently unsupported.
 
 The HTTP request will be of type POST.
 
 NB: HTTP is naturally slower than both Unix domain socket an TCP socket.
-
-## MySQL
-
-This transport is only useful when request type is set to `mysql`.
-
-Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `hostname:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number.
-
-## PostgreSQL
-
-This transport is only useful when request type is set to `postgresql`.
-
-Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `postgresql://user:password@hostname:port/dbname`.
-
-## Oracle
-
-This transport is only useful when request type is set to `oracle`.
-
-Set the DSN in the configuration option `cnd_db_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service`; fields `port` and `database` are ignored.
-
-You'll need to manually install Oracle Instant Client library; make sure you have a version which knows how to talk to your Oracle server. You will likely need to export `LD_LIBARY_PATH` with the path to the client library directory.
-
-You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the `ORACLE_HOME` variable. You also must whitelist this environment by adding `env ORACLE_HOME` to the top level of your Nginx configuration file.
-
-## MongoDB
-
-Only useful when request type is set to `mongo`.
-
-Set the database connection string in the configuration option `cnd_db_dsn` using the standard MongoDB driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
 
 ## Redis
 
@@ -429,6 +415,34 @@ The metadata will be saved into a local file alongside the uploaded file itself,
 
 There are no configuration options for this transport.
 
+## MySQL
+
+This transport is only useful when request type is set to `mysql`.
+
+Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `hostname:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket in the `port` field.
+
+## PostgreSQL
+
+This transport is only useful when request type is set to `postgresql`.
+
+Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `postgresql://user:password@hostname:port/dbname`.
+
+## Oracle
+
+This transport is only useful when request type is set to `oracle`.
+
+Set the DSN in the configuration option `cnd_db_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service`; fields `port` and `database` are ignored. Note that since the `:` is a delimited, it cannot be part of the service name, i.e. you cannot specify a TCP port as a part of the service name. Oracle's default TCP port is 1521.
+
+You'll need to manually install Oracle Instant Client library; make sure you have a version which knows how to talk to your Oracle server. You will likely need to export `LD_LIBARY_PATH` with the path to the client library directory.
+
+You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the `ORACLE_HOME` variable. You also must whitelist this environment variable in Nginx by adding `env ORACLE_HOME` to the top level of your Nginx configuration file.
+
+## MongoDB
+
+Only useful when request type is set to `mongo`.
+
+Set the database connection string in the configuration option `cnd_db_dsn` using the standard MongoDB driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
+
 # File uploads
 
 ## Uploads via CDN
@@ -437,19 +451,19 @@ Files can be uploaded via the CDN itself. File upload uses HTTP POST request. On
 
 The following upload methods are available via CDN:
 
-- multipart/form-data. Only raw data (aka 8-bit) is supported (i.e. no quoted-printable of Base64).
-- application/x-www-form-urlencoded
+- `multipart/form-data`: only raw data (aka 8-bit) and Base64 encoding are supported (i.e. no quoted-printable or other encodings).
+- `application/x-www-form-urlencoded`
 
 The following form field names are recognised: 
 
-- `d`: file field when uploading using multipart/form-data; the file content when using application/x-www-form-urlencoded.
-- `n`: file name; only used for application/x-www-form-urlencoded.
-- `cd`: content disposition to use for this file. May only be set to `attachment`, all other values are ignored. If not set, file will be served inline.
-- `ct`: content type of the file. For multipart/form-data overrides the value, provided in the file part of the form itself.
+- `d`: file field when uploading using `multipart/form-data`; the file content when using `application/x-www-form-urlencoded`.
+- `n`: original filename; mandatory for `application/x-www-form-urlencoded`; for `multipart/form-data` overrides the value, provided in the file part of the form itself.
+- `ct`: content type of the file; mandatory for `application/x-www-form-urlencoded`; for `multipart/form-data` overrides the value, provided in the file part of the form itself.
+- `cd`: content disposition to use for this file. All values except `attachment` are. If not set, file will be served inline.
 
 The metadata can be created in two ways:
 
-- For SQL or MongoDB, you need to provide auth_value to be set in the database table or collection, e.g. via JWT.
+- For SQL or MongoDB, you need to provide `auth_value` to be set in the database table or collection, e.g. via JWT.
 - For JSON or XML, a request will be send using the chosen transport (Unix, TCP, HTTP) with the file metadata (as in the response when asking to download or delete a file); the response will be ignored.
 
 ## Manual uploads
@@ -466,14 +480,7 @@ Here is the workflow to upload yourself a file to the CDN:
 
 ### Write the file ID and its metadata
 
-Write them to the metadata storage which will be used by CDN for authorisation (e.g., to the MySQL database).
-
-- Original file name. Will be used when serving the file with `Attachment` disposition. 
-- Upload timestamp. Will be compared to `If-Modified-Since` request header.
-- Etag: will be used for `Etag` response header and compared to `If-None-Match` request header.
-- MIME type. Will be used as `Content-Type`.
-- Content disposition – serve inline or as attachment.
-- Size: file size in bytes.
+Write them to the metadata storage which will be used by CDN for authorisation (e.g., to the MySQL database); include all teh fields that will be needed for download.
 
 Test your authorisation query to make sure metadata is properly returned.
 
@@ -482,21 +489,21 @@ Test your authorisation query to make sure metadata is properly returned.
 - Read the first N letters of the file ID generated above (where N is the depth of the CDN tree).
 - Use each of these N letters as one directory level.
 - Place the file in the resulting path.
-- Example: with depth of 4, file ID `abcdef0123456789` must be placed at path `/a/b/c/d/abcdef0123456789` inside the CDN root (note that the first N letters are *not* removed form the file name, they just for the path - this is how path will be determined when the CDN needs to serve the file).
+- Example: with depth of 4, file ID `abcdef0123456789` must be placed at path `/a/b/c/d/abcdef0123456789` inside the CDN root (note that the first N letters are *not* removed form the file name, they just form the path - this is how path will be determined when the CDN needs to serve the file).
 
 ### Example
 
-See Examples below.
+The `examples` directory contains a sample file upload server in NodeJS.
 
 # File deletion
 
-To delete a file from the filesystem, issue the same request as for getting a file, but use DELETE HTTP method.
+To delete a file from the filesystem, issue the same request as for downloading the file, but use DELETE HTTP method.
 
-NB: The metadata for the file will be deleted when using SQL authorisation or MongoDB. In al other cases the authorisation body should delete the metadata (when the `http_method` in the authorisation request is set to `DELETE`).
+NB: The metadata for the file will be deleted when using internal authorisation, SQL authorisation or MongoDB. In all other cases the authorisation body should delete the metadata (the `http_method` in the authorisation request will be set to `DELETE`).
 
 # Examples
 
-`unix_socket_server.js` is an example Unix socket server in Node.js which can be used as a skeleton for creating an authorisation body. It contains the necessary code minus the actual authorisation part.
+`unix_socket_server.js` is an example Unix socket server in Node.js which can be used as a skeleton for creating an authorisation body. It contains the necessary code minus the actual authorisation part. The server can easily be adapted to use TCP socket.
 
 `file_upload.js` is an example HTTP server in Node.js which can be used as a skeleton for creating an upload service for the CDN. It contains the necessary code minus the authorisation of the upload and the writing of the metadata.
 
@@ -531,8 +538,55 @@ tar xf nginx-1.14.1.tar
 cd nginx-1.14.1
 
 # Configure the build the same way as the RPM packages does
-# This command has JWT and MySQL enabled, Oracle disabled.
-CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/run/nginx.pid --lock-path=/run/lock/subsys/nginx --user=nginx --group=nginx --with-file-aio --with-ipv6 --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_addition_module --with-http_xslt_module=dynamic --with-http_image_filter_module=dynamic --with-http_sub_module --with-http_dav_module --with-http_flv_module --with-http_mp4_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_random_index_module --with-http_secure_link_module --with-http_degradation_module --with-http_slice_module --with-http_stub_status_module --with-http_perl_module=dynamic --with-http_auth_request_module --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-debug --with-cc-opt='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I /usr/include/libbson-1.0 -I /usr/include/mysql -I/usr/include/libxml2' --with-ld-opt='-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E -lbson-1.0 -lcurl -ljwt -lmysqlclient -lxml2'
+# NB: This command has only includes and libraries for JWT and MySQL enabled - 
+# and not for PostgreSQL, Oracle, Mongo and Redis
+CFLAGS=-Wno-error ./configure \
+--add-dynamic-module=../src \
+--prefix=/usr/share/nginx \
+--sbin-path=/usr/sbin/nginx \
+--modules-path=/usr/lib64/nginx/modules \
+--conf-path=/etc/nginx/nginx.conf \
+--error-log-path=/var/log/nginx/error.log \
+--http-log-path=/var/log/nginx/access.log \
+--http-client-body-temp-path=/var/lib/nginx/tmp/client_body \
+--http-proxy-temp-path=/var/lib/nginx/tmp/proxy \
+--http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi \
+--http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi \
+--http-scgi-temp-path=/var/lib/nginx/tmp/scgi \
+--pid-path=/run/nginx.pid \
+--lock-path=/run/lock/subsys/nginx \
+--user=nginx \
+--group=nginx \
+--with-file-aio \
+--with-ipv6 \
+--with-http_ssl_module \
+--with-http_v2_module \
+--with-http_realip_module \
+--with-http_addition_module \
+--with-http_xslt_module=dynamic \
+--with-http_image_filter_module=dynamic \
+--with-http_sub_module \
+--with-http_dav_module \
+--with-http_flv_module \
+--with-http_mp4_module \
+--with-http_gunzip_module \
+--with-http_gzip_static_module \
+--with-http_random_index_module \
+--with-http_secure_link_module \
+--with-http_degradation_module \
+--with-http_slice_module \
+--with-http_stub_status_module \
+--with-http_perl_module=dynamic \
+--with-http_auth_request_module \
+--with-mail=dynamic \
+--with-mail_ssl_module \
+--with-pcre \
+--with-pcre-jit \
+--with-stream=dynamic \
+--with-stream_ssl_module \
+--with-debug \
+--with-cc-opt='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I /usr/include/libbson-1.0 -I /usr/include/mysql -I/usr/include/libxml2' \
+--with-ld-opt='-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E -lbson-1.0 -lcurl -ljwt -lmysqlclient -lxml2'
 
 # Build modules only
 make modules
@@ -540,11 +594,14 @@ make modules
 # Copy our module to Nginx tree
 cp objs/ngx_http_cdn_module.so /usr/lib64/nginx/modules
 
-# Configure Nginx location
+# Configure Nginx location in its config file /etc/nginx/nginx.conf
 
 # Restrat nginx
+systemctl restart nginx
 
 # Create empty CDN tree using tools/mkcdn.sh
+mkdir /opt/cdn
+mkcdn.sh --root /opt/cdn --depth 4 --user nginx --group nginx
 ```
 
 # TODO
