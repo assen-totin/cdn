@@ -6,14 +6,17 @@
 
 #include "common.h"
 #include "utils.h"
+#include "cache-128.h"
 
 /**
  * File metadata from internal
  */
 ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode) {
-	char *path;
+	char *path, *key, *value, *tmp;
 	int file_fd;
 	struct stat statbuf;
+	btree_t *node;
+	uint64_t h1, h2;
 
 	// Set path to metadata file: original file name + ".meta"
 	if ((path = ngx_pcalloc(r->pool, strlen(metadata->path) + 6)) == NULL) {
@@ -49,7 +52,33 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	}
 
 	else {
-		// Read metadata
+		// Read metadata - first check memory cache if it is enabled
+
+		//FIXME: WE NEED TO GET THE INITIALISED CACHE session->cache OR GLOBAL VAR?
+		if (session->cache) {
+			// Convert the 32-character file ID to 16-byte key
+			tmp = malloc(17);
+			strncpy(tmp, metadata->file, 16);
+			h1 = strtol(tmp, NULL, 16);
+			strncpy(tmp, metadata->file + 16, 16);
+			h2 = strtol(tmp, NULL, 16);
+			free(tmp);
+			key = malloc(16);
+			memcpy(key, h1, 8);
+			memcpy(key + 8, h2, 8);
+
+			// Seek the key
+			// If key was found, res->left will have the value (NULL-terminated string); cast it to char*
+			// If key was not found, it was added; store the value by passing the same res and the value (NULL-terminated char*) to cache_put()
+			node = cache_seek(session->cache, key);
+			free(key);
+			if (node->left) {
+				session->auth_response = (char *)node->left;
+				return NGX_OK;
+			}
+		}
+		
+		// Metadata was not foun in the memory cache, so read it from disk
 		if ((file_fd = open(path, O_RDONLY)) == -1) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Internal transport: failed to open metadata file %s: %s", path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -71,6 +100,10 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 		// NULL-terminate what we just read
 		session->auth_response[statbuf.st_size] = '\0';
+
+		// Save the data to the cache if it is enabled
+		if (session->cache)
+			cache_put(session->cache, node, strdup(session->auth_response));
 
 		close(file_fd);
 	}

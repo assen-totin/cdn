@@ -433,6 +433,7 @@ session_t *init_session(ngx_http_request_t *r) {
 		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
 			sprintf(session->http_method, "GET");
 			session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
+			session->cache_size = atoi(cdn_loc_conf->cache_size);
 		}
 		else if (r->method & (NGX_HTTP_DELETE)) {
 			sprintf(session->http_method, "DELETE");

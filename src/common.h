@@ -75,6 +75,7 @@
 #define DEFAULT_AUTH_COOKIE "none"
 #define DEFAULT_AUTH_FILTER "none"
 #define DEFAULT_AUTH_METOD "none"
+#define DEFAULT_CACHE_SIZE "0"
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
 #define DEFAULT_CONTENT_DISPOSITION "none"
 #define DEFAULT_DB_DSN "none"
@@ -242,6 +243,7 @@ typedef struct {
 	int tcp_port;
 	char *http_url;
 	CURL *curl;
+	int cache_size;
 #ifdef CDN_ENABLE_JWT
 	jwt_t *jwt;
 #endif

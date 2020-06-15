@@ -80,9 +80,11 @@ static void btree_evict(cache_t *cache, void *key, btree_t *node, int level) {
 
 	// At last level, free payload
 	if (level == CACHE_BTREE_DEPTH) {
-		cache->mem_used -= strlen((char *)node->left);
-		free(node->left);
-		node->left = NULL;
+		if (node->left) {
+			cache->mem_used -= strlen((char *)node->left);
+			free(node->left);
+			node->left = NULL;
+		}
 		return;
 	}
 
