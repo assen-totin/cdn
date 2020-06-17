@@ -6,16 +6,16 @@
 
 #include "common.h"
 #include "utils.h"
-#include "cache-128.h"
+#include "cache.h"
 
 /**
  * File metadata from internal
  */
 ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode) {
-	char *path, *key, *value, *tmp;
+	char *path, *key, *tmp;
 	int file_fd;
 	struct stat statbuf;
-	btree_t *node;
+	btree_t *node = NULL;
 	uint64_t h1, h2;
 
 	// Set path to metadata file: original file name + ".meta"
@@ -55,7 +55,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		// Read metadata - first check memory cache if it is enabled
 
 		//FIXME: WE NEED TO GET THE INITIALISED CACHE session->cache OR GLOBAL VAR?
-		if (session->cache) {
+		if (ngx_http_cdn_cache->mem_max) {
 			// Convert the 32-character file ID to 16-byte key
 			tmp = malloc(17);
 			strncpy(tmp, metadata->file, 16);
@@ -64,13 +64,13 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			h2 = strtol(tmp, NULL, 16);
 			free(tmp);
 			key = malloc(16);
-			memcpy(key, h1, 8);
-			memcpy(key + 8, h2, 8);
+			memcpy(key, &h1, 8);
+			memcpy(key + 8, &h2, 8);
 
 			// Seek the key
 			// If key was found, res->left will have the value (NULL-terminated string); cast it to char*
 			// If key was not found, it was added; store the value by passing the same res and the value (NULL-terminated char*) to cache_put()
-			node = cache_seek(session->cache, key);
+			node = cache_seek(ngx_http_cdn_cache, key);
 			free(key);
 			if (node->left) {
 				session->auth_response = (char *)node->left;
@@ -102,8 +102,8 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		session->auth_response[statbuf.st_size] = '\0';
 
 		// Save the data to the cache if it is enabled
-		if (session->cache)
-			cache_put(session->cache, node, strdup(session->auth_response));
+		if (ngx_http_cdn_cache->mem_max)
+			cache_put(ngx_http_cdn_cache, node, strdup(session->auth_response));
 
 		close(file_fd);
 	}

@@ -4,11 +4,7 @@
  * @author: Assen Totin assen.totin@gmail.com
  */
 
-#include "cache-128.h"
 #include "common.h"
-
-#define CACHE_BTREE_DEPTH 128
-#define CACHE_KEY_LEN 16
 
 // Init BTree mask
 static uint64_t *init_btree_mask() {
@@ -38,7 +34,7 @@ static btree_t *btree_new_node(cache_t *cache) {
 	return new;
 }
 
-cache_t *cache_init(uint64_t size) {
+cache_t *cache_init() {
 	cache_t *cache = malloc(sizeof(cache_t));
 
 //	cache->list = malloc(CACHE_KEY_LEN);
@@ -48,7 +44,7 @@ cache_t *cache_init(uint64_t size) {
 	cache->list = NULL;
 	cache->list_cnt = 0;
 	cache->mem_used = sizeof(cache_t) + CACHE_BTREE_DEPTH * CACHE_BTREE_DEPTH;
-	cache->mem_max = size;
+	cache->mem_max = 0;
 
 	cache->root = btree_new_node(cache);
 
@@ -197,7 +193,8 @@ void cache_destroy(cache_t *cache) {
 
 	free(cache->btree_mask);
 
-	free(cache->list);
+	if (cache->list)
+		free(cache->list);
 
 	free(cache);
 }

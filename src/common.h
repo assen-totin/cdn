@@ -19,6 +19,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -98,6 +99,10 @@
 #define DEFAULT_TRANSPORT_TYPE "none"
 #define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
 
+#define CACHE_BTREE_DEPTH 128
+#define CACHE_KEY_LEN 16
+#define CACHE_SIZE_MULTIPLIER 1048576
+
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
 #define HEADER_ACCESS_CONTROL_ALLOW_HEADERS "Access-Control-Allow-Headers"
@@ -170,6 +175,7 @@ typedef struct {
 	ngx_str_t mongo_collection;
 	ngx_str_t cors_origin;
 	ngx_str_t read_only;
+	ngx_str_t cache_size;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -265,6 +271,23 @@ typedef struct {
 #endif
 } session_t;
 
+// BTree node structure
+typedef struct btree_s btree_t;
+struct btree_s {
+	btree_t *left;
+	btree_t *right;
+};
+
+// Cache structure
+typedef struct {
+	btree_t* root;
+	void *list;
+	uint64_t list_cnt;
+	uint64_t mem_used;
+	uint64_t mem_max;
+	uint64_t *btree_mask;
+} cache_t;
+
 enum {
 	METADATA_NONE = 0,
 	METADATA_SELECT,
@@ -277,4 +300,7 @@ enum {
 	UPLOAD_CONTENT_TYPE_MPFD,
 	UPLOAD_CONTENT_TYPE_AXWFU,
 };
+
+// Globals
+cache_t *ngx_http_cdn_cache;
 

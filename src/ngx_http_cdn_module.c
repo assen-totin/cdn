@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "ngx_http_cdn_module.h"
+#include "cache.h"
 #include "http.h"
 #include "utils.h"
 
@@ -43,6 +44,9 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	// Init cURL
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
+	// Init cache for internal transport
+	ngx_http_cdn_cache = cache_init();
+
 	return NGX_OK;
 }
 
@@ -57,6 +61,8 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 #ifdef CDN_ENABLE_ORACLE
 	OCI_Cleanup();
 #endif
+
+	cache_destroy(ngx_http_cdn_cache);
 }
 
 /**

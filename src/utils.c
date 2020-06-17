@@ -387,6 +387,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->jwt_json = NULL;
 	session->http_method = ngx_pcalloc(r->pool, 8);
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
+	session->cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
 	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
@@ -430,11 +431,13 @@ session_t *init_session(ngx_http_request_t *r) {
 		session->hdr_if_none_match = NULL;
 		session->hdr_if_modified_since = -1;
 
+		if (session->cache_size > 0)
+			ngx_http_cdn_cache->mem_max = CACHE_SIZE_MULTIPLIER * session->cache_size;
+
 		// Method-specific init
 		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
 			sprintf(session->http_method, "GET");
 			session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_select);
-			session->cache_size = atoi(cdn_loc_conf->cache_size);
 		}
 		else if (r->method & (NGX_HTTP_DELETE)) {
 			sprintf(session->http_method, "DELETE");

@@ -23,24 +23,8 @@
  * cache_destroy(cache);
  */
 
-// BTree node structure
-typedef struct btree_s btree_t;
-struct btree_s {
-	btree_t *left;
-	btree_t *right;
-};
-
-// Cache structure
-typedef struct {
-	btree_t* root;
-	void *list;
-	uint64_t list_cnt;
-	uint64_t mem_used;
-	uint64_t mem_max;
-	uint64_t *btree_mask;
-} cache_t;
-
-cache_t *cache_init(uint64_t size);
+// Prototypes
+cache_t *cache_init();
 void *cache_seek (cache_t *cache, void *key);
 void cache_put (cache_t *cache, btree_t *node, char *value);
 void cache_destroy(cache_t *cache);
