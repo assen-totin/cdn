@@ -25,23 +25,24 @@ char *memstr(char *haystack, char *needle, int size) {
 }
 
 /**
- * Helper: convert Nginx string to normal
+ * Convert Nginx string to normal
  */
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
-		if (! ngx_str.len)
-			return NULL;
+	if (! ngx_str.len)
+		return NULL;
 
-		char *ret = ngx_pcalloc(pool, ngx_str.len + 1);
-		if (ret == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
-			return NULL;
-		}
-		memcpy(ret, ngx_str.data, ngx_str.len);
-		return ret;
+	char *ret = ngx_pcalloc(pool, ngx_str.len + 1);
+	if (ret == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
+		return NULL;
+	}
+
+	memcpy(ret, ngx_str.data, ngx_str.len);
+	return ret;
 }
 
 /**
- * Helper: get the full path from a file name
+ * Get the full path from a file name
  */
 ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int i, len, pos=0;
@@ -74,7 +75,7 @@ ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t 
 }
 
 /**
- * Helper: Set metadata field from char value
+ * Set metadata field from char value
  */
 ngx_int_t set_metadata_field (ngx_http_request_t *r, char **field, char *field_name, const char *value) {
 	char *f;

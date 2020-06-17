@@ -50,7 +50,7 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
  * Module termination
  */
 
-void ngx_http_cdn_module_end (ngx_cycle_t *cycle) {
+void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 #ifdef CDN_ENABLE_MYSQL
 	mysql_library_end();
 #endif
