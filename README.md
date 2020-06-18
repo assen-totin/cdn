@@ -611,7 +611,3 @@ mkdir /opt/cdn
 mkcdn.sh --root /opt/cdn --depth 4 --user nginx --group nginx
 ```
 
-# TODO
-
-- Regression test for local metadata storage
-

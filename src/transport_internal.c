@@ -53,18 +53,18 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 	else {
 		// Read metadata - first check memory cache if it is enabled
-
 		if (ngx_http_cdn_cache->mem_max) {
 			// Convert the 32-character file ID to 16-byte key
 			tmp = malloc(17);
 			strncpy(tmp, metadata->file, 16);
-			h1 = strtol(tmp, NULL, 16);
+			h1 = strtoul(tmp, NULL, 16);
 			strncpy(tmp, metadata->file + 16, 16);
-			h2 = strtol(tmp, NULL, 16);
+			h2 = strtoul(tmp, NULL, 16);
 			free(tmp);
 			key = malloc(16);
 			memcpy(key, &h1, 8);
 			memcpy(key + 8, &h2, 8);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with key: %016xL%016xL", path, *((uint64_t*)key), *((uint64_t*)(key+8)));
 
 			// Seek the key (motex-protected operation)
 			// If key was found, res->left will have the value (NULL-terminated string); cast it to char*
@@ -81,12 +81,14 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			}
 
 			if (node->left) {
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: found key in cache", path);
 				session->auth_response = (char *)node->left;
 				return NGX_OK;
 			}
 		}
 		
-		// Metadata was not foun in the memory cache, so read it from disk
+		// Metadata was not found in the memory cache, so read it from disk
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: key not found in cache", path);
 		if ((file_fd = open(path, O_RDONLY)) == -1) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Internal transport: failed to open metadata file %s: %s", path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -110,8 +112,10 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		session->auth_response[statbuf.st_size] = '\0';
 
 		// Save the data to the cache if it is enabled
-		if (ngx_http_cdn_cache->mem_max)
+		if (ngx_http_cdn_cache->mem_max) {
+            ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: saving metadata in cache", path);
 			cache_put(ngx_http_cdn_cache, node, strdup(session->auth_response));
+		}
 
 		close(file_fd);
 	}
