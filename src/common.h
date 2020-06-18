@@ -16,7 +16,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
-#include <time.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -26,6 +26,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/un.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifdef CDN_ENABLE_JWT
@@ -286,6 +287,7 @@ typedef struct {
 	uint64_t mem_used;
 	uint64_t mem_max;
 	uint64_t *btree_mask;
+	pthread_mutex_t lock;
 } cache_t;
 
 enum {

@@ -25,7 +25,7 @@
 
 // Prototypes
 cache_t *cache_init();
-void *cache_seek (cache_t *cache, void *key);
+void *cache_seek (cache_t *cache, void *key, int *error);
 void cache_put (cache_t *cache, btree_t *node, char *value);
 void cache_destroy(cache_t *cache);
 

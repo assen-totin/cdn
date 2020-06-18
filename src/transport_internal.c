@@ -13,7 +13,7 @@
  */
 ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode) {
 	char *path, *key, *tmp;
-	int file_fd;
+	int file_fd, error;
 	struct stat statbuf;
 	btree_t *node = NULL;
 	uint64_t h1, h2;
@@ -54,7 +54,6 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	else {
 		// Read metadata - first check memory cache if it is enabled
 
-		//FIXME: WE NEED TO GET THE INITIALISED CACHE session->cache OR GLOBAL VAR?
 		if (ngx_http_cdn_cache->mem_max) {
 			// Convert the 32-character file ID to 16-byte key
 			tmp = malloc(17);
@@ -67,11 +66,20 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			memcpy(key, &h1, 8);
 			memcpy(key + 8, &h2, 8);
 
-			// Seek the key
+			// Seek the key (motex-protected operation)
 			// If key was found, res->left will have the value (NULL-terminated string); cast it to char*
 			// If key was not found, it was added; store the value by passing the same res and the value (NULL-terminated char*) to cache_put()
-			node = cache_seek(ngx_http_cdn_cache, key);
+			pthread_mutex_lock(&ngx_http_cdn_cache->lock);
+			node = cache_seek(ngx_http_cdn_cache, key, &error);
+			pthread_mutex_unlock(&ngx_http_cdn_cache->lock);
+
 			free(key);
+
+			if (error) {
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Internal transport: failed to seek cache key (malloc failed)");
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+
 			if (node->left) {
 				session->auth_response = (char *)node->left;
 				return NGX_OK;

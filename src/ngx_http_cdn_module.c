@@ -45,7 +45,11 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
 	// Init cache for internal transport
-	ngx_http_cdn_cache = cache_init();
+	if ((ngx_http_cdn_cache = cache_init()) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init in-memory cache (malloc failed)");
+		return NGX_ERROR;
+	}
+
 
 	return NGX_OK;
 }

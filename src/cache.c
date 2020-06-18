@@ -25,7 +25,9 @@ static uint64_t *init_btree_mask() {
 static btree_t *btree_new_node(cache_t *cache) {
 	btree_t *new;
 
-	new = malloc(sizeof(btree_t));
+	if ((new = malloc(sizeof(btree_t))) == NULL)
+		return NULL;
+
 	new->left = NULL;
 	new->right = NULL;
 
@@ -35,7 +37,10 @@ static btree_t *btree_new_node(cache_t *cache) {
 }
 
 cache_t *cache_init() {
-	cache_t *cache = malloc(sizeof(cache_t));
+	cache_t *cache;
+
+	if ((cache = malloc(sizeof(cache_t))) == NULL)
+		return NULL;
 
 //	cache->list = malloc(CACHE_KEY_LEN);
 //	cache->list_cnt = 1;
@@ -46,9 +51,13 @@ cache_t *cache_init() {
 	cache->mem_used = sizeof(cache_t) + CACHE_BTREE_DEPTH * CACHE_BTREE_DEPTH;
 	cache->mem_max = 0;
 
-	cache->root = btree_new_node(cache);
-
 	cache->btree_mask = init_btree_mask();
+
+	if ((cache->root = btree_new_node(cache)) == NULL)
+		return NULL;
+
+	if (pthread_mutex_init(&cache->lock, NULL) != 0)
+		return NULL;
 
 	return cache;
 }
@@ -102,11 +111,13 @@ static void btree_evict(cache_t *cache, void *key, btree_t *node, int level) {
 	}
 }
 
-void *cache_seek (cache_t *cache, void *key) {
+void *cache_seek (cache_t *cache, void *key, int *error) {
 	int i;
 	uint64_t pos;
 	btree_t *node = cache->root;
 	char *old_key;
+
+	*error = 0;
 
 	for (i=0; i < CACHE_BTREE_DEPTH; i++) {
 		if (btree_match(cache, key, i)) {
@@ -120,6 +131,12 @@ void *cache_seek (cache_t *cache, void *key) {
 			if (! node->left) 
 				node->left = btree_new_node(cache);
 			node = node->left;
+		}
+
+		// Ensure node allocation was successful
+		if (! node) {
+			*error = 1;
+			return NULL;
 		}
 	}
 

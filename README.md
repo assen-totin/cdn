@@ -54,6 +54,7 @@ All below Nginx parameters should be configured for the chosen `location`:
 - `cdn_sql_delete`: only for transport type `mysql`, `oracle`, `postgresql`: SQL query to execute when deleting a file (with placeholders)
 - `cdn_mongo_collection`: only for transport type `mongo`: name of the Mongo collection which stored the metadata
 - `cdn_mongo_db`: only for transport type `mongo`: name of the Mongo database with the metadata collection
+- `cdn_cache_size`: only for transport type `internal`: the size of the memory cache to use in MB; default: 0 (cache disabled)
 
 The following general-purpose Nginx params may be useful:
 
@@ -415,6 +416,8 @@ The metadata will be saved into a local file alongside the uploaded file itself,
 
 There are no configuration options for this transport.
 
+To enable the in-memory cache of metadata, set the `cdn_cache_size` to the desired amount in MB; default value is 0 (meaning cache is disabled). Each cached entry consumes around 3 KB of memory (when the allocated amount is exhausted, oldest entry will be evicted from the cache).
+
 ## MySQL
 
 This transport is only useful when request type is set to `mysql`.
@@ -610,5 +613,5 @@ mkcdn.sh --root /opt/cdn --depth 4 --user nginx --group nginx
 
 # TODO
 
-- Implement in-memory cache for local metadata storage (with 128-bit b-tree or 16-byte b-tree)
+- Regression test for local metadata storage
 
