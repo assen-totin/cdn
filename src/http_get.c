@@ -49,11 +49,25 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 
 	// Check if we have the HTTP response code and use the default one if missing
 	if (metadata->status < 0) {
-		metadata->status = session->status_download;
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %l", metadata->file, session->status_download);
-		if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Denying request due to default status: %l", metadata->status);
-			return metadata->status;
+		// No result from auth service: reject
+		if (! session->auth_response_count) {
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s empty auth response, rejecting.", metadata->file);
+			return NGX_HTTP_FORBIDDEN;
+		}
+
+		// If we had an auth value, pass; if not, check config value
+		if (session->auth_value) {
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response with no status but with auth_value, allowing.", metadata->file);
+			metadata->status = NGX_HTTP_OK;
+		}
+		else {
+			metadata->status = session->status_download;
+			if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response with no status and no auth_value, config rejects.", metadata->file);
+				return metadata->status;
+			}
+			else 
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response with no status and no auth_value, config allows.", metadata->file);
 		}
 	}
 

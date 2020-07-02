@@ -26,6 +26,8 @@ ngx_int_t response_get_mysql(session_t *session, metadata_t *metadata, ngx_http_
 	fields = mysql_fetch_fields(session->mysql_result);
 
 	if (mysql_row) {
+		session->auth_response_count = 1;
+
 		for(i = 0; i < fields_num; i++) {
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with length %l", fields[i].name, fields[i].length);
 
@@ -101,6 +103,8 @@ ngx_int_t response_post_mysql(session_t *session, metadata_t *metadata, ngx_http
 	fields = mysql_fetch_fields(session->mysql_result);
 
 	if (mysql_row) {
+		session->auth_response_count = 1;
+
 		for(i = 0; i < fields_num; i++) {
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with length %l", fields[i].name, fields[i].length);
 

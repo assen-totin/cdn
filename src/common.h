@@ -241,6 +241,7 @@ typedef struct {
 	char *auth_response;
 	int auth_response_len;
 	int auth_response_pos;
+	int auth_response_count;
 	char *jwt_key;
 	char *jwt_json;
 	char *jwt_field;

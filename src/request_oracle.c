@@ -16,6 +16,8 @@ ngx_int_t response_get_oracle(session_t *session, metadata_t *metadata, ngx_http
 
 	// NB: we only expect up to one row in response
 	if (OCI_FetchNext(session->oracle_result)) {
+		session->auth_response_count = 1;
+
 		if ((ret = set_metadata_field(r, &metadata->filename, "filename", OCI_GetString2(session->oracle_result, "FILENAME"))) > 0)
 			return ret;
 
@@ -60,6 +62,8 @@ ngx_int_t response_post_oracle(session_t *session, metadata_t *metadata, ngx_htt
 
 	// NB: we only expect up to one row in response
 	if (OCI_FetchNext(session->oracle_result)) {
+		session->auth_response_count = 1;
+
 		metadata->status = OCI_GetInt2(session->oracle_result, "STATUS");
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 	}

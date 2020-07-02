@@ -18,6 +18,8 @@ ngx_int_t response_get_postgresql(session_t *session, metadata_t *metadata, ngx_
 	// NB: we only expect one row in response, but empty may also be OK (depending on default HTTP status code)
 	if (session->postgresql_result) {
 		if (PQresultStatus(session->postgresql_result) == PGRES_TUPLES_OK) {
+			session->auth_response_count = 1;
+
 			for (i = 0; i < PQnfields(session->postgresql_result); i++) {
 				// Handle NULL values
 				if (! PQgetvalue(session->postgresql_result, 0, i))
@@ -93,6 +95,8 @@ ngx_int_t response_post_postgresql(session_t *session, metadata_t *metadata, ngx
 	// NB: we only expect one row in response, but empty may also be OK (depending on default HTTP status code)
 	if (session->postgresql_result) {
 		if (PQresultStatus(session->postgresql_result) == PGRES_TUPLES_OK) {
+			session->auth_response_count = 1;
+
 			for (i = 0; i < PQnfields(session->postgresql_result); i++) {
 				// Handle NULL values
 				if (! PQgetvalue(session->postgresql_result, 0, i))

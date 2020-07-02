@@ -381,6 +381,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
 	session->auth_request = NULL;
 	session->auth_response = NULL;
+	session->auth_response_count = 0;
 	session->curl = NULL;
 	session->jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
 	session->jwt_field = from_ngx_str(r->pool, cdn_loc_conf->jwt_field);

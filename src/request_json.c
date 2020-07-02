@@ -172,6 +172,8 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 
 	bson_destroy(&doc);
 
+	session->auth_response_count = 1;
+
 	return NGX_OK;
 }
 
@@ -212,6 +214,8 @@ ngx_int_t response_post_json(session_t *session, metadata_t *metadata, ngx_http_
 	}
 
 	bson_destroy(&doc);
+
+	session->auth_response_count = 1;
 
 	return NGX_OK;
 }
