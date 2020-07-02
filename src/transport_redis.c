@@ -70,10 +70,25 @@ ngx_int_t transport_redis(session_t *session, metadata_t *metadata, ngx_http_req
 	else {
 		// Read metadata
 		if ((reply = redisCommand(context, "GET %s", metadata->file)) == NULL) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Redis transport: failed to delete metadata for file %s: %s", metadata->file, context->errstr);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Redis transport: failed to read metadata for file %s: %s", metadata->file, context->errstr);
+			redisFree(context);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		// Check for error
+		if (reply->type == REDIS_REPLY_ERROR) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Redis transport: error reading metadata for file %s: %s", metadata->file, reply->str);
 			freeReplyObject(reply);
 			redisFree(context);
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		// Check for empty response (key not found)
+		if (reply->type == REDIS_REPLY_NIL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Redis transport: empty respnse while  reading metadata for file %s", metadata->file);
+			freeReplyObject(reply);
+			redisFree(context);
+			return NGX_OK;
 		}
 
 		// Prepare buffer to read the file
@@ -86,6 +101,7 @@ ngx_int_t transport_redis(session_t *session, metadata_t *metadata, ngx_http_req
 
 		strcpy(session->auth_response, reply->str);
 
+		freeReplyObject(reply);
 		redisFree(context);
 	}
 #endif

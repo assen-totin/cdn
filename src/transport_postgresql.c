@@ -22,7 +22,7 @@ static ngx_int_t close_postgresql(session_t *session, ngx_int_t ret) {
 }
 
 /**
- * Get file metadata from postgresql
+ * Get/Put/Delete file metadata from postgresql
  */
 ngx_int_t transport_postgresql(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_POSTGRESQL
@@ -38,19 +38,13 @@ ngx_int_t transport_postgresql(session_t *session, ngx_http_request_t *r, int mo
 
 	// Run the query
 	session->postgresql_result = PQexec(session->postgresql_connection, session->sql_query);
-	if (mode == METADATA_SELECT) {
-		if ((PQresultStatus(session->postgresql_result) != PGRES_COMMAND_OK) && (PQresultStatus(session->postgresql_result) != PGRES_TUPLES_OK)) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to execute query %s: %s", session->sql_query, PQerrorMessage(session->postgresql_connection));
-			return close_postgresql(session, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		}
+	if ((PQresultStatus(session->postgresql_result) != PGRES_COMMAND_OK) && (PQresultStatus(session->postgresql_result) != PGRES_TUPLES_OK)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to execute query %s: %s", session->sql_query, PQerrorMessage(session->postgresql_connection));
+		return close_postgresql(session, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
-	else {
-		if (PQresultStatus(session->postgresql_result) != PGRES_COMMAND_OK) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to execute query %s: %s", session->sql_query, PQerrorMessage(session->postgresql_connection));
-			return close_postgresql(session, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		}
 
-		// Clear query and disconnect
+	// If deleting, clear query and disconnect; for getting and putting, we'll clean up in the request processing function
+	if (mode == METADATA_DELETE) {
 		PQclear(session->postgresql_result);
 		PQfinish(session->postgresql_connection);
 		session->postgresql_connection = NULL;

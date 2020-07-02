@@ -230,6 +230,22 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		offsetof(ngx_http_cdn_loc_conf_t, cache_size),
 		NULL
 	},
+	{
+		ngx_string("cdn_status_upload"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, status_upload),
+		NULL
+	},
+	{
+		ngx_string("cdn_status_download"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, status_download),
+		NULL
+	},
 	ngx_null_command
 };
 

@@ -229,6 +229,12 @@ ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_re
 	xmlNode *root_element = NULL, *cur_node = NULL;
 	ngx_int_t ret;
 
+	// If we got no repsonse, skip processing
+	if (! session->auth_response) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No authorisation response received, skipping XML processing");
+		return NGX_OK;
+	}
+
 	if ((doc = xmlReadMemory(session->auth_response, strlen(session->auth_response), "noname.xml", XML_ENCODING, 0)) == NULL) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to parse XML: %s", session->auth_response);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -301,9 +307,9 @@ ngx_int_t response_post_xml(session_t *session, metadata_t *metadata, ngx_http_r
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL, *cur_node = NULL;
 
-	// Some transports will not provide a response (like internal) - so skip
+	// If we got no repsonse, skip processing
 	if (! session->auth_response) {
-		metadata->status = DEFAULT_HTTP_CODE;
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No authorisation response received, skipping XML processing");
 		return NGX_OK;
 	}
 

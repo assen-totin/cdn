@@ -28,6 +28,8 @@ All below Nginx parameters should be configured for the chosen `location`:
 - `cdn_server_id 1`: the ID of the server instance, integer between 1 and 48 (optional, default 1)
 - `cdn_cors_origin host.example.com`: Allowed CORS origin (optional, default *)
 - `cdn_read_only no`: Read-only mode prohibits uploads and deletions; set to `yes` to enable (optional, default "no")
+- `cdn_status_download 403`: Default HTTP status for downloads unless modified by the authorisation process (optional, default "403")
+- `cdn_status_upload 200`: Default HTTP status for uploads unless modified by the authorisation process (optional, default "200")
 
 ## Authorisation parameters
 
@@ -94,7 +96,9 @@ Authorisation token may be supplied in:
 
 The authorisation method determines how this authentication token will be processed to extract the actual authorisation token, which is then passed to the authorisation backend. 
 
-You may also use tarnsparent authorisation when we pass all incoming headers and cookies to the authorisation body without working on them.
+You may also use transparent authorisation when we pass all incoming headers and cookies to the authorisation body without working on them.
+
+If no authorisation token is found, it is the values of of the `cdn_status_download` parameter (for downloads) and `cdn_status_upload` parameter (for uploads) which determine whether the download or upload will be permitted. NB: The default value of `cdn_status_upload` is to permit upload while the default value of `cdn_status_download` is to deny download.
 
 ## Authorisation by JWT
 
@@ -161,15 +165,17 @@ Set the transport to the same value.
 
 ### Upload
 
-Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It must have eight placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`. All these placeholders should be `'%s'` (for strings) except for the fourth and seventh which should be `%u` (because they are integers); don't forget the single quotes around the string placeholder.
+Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It must have eight placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`. All these placeholders should be `'%s'` (for strings) except for the fourth and seventh which should be `%u` (because they are integers); don't forget the single quotes around the string placeholder. If the authorisation value is not found in the request, it will be substituted by an empty string.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure('%s', '%s', '%s', %u, '%s', '%s', %u, '%s')`.
+
+The query may return a row (e.g., if using a stored procedure or if using `INSERT ... RETRUNING`) having a column `status` (or `STATUS` for Oracle) with the HTTP code to allow or deny the operation. If none is returned, the value of `cdn_status_upload` configuration parameter will determine if the upload will be allowed or not.
 
 ### Download
 
 Set the SQL SELECT query to run in the configuration option `cdn_sql_select`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
 
-The SQL query should return a single row with column names matching the keys described above if the request is authorised and no rows if request is declined.
+The SQL query should return a single row with column names matching the keys described above if the request is to be explicitly authorised or declined. If no row is returned (or if the response lacks the `status` column), whether the download will proceed or not is determined by the value of the `cdn_status_download` parameter.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
@@ -189,13 +195,15 @@ Set the database name in the configuration option `cnd_mongo_db`. Set the collec
 
 Because MongoDB does not allow for textual queries, both file metadata and authorisation data must reside in a single collection with one document per file.
 
+Since MonogoDB cannot return a value on document insertion query, the value of `cdn_status_upload` configuration parameter will determine if the upload will be allowed or not.
+
 ### Upload
 
 The CDN will create a document with the same properties as given, including `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). 
 
 ### Download
 
-The CDN will compose a Mongo query with a filter that will have both properties `file_id` and `auth_value` set: `{file_id: 1234-567-89, auth_value: abcd-efgh-ijkl}`; there should either be one exact match (if access is authorised) or no match.
+The CDN will compose a Mongo query with a filter that will have both properties `file_id` and `auth_value` set: `{file_id: 1234-567-89, auth_value: abcd-efgh-ijkl}` (if the authorisation value is not found in the request, it will not be part of the filter.). There should be one exact match if the request is to be explicitly authorised or declined; if no row is returned (or if the response lacks the `status` property), whether the download will proceed or not is determined by the value of the `cdn_status_download` parameter. 
 
 ### Delete
 
@@ -230,6 +238,8 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 	"status": 200
 }
 ```
+
+If no response is returned (or if the response lacks the `status` field), whether the upload will proceed or not is determined by the value of the `cdn_status_upload` parameter.
 
 ### Download 
 
@@ -277,6 +287,9 @@ The field `auth_value` from authentication token is included only if configurati
 	"error": "none"
 }
 ```
+
+If no response is returned (or if the response lacks the `status` field), whether the download will proceed or not is determined by the value of the `cdn_status_download` parameter.
+
 ### Delete
 
 The authorisation request will be the same as with download, but the `http_method` will be set to DELETE.
@@ -312,6 +325,8 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 	<status>200</status>
 </response>
 ```
+
+If no response is returned (or if the response lacks the `status` field), whether the upload will proceed or not is determined by the value of the `cdn_status_upload` parameter.
 
 ### Download
 
@@ -360,6 +375,8 @@ The element `auth_value` from authentication token is included only if configura
 </response>
 ```
 
+If no response is returned (or if the response lacks the `status` field), whether the download will proceed or not is determined by the value of the `cdn_status_download` parameter.
+
 ### Delete
 
 The authorisation request will be the same as with download, but the `http_method` will be set to DELETE.
@@ -372,7 +389,7 @@ The response should be the same as with upload (only status code, but mandatory)
 
 This transport is used when request type is `json` (JSON exchange) or `xml` (XML exchange).
 
-Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writable by the Nginx system user. 
+Set the path to the Unix socket in configuration option `cdn_unix_socket`. Note that socket must be writeable by the Nginx system user. 
 
 The Unix socket must be of type `stream`. The module will half-close the connection once it has written its request and will then expect the response, followed by full connection close by the authorisation body. 
 

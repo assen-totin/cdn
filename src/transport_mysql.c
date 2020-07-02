@@ -20,7 +20,7 @@ static ngx_int_t close_mysql(void *con, ngx_int_t ret) {
 }
 
 /**
- * Get file metadata from MySQL
+ * Get/Put/Delete file metadata from MySQL
  */
 ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_MYSQL
@@ -49,12 +49,17 @@ ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r, int mode) {
 		return close_mysql(&conn, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
-	// Only fetch result when querying for data
+	// Only fetch result when getting or putting data
 	if (mode == METADATA_SELECT) {
 		if ((session->mysql_result = mysql_store_result(&conn)) == NULL) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MySQL result is NULL: %s", session->sql_query, mysql_error(&conn));
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MySQL METADATA_SELECT result is NULL: %s", session->sql_query, mysql_error(&conn));
 			return close_mysql(&conn, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
+	}
+
+	if (mode == METADATA_INSERT) {
+		if ((session->mysql_result = mysql_store_result(&conn)) == NULL)
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "MySQL METADATA_INSERT result is NULL: %s", session->sql_query, mysql_error(&conn));
 	}
 
 	close_mysql(&conn, NGX_OK);

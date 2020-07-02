@@ -85,7 +85,8 @@
 #define DEFAULT_FILE_NAME "unnamed"
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
-#define DEFAULT_HTTP_CODE 200
+#define DEFAULT_STATUS_UPLOAD 200
+#define DEFAULT_STATUS_DOWNLOAD 403
 #define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
@@ -177,6 +178,8 @@ typedef struct {
 	ngx_str_t cors_origin;
 	ngx_str_t read_only;
 	ngx_str_t cache_size;
+	ngx_str_t status_upload;
+	ngx_str_t status_download;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -214,6 +217,8 @@ typedef struct {
 	time_t exp;
 	uint server_id;
 	uint fs_depth;
+	uint32_t status_upload;
+	uint32_t status_download;
 	char *fs_root;
 	char *read_only;
 	char *http_method;

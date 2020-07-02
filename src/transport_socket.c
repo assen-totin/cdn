@@ -14,7 +14,7 @@ ngx_int_t transport_socket(session_t *session, ngx_http_request_t *r, int socket
 	struct sockaddr_un remote_un;
 	struct sockaddr_in remote_in;
 	struct hostent *host;
-	int sock, addr_len_un, bytes_in, auth_response_len, auth_response_pos=0;
+	int sock, addr_len_un, bytes_in, auth_response_len=0, auth_response_pos=0;
 	char msg_in[SOCKET_BUFFER_CHUNK], *tmp;
 
 	// Init socket
@@ -82,17 +82,9 @@ ngx_int_t transport_socket(session_t *session, ngx_http_request_t *r, int socket
 	shutdown(sock, SHUT_WR);
 
 	// Await reponse
-	if ((session->auth_response = malloc(SOCKET_BUFFER_CHUNK)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_response.", SOCKET_BUFFER_CHUNK);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	auth_response_len = SOCKET_BUFFER_CHUNK;
-	memset(session->auth_response, '\0', auth_response_len);
-
-	memset(&msg_in[0], '\0', sizeof(msg_in));
-
 	while(1) {
+		memset(&msg_in[0], '\0', sizeof(msg_in));
+
 		// Blocking read till we get a response
 		if ((bytes_in = read(sock, &msg_in[0], sizeof(msg_in)-1)) == -1) {
 			free(session->auth_response);
@@ -109,7 +101,16 @@ ngx_int_t transport_socket(session_t *session, ngx_http_request_t *r, int socket
 		else {
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Received %u bytes from socket\n", bytes_in);
 			if (bytes_in) {
-				// We read some more data, append it  (but expand buffer before that if necessary)
+				// We read some more data, append it (but init or expand buffer before that if necessary)
+				if (! session->auth_response) {
+					if ((session->auth_response = malloc(SOCKET_BUFFER_CHUNK)) == NULL) {
+						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_response.", SOCKET_BUFFER_CHUNK);
+						return NGX_HTTP_INTERNAL_SERVER_ERROR;
+					}
+					memset(session->auth_response, '\0', SOCKET_BUFFER_CHUNK);
+					auth_response_len = SOCKET_BUFFER_CHUNK;
+				}
+
 				if (auth_response_pos + bytes_in > auth_response_len - 1) {
 					if ((tmp = realloc(session->auth_response, auth_response_len + SOCKET_BUFFER_CHUNK)) == NULL) {
 						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to reallocate %l bytes for auth_response.", auth_response_len + SOCKET_BUFFER_CHUNK);
@@ -123,9 +124,11 @@ ngx_int_t transport_socket(session_t *session, ngx_http_request_t *r, int socket
 				auth_response_pos += bytes_in;
 			}
 			else {
-				// NULL_terminate the incoming buffer and exit the loop
-				memset(session->auth_response + auth_response_pos, '\0', 1);
-				break;
+				// NULL_terminate the incoming buffer and exit the loop (if we read any data)
+				if (session->auth_response) {
+					memset(session->auth_response + auth_response_pos, '\0', 1);
+					break;
+				}
 			}
 		}
 	}

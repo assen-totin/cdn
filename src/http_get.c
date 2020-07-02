@@ -37,25 +37,35 @@ static void ngx_http_cdn_cleanup(void *a) {
  * Check metdata for errors
  */
 static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
-	// Metadata: check for error
-	if ((metadata->status > 0) && (metadata->status != NGX_HTTP_OK)) {
-		if (metadata->error)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
-		return metadata->status;
-	}
-
 	// Log an error if such was returned (with status 200 or no status)
 	if (metadata->error)
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
 
-	// Check if we have the file name ro serve and returnerror if we don't have it
+	// Check if authorisation denied the request
+	if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
+		return metadata->status;
+	}
+
+	// Check if we have the HTTP response code and use the default one if missing
+	if (metadata->status < 0) {
+		metadata->status = session->status_download;
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %l", metadata->file, session->status_download);
+		if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Denying request due to default status: %l", metadata->status);
+			return metadata->status;
+		}
+	}
+
+	// NB: We are going to serve the request if beyound this line
+
+	// Check if we have the file name to serve and return error if we don't have it
 	if (! metadata->file) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Filename not received, aborting request.");
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	// Check if we have the end user's file name and use the CDN filename if missing
+	// Check if we have the original file name and use the CDN filename if missing
 	if (! metadata->filename) {
 		if ((metadata->filename = ngx_pcalloc(r->pool, strlen(metadata->file) + 1)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(metadata->file) + 1);
@@ -96,12 +106,6 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 	// Check if we have the upload date specified
 	if (metadata->upload_date < 0)
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", metadata->file);
-
-	// Check if we have the HTTP response code and use the default one if missing
-	if (metadata->status < 0) {
-		metadata->status = DEFAULT_HTTP_CODE;
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s status not found, using default %l", metadata->file, DEFAULT_HTTP_CODE);
-	}
 
 	// Return 304 in certain cases
 	if (session->hdr_if_none_match && metadata->etag && ! strcmp(session->hdr_if_none_match, metadata->etag))
@@ -438,21 +442,21 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	if ((ret = get_auth_token(session, r)) > 0)
 		return ret;
 
-	// Extract authentication token to value
-	if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
-		if ((ret = auth_jwt(session, r)) > 0)
-			return ret;
-	}
-	else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
-		if ((ret = auth_session(session, r)) > 0)
-			return ret;
-	}
+	if (session->auth_token) {
+		// Extract authentication token to value
+		if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
+			if ((ret = auth_jwt(session, r)) > 0)
+				return ret;
+		}
+		else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
+			if ((ret = auth_session(session, r)) > 0)
+				return ret;
+		}
 
-	// Apply filter to auth_value, if any; if auth_value was request, but is empty after the filter, deny request
-	if ((ret = filter_auth_value(session, r)) > 0)
-		return ret;
-	if (session->auth_type && ! session->auth_value)
-		return NGX_HTTP_FORBIDDEN;
+		// Apply filter to auth_value
+		if ((ret = filter_auth_value(session, r)) > 0)
+			return ret;
+	}
 
 	// Prepare request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
@@ -494,12 +498,16 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	// Clean up BSON if used
 	if (session->auth_request) {
 		// For JSON, clean always
-		if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
+		if (! strcmp(session->request_type, REQUEST_TYPE_JSON)) {
 			bson_free(session->auth_request);
+			session->auth_request = NULL;
+		}
 		// For Mongo, only clean if we are not deleteting the file; we'll re-use the request to delete the data
 		if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
-			if (! (r->method & NGX_HTTP_DELETE))
+			if (! (r->method & NGX_HTTP_DELETE)) {
 				bson_free(session->auth_request);
+				session->auth_request = NULL;
+			}
 		}
 	}
 
@@ -511,8 +519,10 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = response_get_json(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
 		ret = response_get_json(session, metadata, r);
-		bson_free(session->auth_response);
-		session->auth_response = NULL;
+		if (session->auth_response) {
+			bson_free(session->auth_response);
+			session->auth_response = NULL;
+		}
 	}
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
 		ret = response_get_mysql(session, metadata, r);
@@ -522,12 +532,6 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = response_get_postgresql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_get_xml(session, metadata, r);
-
-	// For Internal and Redis transport (which uses JSON or XML), validate permission
-	if ((! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) || (! strcmp(session->transport_type, TRANSPORT_TYPE_REDIS))){
-		if (strcmp(session->auth_value, metadata->auth_value))
-			return NGX_HTTP_FORBIDDEN;
-	}
 
 	// Clean up auth reponse unless using transport Internal or Redis
 	if (session->auth_response) {

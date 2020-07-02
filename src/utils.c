@@ -388,6 +388,8 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->http_method = ngx_pcalloc(r->pool, 8);
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
 	session->cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
+	session->status_upload = atoi(from_ngx_str(r->pool, cdn_loc_conf->status_upload));
+	session->status_download = atoi(from_ngx_str(r->pool, cdn_loc_conf->status_download));
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
 	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);

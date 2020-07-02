@@ -16,12 +16,15 @@ ngx_int_t request_post_mongo(session_t *session, metadata_t *metadata, ngx_http_
 
 // MySQL
 ngx_int_t response_get_mysql(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t response_post_mysql(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 
 // Oracle
 ngx_int_t response_get_oracle(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t response_post_oracle(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 
 // PostgreSQL
 ngx_int_t response_get_postgresql(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t response_post_postgresql(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 
 // SQL (common)
 ngx_int_t request_get_sql(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode);

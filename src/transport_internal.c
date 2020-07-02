@@ -91,7 +91,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: key not found in cache", path);
 		if ((file_fd = open(path, O_RDONLY)) == -1) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Internal transport: failed to open metadata file %s: %s", path, strerror(errno));
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			return NGX_OK;
 		}
 
 		// Get file size

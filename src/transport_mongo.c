@@ -23,7 +23,7 @@ static ngx_int_t close_mongo(bson_t *query,  mongoc_client_t * conn, mongoc_coll
 #endif
 
 /**
- * Get file metadata from Mongo
+ * Get/Put/Delete file metadata from Mongo
  */
 ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_MONGO

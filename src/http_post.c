@@ -462,19 +462,21 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	if ((ret = get_auth_token(session, r)) > 0)
 		return upload_cleanup(r, rb, rb_malloc, ret);
 
-	// Extract authentication token to value
-	if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
-		if ((ret = auth_jwt(session, r)) > 0)
-			return upload_cleanup(r, rb, rb_malloc, ret);
-	}
-	else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
-		if ((ret = auth_session(session, r)) > 0)
-			return upload_cleanup(r, rb, rb_malloc, ret);
-	}
+	if (session->auth_token) {
+		// Extract authentication token to value
+		if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
+			if ((ret = auth_jwt(session, r)) > 0)
+				return upload_cleanup(r, rb, rb_malloc, ret);
+		}
+		else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
+			if ((ret = auth_session(session, r)) > 0)
+				return upload_cleanup(r, rb, rb_malloc, ret);
+		}
 
-	// Apply filter to auth_value, if any
-	if ((ret = filter_auth_value(session, r)) > 0)
-		return upload_cleanup(r, rb, rb_malloc, ret);
+		// Apply filter to auth_value, if any
+		if ((ret = filter_auth_value(session, r)) > 0)
+			return upload_cleanup(r, rb, rb_malloc, ret);
+	}
 
 	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
@@ -559,8 +561,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = transport_socket(session, r, SOCKET_TYPE_UNUX);
 
 	if (session->auth_request) {
-		if ((! strcmp(session->request_type, REQUEST_TYPE_JSON)) || (! strcmp(session->request_type, REQUEST_TYPE_MONGO)))
+		if ((! strcmp(session->request_type, REQUEST_TYPE_JSON)) || (! strcmp(session->request_type, REQUEST_TYPE_MONGO))) {
 			bson_free(session->auth_request);
+			session->auth_request = NULL;
+		}
 	}
 
 	if (ret)
@@ -570,31 +574,35 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
 		ret = response_post_json(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MONGO)) {
+		// Mongo cannot return reponse after insertion, so consider it to be OK
 		metadata->status = NGX_HTTP_OK;
 		ret = NGX_OK;
 	}
-	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL)) {
-		metadata->status = NGX_HTTP_OK;
-		ret = NGX_OK;
-	}
-	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE)) {
-		metadata->status = NGX_HTTP_OK;
-		ret = NGX_OK;
-	}
-	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL)) {
-		metadata->status = NGX_HTTP_OK;
-		ret = NGX_OK;
-	}
+	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
+		ret = response_post_mysql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
+		ret = response_post_oracle(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
+		ret = response_post_postgresql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_post_xml(session, metadata, r);
 
-	if (session->auth_response)
-		free(session->auth_response);
+	// Clean up auth reponse unless using transport Internal or Redis
+	if (session->auth_response) {
+		if ((strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) && (strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)))
+			free(session->auth_response);
+	}
 
 	if (ret)
 		return upload_cleanup(r, rb, rb_malloc, ret);
 
-	if (metadata->status != NGX_HTTP_OK)
+	// Set defaul status if missing
+	if (metadata->status < 0) {
+		metadata->status = session->status_upload;
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload status not found, using default %l", session->status_upload);
+	}
+
+	if (metadata->status >= NGX_HTTP_BAD_REQUEST )
 		return upload_cleanup(r, rb, rb_malloc, metadata->status);
 
 	// Clean up CURL if it got used

@@ -21,7 +21,7 @@ static ngx_int_t close_oracle(session_t *session, ngx_int_t ret) {
 }
 
 /**
- * Get file metadata from Oracle
+ * Get/Put/Delete file metadata from Oracle
  */
 ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_ORACLE
@@ -58,10 +58,15 @@ ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r, int mode) 
 		}
 	}
 	else {
+		// Put, Delete
 		if (! OCI_API OCI_Commit (session->oracle_connection)) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to commit to Oracle: %s", OCI_ErrorGetString(OCI_GetLastError()));
 			return close_oracle(session, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
+
+		// Try to get any result for INSERT
+		if (mode == METADATA_INSERT) {
+			session->oracle_result = OCI_GetResultset(session->oracle_statement);
 	}
 #endif
 
