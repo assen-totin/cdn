@@ -172,6 +172,9 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 
 	bson_destroy(&doc);
 
+	// Do an authorisation check if the response has come from a local source (like Internal or Redis transport)
+	auth_check(session, metadata, r);
+
 	session->auth_response_count = 1;
 
 	return NGX_OK;

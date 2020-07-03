@@ -547,3 +547,23 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 	return NGX_OK;
 }
 
+/**
+ * Perform authorisation check
+ */
+void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	if (session->auth_value && metadata->auth_value) {
+		if (session->auth_value == metadata->auth_value) {
+			if (metadata->status < 0) {
+				metadata->status = NGX_HTTP_OK;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth check: match on auth_value, allowing reqiest");
+			}
+		}
+		else {
+			if (metadata->status < 0) {
+				metadata->status = NGX_HTTP_FORBIDDEN;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth check: mismatch on auth_value, denying reqiest");
+			}
+		}
+	}
+}
+

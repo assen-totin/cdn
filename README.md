@@ -102,6 +102,17 @@ You may also use transparent authorisation when we pass all incoming headers and
 
 ## Rules
 
+### Upload
+
+The decision whether to allow the upload or not is taken based on the following rules:
+
+- If the authorisation body responds with an explicit status code, it is used verbatim.
+- If the authorisation body response was not empty, but it did not contain an explicit status code, or if it was empty:
+-- If the request yielded an authorisation value, the request is allowed.
+-- If the request did yield an authorisation value, the request is served or rejected based on the value of the `cdn_status_upload` configuration parameter. NB: The default value of `cdn_status_upload` is to allow upload.
+
+### Download
+
 The decision whether to serve the request or not is taken based on the following rules:
 
 - If the authorisation body responds with an explicit status code, it is used verbatim. 

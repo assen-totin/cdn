@@ -47,7 +47,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 		return metadata->status;
 	}
 
-	// Check if we have the HTTP response code and use the default one if missing
+	// If we did not get status code, use the default one
 	if (metadata->status < 0) {
 		// No result from auth service: reject
 		if (! session->auth_response_count) {
