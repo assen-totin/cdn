@@ -28,11 +28,11 @@ All below Nginx parameters should be configured for the chosen `location`:
 - `cdn_server_id 1`: the ID of the server instance, integer between 1 and 48 (optional, default 1)
 - `cdn_cors_origin host.example.com`: Allowed CORS origin (optional, default *)
 - `cdn_read_only no`: Read-only mode prohibits uploads and deletions; set to `yes` to enable (optional, default "no")
-- `cdn_status_download 403`: Fallback HTTP status for downloads (optional, default "403")
-- `cdn_status_upload 200`: Fallback HTTP status for uploads (optional, default "200")
 
 ## Authorisation parameters
 
+- `cdn_matrix_dnld`: Authorisation matrix for downloads (optional, default "allow:deny:deny:deny")
+- `cdn_matrix_upld`: Authorisation matrix for uploads (optional, default "allow:allow:deny:deny")
 - `cdn_auth_type jwt`: Type of authorisation to use: `jwt` or `session` (optional, default none)
 - `cdn_auth_cookie my_cookie`: Name of the cookie where to find the authorisation token (optional)
 - `cdn_auth_header X-Custom-Auth`; Name of the HTTP header where to find the authorisation token (optional)
@@ -100,26 +100,33 @@ The authorisation method determines how this authentication token will be proces
 
 You may also use transparent authorisation when we pass all incoming headers and cookies to the authorisation body without working on them.
 
-## Rules
+## Matrix
+
+An authorisation request has 3 possible outcomes:
+
+- Explicit status code (with file metadata in the case of download authorisation)
+- No status code (with file metadata in the case of download authorisation)
+- Empty response
+
+In the first case the request will be allowed or denied based on the explicit status value in the response. In the second and third cases, the `cdn_matrix_upld` and `cdn_matrix_dnld` configuration parameters may override the built-in logic whether to allow or deny the request. If defined, each of these 
 
 ### Upload
 
-The decision whether to allow the upload or not is taken based on the following rules:
+If defined, the `cdn_matrix_upld` must be a colon-delimited list of actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
-- If the authorisation body responds with an explicit status code, it is used verbatim.
-- If the authorisation body response was not empty, but it did not contain an explicit status code, or if it was empty:
--- If the request yielded an authorisation value, the request is allowed.
--- If the request did yield an authorisation value, the request is served or rejected based on the value of the `cdn_status_upload` configuration parameter. NB: The default value of `cdn_status_upload` is to allow upload.
+- Authroisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
+- Authroisation request with authorisation value yielded empty response; default is `allow`.
+- Authroisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
+- Authroisation request without authorisation value yielded empty response; default is `deny`.
 
 ### Download
 
-The decision whether to serve the request or not is taken based on the following rules:
+If defined, the `cdn_matrix_dnld` must be a colon-delimited list of actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
-- If the authorisation body responds with an explicit status code, it is used verbatim. 
-- If the authorisation body response was not empty, but it did not contain an explicit status code:
--- If the request yielded an authorisation value, the request is served.
--- If the request did yield an authorisation value, the request is served or rejected based on the value of the `cdn_status_download` configuration parameter. NB: The default value of `cdn_status_download` is to deny download.
-- If the authorisation body response was empty, request is always rejected.
+- Authroisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
+- Authroisation request with authorisation value yielded empty response; default is `deny`.
+- Authroisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
+- Authroisation request without authorisation value yielded empty response; default is `deny`.
 
 ## Authorisation by JWT
 

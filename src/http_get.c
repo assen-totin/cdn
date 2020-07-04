@@ -41,34 +41,37 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 	if (metadata->error)
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
 
+	// If we did not get status code, use the configured one
+	if (metadata->status < 0) {
+		// Check if we had an auth value
+		if (session->auth_value) {
+			// Check if we got back a response
+			if (session->auth_response_count) {
+				metadata->status = session->matrix_dnld.auth_resp;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value +resp setting status %l.", metadata->file, metadata->status);
+			}
+			else {
+				metadata->status = session->matrix_dnld.auth_noresp;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value -resp setting status %l.", metadata->file, metadata->status);
+			}
+		}
+		else {
+			// Check if we got back a response
+			if (session->auth_response_count) {
+				metadata->status = session->matrix_dnld.noauth_resp;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value +resp setting status %l.", metadata->file, metadata->status);
+			}
+			else {
+				metadata->status = session->matrix_dnld.noauth_noresp;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value -resp setting status %l.", metadata->file, metadata->status);
+			}
+		}
+	}
+
 	// Check if authorisation denied the request
 	if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
 		return metadata->status;
-	}
-
-	// If we did not get status code, use the default one
-	if (metadata->status < 0) {
-		// No result from auth service: reject
-		if (! session->auth_response_count) {
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s empty auth response, rejecting.", metadata->file);
-			return NGX_HTTP_FORBIDDEN;
-		}
-
-		// If we had an auth value, pass; if not, check config value
-		if (session->auth_value) {
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response with no status but with auth_value, allowing.", metadata->file);
-			metadata->status = NGX_HTTP_OK;
-		}
-		else {
-			metadata->status = session->status_download;
-			if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response with no status and no auth_value, config rejects.", metadata->file);
-				return metadata->status;
-			}
-			else 
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response with no status and no auth_value, config allows.", metadata->file);
-		}
 	}
 
 	// NB: We are going to serve the request if beyound this line

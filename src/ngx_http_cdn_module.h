@@ -231,19 +231,19 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
-		ngx_string("cdn_status_upload"),
+		ngx_string("cdn_matrix_upld"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, status_upload),
+		offsetof(ngx_http_cdn_loc_conf_t, matrix_upld),
 		NULL
 	},
 	{
-		ngx_string("cdn_status_download"),
+		ngx_string("cdn_matrix_dnld"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, status_download),
+		offsetof(ngx_http_cdn_loc_conf_t, matrix_dnld),
 		NULL
 	},
 	ngx_null_command

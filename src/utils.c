@@ -5,6 +5,7 @@
  */
 
 #include "common.h"
+#include "filter.h"
 
 // We need this here as a declaration only; it is defined in main header file which will resolve it at runtime.
 ngx_module_t ngx_http_cdn_module;
@@ -343,7 +344,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	session_t *session;
 	int fd;
-	char *jwt_key;
+	char *jwt_key, *matrix_dnld, *matrix_upld;
 	struct stat statbuf;
 
 	// Init session
@@ -389,8 +390,21 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->http_method = ngx_pcalloc(r->pool, 8);
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
 	session->cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
-	session->status_upload = atoi(from_ngx_str(r->pool, cdn_loc_conf->status_upload));
-	session->status_download = atoi(from_ngx_str(r->pool, cdn_loc_conf->status_download));
+
+	// Build authorisation matrix
+	matrix_dnld = from_ngx_str(r->pool, cdn_loc_conf->matrix_dnld);
+	matrix_upld = from_ngx_str(r->pool, cdn_loc_conf->matrix_upld);
+
+	session->matrix_upld.auth_resp = (! strcmp(filter_token(r, matrix_upld, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_upld.auth_noresp = (! strcmp(filter_token(r, matrix_upld, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_upld.noauth_resp = (! strcmp(filter_token(r, matrix_upld, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_upld.noauth_noresp = (! strcmp(filter_token(r, matrix_upld, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+
+	session->matrix_dnld.auth_resp = (! strcmp(filter_token(r, matrix_dnld, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_dnld.auth_noresp = (! strcmp(filter_token(r, matrix_dnld, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_dnld.noauth_resp = (! strcmp(filter_token(r, matrix_dnld, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_dnld.noauth_noresp = (! strcmp(filter_token(r, matrix_dnld, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
 	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);

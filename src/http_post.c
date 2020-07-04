@@ -594,32 +594,37 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	if (ret)
 		return upload_cleanup(r, rb, rb_malloc, ret);
 
-	// Set status based on authorisation results
+	// If we did not get status code, use the configured one
+	if (metadata->status < 0) {
+		// Check if we had an auth value
+		if (session->auth_value) {
+			// Check if we got back a response
+			if (session->auth_response_count) {
+				metadata->status = session->matrix_upld.auth_resp;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value +resp setting status %l.", metadata->status);
+			}
+			else {
+				metadata->status = session->matrix_upld.auth_noresp;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value -resp setting status %l.", metadata->status);
+			}
+		}
+		else {
+			// Check if we got back a response
+			if (session->auth_response_count) {
+				metadata->status = session->matrix_upld.noauth_resp;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value +resp setting status %l.", metadata->status);
+			}
+			else {
+				metadata->status = session->matrix_upld.noauth_noresp;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value -resp setting status %l.", metadata->status);
+			}
+		}
+	}
 
 	// Check if authorisation denied the request
 	if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
 		return upload_cleanup(r, rb, rb_malloc, metadata->status);
-	}
-
-	// If we did not get status code, use the default one
-	if (metadata->status < 0) {
-		// If we had an auth value, pass - no matter whether we got a response (w/o status) or not
-		if (session->auth_value) {
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response with no status but with auth_value, allowing.");
-			metadata->status = NGX_HTTP_OK;
-		}
-		else {
-			// Without auth_value, use the configured status
-			metadata->status = session->status_upload;
-
-			if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response with no status and no auth_value, config rejects.");
-				return upload_cleanup(r, rb, rb_malloc, metadata->status);
-			}
-			else 
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response with no status and no auth_value, config allows.");
-		}
 	}
 
 	// NB: We are going to serve the request if beyound this line

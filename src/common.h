@@ -85,11 +85,13 @@
 #define DEFAULT_FILE_NAME "unnamed"
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
-#define DEFAULT_STATUS_UPLOAD 200
-#define DEFAULT_STATUS_DOWNLOAD 403
 #define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
+#define DEFAULT_MATRIX_ALLOW "allow"
+#define DEFAULT_MATRIX_DENY "deny"
+#define DEFAULT_MATRIX_DNLD "allow:deny:deny:deny"
+#define DEFAULT_MATRIX_UPLD "allow:allow:deny:deny"
 #define DEFAULT_MONGO_COLLECTION "none"
 #define DEFAULT_MONGO_DB "none"
 #define DEFAULT_READ_ONLY "no"
@@ -117,6 +119,8 @@
 #define ERROR_MESSAGE_LENGTH 1024
 
 #define MAX_SERVER_ID 48
+#define MATRIX_ALLOW_STATUS 200
+#define MATRIX_DENY_STATUS 403
 
 #define AUTH_TYPE_JWT "jwt"
 #define AUTH_TYPE_SESSION "session"
@@ -178,8 +182,8 @@ typedef struct {
 	ngx_str_t cors_origin;
 	ngx_str_t read_only;
 	ngx_str_t cache_size;
-	ngx_str_t status_upload;
-	ngx_str_t status_download;
+	ngx_str_t matrix_dnld;
+	ngx_str_t matrix_upld;
 } ngx_http_cdn_loc_conf_t;
 
 typedef struct {
@@ -213,12 +217,19 @@ typedef struct {
 } db_dsn_t;
 
 typedef struct {
+	uint auth_resp;
+	uint auth_noresp;
+	uint noauth_resp;
+	uint noauth_noresp;
+} auth_matrix;
+
+typedef struct {
 	ngx_http_request_t *r;
 	time_t exp;
 	uint server_id;
 	uint fs_depth;
-	uint32_t status_upload;
-	uint32_t status_download;
+	auth_matrix matrix_dnld;
+	auth_matrix matrix_upld;
 	char *fs_root;
 	char *read_only;
 	char *http_method;
