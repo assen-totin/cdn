@@ -112,21 +112,21 @@ In the first case the request will be allowed or denied based on the explicit st
 
 ### Upload
 
-If defined, the `cdn_matrix_upld` must be a colon-delimited list of actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
+If defined, the `cdn_matrix_upld` must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
-- Authroisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
-- Authroisation request with authorisation value yielded empty response; default is `allow`.
-- Authroisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
-- Authroisation request without authorisation value yielded empty response; default is `deny`.
+- Authorisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
+- Authorisation request with authorisation value yielded empty response; default is `allow`.
+- Authorisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
+- Authorisation request without authorisation value yielded empty response; default is `deny`.
 
 ### Download
 
-If defined, the `cdn_matrix_dnld` must be a colon-delimited list of actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
+If defined, the `cdn_matrix_dnld` must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
-- Authroisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
-- Authroisation request with authorisation value yielded empty response; default is `deny`.
-- Authroisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
-- Authroisation request without authorisation value yielded empty response; default is `deny`.
+- Authorisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
+- Authorisation request with authorisation value yielded empty response; default is `deny`.
+- Authorisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
+- Authorisation request without authorisation value yielded empty response; default is `deny`.
 
 ## Authorisation by JWT
 
@@ -199,19 +199,25 @@ NB: for complex queries, create a stored procedure and use stanza like `CALL my_
 
 The query may return a row (e.g., if using a stored procedure or if using `INSERT ... RETRUNING`) having a column `status` (or `STATUS` for Oracle) with the HTTP code to allow or deny the operation. 
 
+The default query is `INSERT INTO cdn (auth_value, file_id, filename, length, content_type, content_disposition, upload_date, etag) VALUES ('%s','%s','%s',%u,'%s','%s', %u,'%s')`.
+
 ### Download
 
-Set the SQL SELECT query to run in the configuration option `cdn_sql_select`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
+Set the SQL SELECT query to run in the configuration option `cdn_sql_select`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the authorisation value.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
 NB: Oracle returns the column names in caps. This is OK.
+
+The default query is `SELECT * FROM cdn WHERE file_id='%s' AND auth_value='%s'`.
 
 ### Delete
 
 Set the SQL DELETE query to run in the configuration option `cdn_sql_delete`. It must have a single `%s` placeholder, which will be filled with the file ID.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
+
+The default query is `DELETE FROM cdn WHERE file_id='%s'`.
 
 ## MongoDB
 
@@ -227,7 +233,9 @@ The CDN will create a document with the same properties as given, including `fil
 
 ### Download
 
-The CDN will compose a Mongo query with a filter that will have both properties `file_id` and `auth_value` set: `{file_id: 1234-567-89, auth_value: abcd-efgh-ijkl}` (if the authorisation value is not found in the request, it will not be part of the filter.). 
+Set the Mongo filter in the configuration option `cdn_mongo_filter`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the authorisation value.
+
+The default filter is `{'file_id': '%s', 'auth_value': '%s'}`.
 
 ### Delete
 
@@ -262,6 +270,8 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 	"status": 200
 }
 ```
+
+If the response lacks the `status` field, but has a `auth_value`, it will be compared to the authorisation value in the HTTP request, if such is present, and on mismatch the response will be treated as empty.
 
 ### Download 
 
@@ -310,6 +320,8 @@ The field `auth_value` from authentication token is included only if configurati
 }
 ```
 
+If the response lacks the `status` field, but has a `auth_value`, it will be compared to the authorisation value in the HTTP request, if such is present, and on mismatch the response will be treated as empty.
+
 ### Delete
 
 The authorisation request will be the same as with download, but the `http_method` will be set to DELETE.
@@ -345,6 +357,8 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 	<status>200</status>
 </response>
 ```
+
+If the response lacks the `status` element, but has a `auth_value`, it will be compared to the authorisation value in the HTTP request, if such is present, and on mismatch the response will be treated as empty.
 
 ### Download
 
@@ -392,6 +406,8 @@ The element `auth_value` from authentication token is included only if configura
 	<error>none</error>
 </response>
 ```
+
+If the response lacks the `status` element, but has a `auth_value`, it will be compared to the authorisation value in the HTTP request, if such is present, and on mismatch the response will be treated as empty.
 
 ### Delete
 

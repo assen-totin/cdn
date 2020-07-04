@@ -408,6 +408,7 @@ session_t *init_session(ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
 	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
+	session->mongo_filter = from_ngx_str(r->pool, cdn_loc_conf->mongo_filter);
 #endif
 
 	// Check if we need to load the JWT key from file (i.e. key starts with a "/", so it is a path)
@@ -540,7 +541,10 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 			if (match)
 				break;
 
-			part = part->next;
+			if (part->next)
+				part = part->next;
+			else
+				break;
 		}
 	}
 
@@ -565,18 +569,15 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
  * Perform authorisation check
  */
 void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	// Skip if status is already set
+	if (metadata->status > 0)
+		return;
+
+	// If auth_value was provided and does not match the response, reset response count
 	if (session->auth_value && metadata->auth_value) {
-		if (session->auth_value == metadata->auth_value) {
-			if (metadata->status < 0) {
-				metadata->status = NGX_HTTP_OK;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth check: match on auth_value, allowing reqiest");
-			}
-		}
-		else {
-			if (metadata->status < 0) {
-				metadata->status = NGX_HTTP_FORBIDDEN;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth check: mismatch on auth_value, denying reqiest");
-			}
+		if (strcmp (session->auth_value, metadata->auth_value)) {
+			session->auth_response_count = 0;
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth check: mismatch on auth_value, resetting response count.");
 		}
 	}
 }

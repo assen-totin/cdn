@@ -107,12 +107,13 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->all_headers, parent->all_headers, DEFAULT_ALL_HEADERS);
 	ngx_conf_merge_str_value(child->all_cookies, parent->all_cookies, DEFAULT_ALL_COOKIES);
 	ngx_conf_merge_str_value(child->db_dsn, parent->db_dsn, DEFAULT_DB_DSN);
-	ngx_conf_merge_str_value(child->sql_insert, parent->sql_insert, DEFAULT_SQL_QUERY);
-	ngx_conf_merge_str_value(child->sql_delete, parent->sql_delete, DEFAULT_SQL_QUERY);
-	ngx_conf_merge_str_value(child->sql_select, parent->sql_select, DEFAULT_SQL_QUERY);
+	ngx_conf_merge_str_value(child->sql_delete, parent->sql_delete, DEFAULT_SQL_QUERY_DELETE);
+	ngx_conf_merge_str_value(child->sql_insert, parent->sql_insert, DEFAULT_SQL_QUERY_INSERT);
+	ngx_conf_merge_str_value(child->sql_select, parent->sql_select, DEFAULT_SQL_QUERY_SELECT);
 	ngx_conf_merge_str_value(child->http_url, parent->http_url, DEFAULT_HTTP_URL);
 	ngx_conf_merge_str_value(child->mongo_db, parent->mongo_db, DEFAULT_MONGO_DB);
 	ngx_conf_merge_str_value(child->mongo_collection, parent->mongo_collection, DEFAULT_MONGO_COLLECTION);
+	ngx_conf_merge_str_value(child->mongo_filter, parent->mongo_filter, DEFAULT_MONGO_FILTER);
 	ngx_conf_merge_str_value(child->cors_origin, parent->cors_origin, DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN);
 	ngx_conf_merge_str_value(child->read_only, parent->read_only, DEFAULT_READ_ONLY);
 	ngx_conf_merge_str_value(child->cache_size, parent->cache_size, DEFAULT_CACHE_SIZE);

@@ -92,12 +92,15 @@
 #define DEFAULT_MATRIX_DENY "deny"
 #define DEFAULT_MATRIX_DNLD "allow:deny:deny:deny"
 #define DEFAULT_MATRIX_UPLD "allow:allow:deny:deny"
-#define DEFAULT_MONGO_COLLECTION "none"
-#define DEFAULT_MONGO_DB "none"
+#define DEFAULT_MONGO_COLLECTION "cdn"
+#define DEFAULT_MONGO_DB "cdn"
+#define DEFAULT_MONGO_FILTER "{'file_id': '%s', 'auth_value': '%s'}"
 #define DEFAULT_READ_ONLY "no"
 #define DEFAULT_REQUEST_TYPE "none"
 #define DEFAULT_SERVER_ID "1"
-#define DEFAULT_SQL_QUERY "none"
+#define DEFAULT_SQL_QUERY_DELETE "DELETE FROM cdn WHERE file_id='%s'"
+#define DEFAULT_SQL_QUERY_INSERT "INSERT INTO cdn (auth_value, file_id, filename, length, content_type, content_disposition, upload_date, etag) VALUES ('%s','%s','%s',%u,'%s','%s', %u,'%s')"
+#define DEFAULT_SQL_QUERY_SELECT "SELECT * FROM cdn WHERE file_id='%s' AND auth_value='%s'"
 #define DEFAULT_TCP_HOST "example.com"
 #define DEFAULT_TCP_PORT "12345"
 #define DEFAULT_TRANSPORT_TYPE "none"
@@ -179,6 +182,7 @@ typedef struct {
 	ngx_str_t http_url;
 	ngx_str_t mongo_db;
 	ngx_str_t mongo_collection;
+	ngx_str_t mongo_filter;
 	ngx_str_t cors_origin;
 	ngx_str_t read_only;
 	ngx_str_t cache_size;
@@ -274,6 +278,7 @@ typedef struct {
 #ifdef CDN_ENABLE_MONGO
 	char *mongo_db;
 	char *mongo_collection;
+	char *mongo_filter;
 #endif
 #ifdef CDN_ENABLE_MYSQL
 	MYSQL_RES *mysql_result;

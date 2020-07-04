@@ -12,14 +12,39 @@
 ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_MONGO
 	bson_t filter;
+	bson_error_t error;
+	int len;
+	char *query;
 
-	// Prepare filter for query
-	bson_init (&filter);
-	BSON_APPEND_UTF8 (&filter, "file_id", metadata->file);
+	// session->mongo_filter now contains the filter template, but we want if to have the expanded filter, so swap it to a local variable
+	query = session->mongo_filter;
 
+	// Calculate length for query template + data (this will leave some small overhead from placeholders)
+	len = strlen(session->mongo_filter);
+	len += strlen(metadata->file);
 	if (session->auth_value)
-		BSON_APPEND_UTF8 (&filter, "auth_value", session->auth_value);
+		len += strlen(session->auth_value);
 
+	if ((session->mongo_filter = ngx_pcalloc(r->pool, len + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for query.", len + 1);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Replace placehodlers in query 
+	if (session->auth_value)
+		sprintf(session->mongo_filter, query, metadata->file, session->auth_value);
+	else
+		sprintf(session->mongo_filter, query, metadata->file, "");
+
+	// Prepare filter from query
+	bson_init (&filter);
+	if (! bson_init_from_json (&filter, session->mongo_filter, -1, &error)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Error parsing JSON %s : %s", session->mongo_filter, &error.message[0]);
+		bson_destroy(&filter);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	// Convert back to extended JSON to use later
 	session->auth_request = bson_as_canonical_extended_json(&filter, NULL);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Using BSON filter: %s", session->auth_request);
 
