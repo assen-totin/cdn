@@ -56,6 +56,7 @@ All below Nginx parameters should be configured for the chosen `location`:
 - `cdn_sql_delete`: only for transport type `mysql`, `oracle`, `postgresql`: SQL query to execute when deleting a file (with placeholders)
 - `cdn_mongo_collection`: only for transport type `mongo`: name of the Mongo collection which stored the metadata
 - `cdn_mongo_db`: only for transport type `mongo`: name of the Mongo database with the metadata collection
+- `cdn_mongo_filter`: only for transport type `mongo`: the filter for metadata collection query (with placeholders)
 - `cdn_cache_size`: only for transport type `internal`: the size of the memory cache to use in MB; default: 0 (cache disabled)
 
 The following general-purpose Nginx params may be useful:
@@ -193,7 +194,7 @@ Set the transport to the same value.
 
 ### Upload
 
-Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It must have eight placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`. All these placeholders should be `'%s'` (for strings) except for the fourth and seventh which should be `%u` (because they are integers); don't forget the single quotes around the string placeholder. If the authorisation value is not found in the request, it will be substituted by an empty string.
+Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It may have up to eight placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`. All these placeholders should be `'%s'` (for strings) except for the fourth and seventh which should be `%u` (because they are integers); don't forget the single quotes around the string placeholder. If the authorisation value is not found in the request, it will be substituted by an empty string.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure('%s', '%s', '%s', %u, '%s', '%s', %u, '%s')`.
 
@@ -203,7 +204,7 @@ The default query is `INSERT INTO cdn (auth_value, file_id, filename, length, co
 
 ### Download
 
-Set the SQL SELECT query to run in the configuration option `cdn_sql_select`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the authorisation value.
+Set the SQL SELECT query to run in the configuration option `cdn_sql_select`. It may have up to two `%s` placeholders - the first will be filled with the file ID and the second - with the authorisation value.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
 
@@ -233,9 +234,11 @@ The CDN will create a document with the same properties as given, including `fil
 
 ### Download
 
-Set the Mongo filter in the configuration option `cdn_mongo_filter`. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the authorisation value.
+Set the Mongo filter in the configuration option `cdn_mongo_filter`. It may have up to two `%s` placeholders - the first will be filled with the file ID and the second - with the authorisation value.
 
-The default filter is `{'file_id': '%s', 'auth_value': '%s'}`.
+NB: The parameter value must be a valid a JSON. You must escape all double quotes when putting the string in the Nginx configuration!
+
+The default filter is `{"file_id": "%s", "auth_value": "%s"}`.
 
 ### Delete
 
