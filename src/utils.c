@@ -344,7 +344,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	session_t *session;
 	int fd;
-	char *jwt_key, *matrix_dnld, *matrix_upld;
+	char *jwt_key, *matrix_dnld, *matrix_upld, *matrix_del;
 	struct stat statbuf;
 
 	// Init session
@@ -392,6 +392,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
 
 	// Build authorisation matrix
+	matrix_del = from_ngx_str(r->pool, cdn_loc_conf->matrix_del);
 	matrix_dnld = from_ngx_str(r->pool, cdn_loc_conf->matrix_dnld);
 	matrix_upld = from_ngx_str(r->pool, cdn_loc_conf->matrix_upld);
 
@@ -404,6 +405,11 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->matrix_dnld.auth_noresp = (! strcmp(filter_token(r, matrix_dnld, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
 	session->matrix_dnld.noauth_resp = (! strcmp(filter_token(r, matrix_dnld, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
 	session->matrix_dnld.noauth_noresp = (! strcmp(filter_token(r, matrix_dnld, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+
+	session->matrix_del.auth_resp = (! strcmp(filter_token(r, matrix_del, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_del.auth_noresp = (! strcmp(filter_token(r, matrix_del, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_del.noauth_resp = (! strcmp(filter_token(r, matrix_del, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	session->matrix_del.noauth_noresp = (! strcmp(filter_token(r, matrix_del, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
 
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);

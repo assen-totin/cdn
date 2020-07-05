@@ -41,28 +41,28 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 	if (metadata->error)
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
 
-	// If we did not get status code, use the configured one
+	// If we did not get status code, use the configured one - based on the HTTP method (separate authorisation matrices for GET/HEAD and DELETE)
 	if (metadata->status < 0) {
 		// Check if we had an auth value
 		if (session->auth_value) {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = session->matrix_dnld.auth_resp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->matrix_dnld.auth_resp : session->matrix_del.auth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value +resp setting status %l.", metadata->file, metadata->status);
 			}
 			else {
-				metadata->status = session->matrix_dnld.auth_noresp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->matrix_dnld.auth_noresp : session->matrix_del.auth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value -resp setting status %l.", metadata->file, metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = session->matrix_dnld.noauth_resp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->matrix_dnld.noauth_resp : session->matrix_del.noauth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value +resp setting status %l.", metadata->file, metadata->status);
 			}
 			else {
-				metadata->status = session->matrix_dnld.noauth_noresp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->matrix_dnld.noauth_noresp : session->matrix_del.noauth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value -resp setting status %l.", metadata->file, metadata->status);
 			}
 		}

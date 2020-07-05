@@ -119,6 +119,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->cache_size, parent->cache_size, DEFAULT_CACHE_SIZE);
 	ngx_conf_merge_str_value(child->matrix_upld, parent->matrix_upld, DEFAULT_MATRIX_UPLD);
 	ngx_conf_merge_str_value(child->matrix_dnld, parent->matrix_dnld, DEFAULT_MATRIX_DNLD);
+	ngx_conf_merge_str_value(child->matrix_del, parent->matrix_del, DEFAULT_MATRIX_DEL);
 
 	return NGX_CONF_OK;
 }

@@ -31,8 +31,9 @@ All below Nginx parameters should be configured for the chosen `location`:
 
 ## Authorisation parameters
 
-- `cdn_matrix_dnld`: Authorisation matrix for downloads (optional, default "allow:deny:deny:deny")
 - `cdn_matrix_upld`: Authorisation matrix for uploads (optional, default "allow:allow:deny:deny")
+- `cdn_matrix_dnld`: Authorisation matrix for downloads (optional, default "allow:deny:deny:deny")
+- `cdn_matrix_del`: Authorisation matrix for deletions (optional, default "allow:deny:deny:deny")
 - `cdn_auth_type jwt`: Type of authorisation to use: `jwt` or `session` (optional, default none)
 - `cdn_auth_cookie my_cookie`: Name of the cookie where to find the authorisation token (optional)
 - `cdn_auth_header X-Custom-Auth`; Name of the HTTP header where to find the authorisation token (optional)
@@ -109,11 +110,11 @@ An authorisation request has 3 possible outcomes:
 - No status code (with file metadata in the case of download authorisation)
 - Empty response
 
-In the first case the request will be allowed or denied based on the explicit status value in the response. In the second and third cases, the `cdn_matrix_upld` and `cdn_matrix_dnld` configuration parameters may override the built-in logic whether to allow or deny the request. If defined, each of these 
+In the first case the request will be allowed or denied based on the explicit status value in the response. In the second and third cases, the `cdn_matrix_upld`, `cdn_matrix_dnld` and `cdn_matrix_del` configuration parameters may override the built-in logic whether to allow or deny the request - for file uploads, downloads and deletions respectively. 
 
 ### Upload
 
-If defined, the `cdn_matrix_upld` must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
+If defined, the `cdn_matrix_upld` configuration parameter must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
 - Authorisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
 - Authorisation request with authorisation value yielded empty response; default is `allow`.
@@ -122,7 +123,16 @@ If defined, the `cdn_matrix_upld` must be a colon-delimited list of 4 actions, e
 
 ### Download
 
-If defined, the `cdn_matrix_dnld` must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
+If defined, the `cdn_matrix_dnld` configuration parameter must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
+
+- Authorisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
+- Authorisation request with authorisation value yielded empty response; default is `deny`.
+- Authorisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
+- Authorisation request without authorisation value yielded empty response; default is `deny`.
+
+### Deletion
+
+If defined, the `cdn_matrix_del` configuration parameter must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
 - Authorisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
 - Authorisation request with authorisation value yielded empty response; default is `deny`.

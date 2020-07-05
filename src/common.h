@@ -90,6 +90,7 @@
 #define DEFAULT_JWT_FIELD "none"
 #define DEFAULT_MATRIX_ALLOW "allow"
 #define DEFAULT_MATRIX_DENY "deny"
+#define DEFAULT_MATRIX_DEL "allow:deny:deny:deny"
 #define DEFAULT_MATRIX_DNLD "allow:deny:deny:deny"
 #define DEFAULT_MATRIX_UPLD "allow:allow:deny:deny"
 #define DEFAULT_MONGO_COLLECTION "cdn"
@@ -186,6 +187,7 @@ typedef struct {
 	ngx_str_t cors_origin;
 	ngx_str_t read_only;
 	ngx_str_t cache_size;
+	ngx_str_t matrix_del;
 	ngx_str_t matrix_dnld;
 	ngx_str_t matrix_upld;
 } ngx_http_cdn_loc_conf_t;
@@ -233,6 +235,7 @@ typedef struct {
 	uint server_id;
 	uint fs_depth;
 	auth_matrix matrix_dnld;
+	auth_matrix matrix_del;
 	auth_matrix matrix_upld;
 	char *fs_root;
 	char *read_only;
