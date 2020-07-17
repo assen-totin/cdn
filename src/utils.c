@@ -278,24 +278,24 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r) {
 	int i;
 	char *token, *saveptr, *str;
 	ngx_int_t ret;
+	db_dsn_t *dsn;
 
-	// If DNS is already defined, just return
-	if (session->dsn)
-		return NGX_OK;
+	// NB: As multiple threads may run this block concurrently, we use a local var to read the key and then atomically assign to a global var.
+	// This may create some small one-fime memory leak, but avoids the need to have mutexes and check then on every HTTP request
 
-	if ((session->dsn = ngx_pcalloc(r->pool, sizeof(db_dsn_t))) == NULL) {
+	if ((dsn = malloc(sizeof(db_dsn_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for dsn", sizeof(db_dsn_t));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	// Init
-	session->dsn->host = NULL;
-	session->dsn->port_str = NULL;
-	session->dsn->port = 0;
-	session->dsn->socket = NULL;
-	session->dsn->user = NULL;
-	session->dsn->password = NULL;
-	session->dsn->db = NULL;
+	dsn->host = NULL;
+	dsn->port_str = NULL;
+	dsn->port = 0;
+	dsn->socket = NULL;
+	dsn->user = NULL;
+	dsn->password = NULL;
+	dsn->db = NULL;
 
 	// host:port|socket:user:password:db
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing DSN: %s", session->db_dsn);
@@ -306,35 +306,56 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r) {
 
 		switch(i) {
 			case 0:
-				if ((ret = property_sql(r, &session->dsn->host, "host", token)) > 0)
+				if ((ret = property_sql(r, &dsn->host, "host", token)) > 0)
 					return ret;
 				break;
 			case 1:
-				if ((ret = property_sql(r, &session->dsn->port_str, "port_str", token)) > 0)
+				if ((ret = property_sql(r, &dsn->port_str, "port_str", token)) > 0)
 					return ret;
 				break;
 			case 2:
-				if ((ret = property_sql(r, &session->dsn->user, "user", token)) > 0)
+				if ((ret = property_sql(r, &dsn->user, "user", token)) > 0)
 					return ret;
 				break;
 			case 3:
-				if ((ret = property_sql(r, &session->dsn->password, "password", token)) > 0)
+				if ((ret = property_sql(r, &dsn->password, "password", token)) > 0)
 					return ret;
 				break;
 			case 4:
-				if ((ret = property_sql(r, &session->dsn->db, "db", token)) > 0)
+				if ((ret = property_sql(r, &dsn->db, "db", token)) > 0)
 					return ret;
 				break;
 		}
     }
 
 	// Detect if we were given a port or a socket
-	session->dsn->port = atoi(session->dsn->port_str);
+	dsn->port = atoi(dsn->port_str);
 
-	if (session->dsn->port == 0)
-		session->dsn->socket = session->dsn->port_str;
+	if (dsn->port == 0)
+		dsn->socket = dsn->port_str;
+
+	cdn_globals->dsn = dsn;
 
 	return NGX_OK;
+}
+
+/**
+ * Auth matrix parser
+ */
+auth_matrix_t *init_auth_matrix(ngx_http_request_t *r, char *matrix_str) {
+	auth_matrix_t *matrix;
+
+	if ((matrix = malloc(sizeof(auth_matrix_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth matrix.", sizeof(auth_matrix_t));
+		return NULL;
+	}
+
+	matrix->auth_resp = (! strcmp(filter_token(r, matrix_str, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	matrix->auth_noresp = (! strcmp(filter_token(r, matrix_str, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	matrix->noauth_resp = (! strcmp(filter_token(r, matrix_str, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	matrix->noauth_noresp = (! strcmp(filter_token(r, matrix_str, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+
+	return matrix;
 }
 
 /**
@@ -344,7 +365,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	session_t *session;
 	int fd;
-	char *jwt_key, *jwt_key_malloc, *matrix_dnld, *matrix_upld, *matrix_del;
+	char *jwt_key, *jwt_key_malloc, *matrix_str;
 	struct stat statbuf;
 
 	// Init session
@@ -375,7 +396,6 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->auth_value = NULL;
 	session->auth_filter = from_ngx_str(r->pool, cdn_loc_conf->auth_filter);
 	session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
-	session->dsn = NULL;
 	session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
 	session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
 	session->tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
@@ -390,31 +410,30 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
 	session->cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
 
-	// Build authorisation matrix
-	matrix_del = from_ngx_str(r->pool, cdn_loc_conf->matrix_del);
-	matrix_dnld = from_ngx_str(r->pool, cdn_loc_conf->matrix_dnld);
-	matrix_upld = from_ngx_str(r->pool, cdn_loc_conf->matrix_upld);
-
-	session->matrix_upld.auth_resp = (! strcmp(filter_token(r, matrix_upld, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_upld.auth_noresp = (! strcmp(filter_token(r, matrix_upld, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_upld.noauth_resp = (! strcmp(filter_token(r, matrix_upld, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_upld.noauth_noresp = (! strcmp(filter_token(r, matrix_upld, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-
-	session->matrix_dnld.auth_resp = (! strcmp(filter_token(r, matrix_dnld, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_dnld.auth_noresp = (! strcmp(filter_token(r, matrix_dnld, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_dnld.noauth_resp = (! strcmp(filter_token(r, matrix_dnld, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_dnld.noauth_noresp = (! strcmp(filter_token(r, matrix_dnld, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-
-	session->matrix_del.auth_resp = (! strcmp(filter_token(r, matrix_del, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_del.auth_noresp = (! strcmp(filter_token(r, matrix_del, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_del.noauth_resp = (! strcmp(filter_token(r, matrix_del, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	session->matrix_del.noauth_noresp = (! strcmp(filter_token(r, matrix_del, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
 	session->mongo_collection = from_ngx_str(r->pool, cdn_loc_conf->mongo_collection);
 	session->mongo_filter = from_ngx_str(r->pool, cdn_loc_conf->mongo_filter);
 #endif
+
+	// Build authorisation matrices
+	if (! cdn_globals->matrix_dnld) {
+		matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_dnld);
+		if ((cdn_globals->matrix_dnld = init_auth_matrix(r, matrix_str)) == NULL)
+			return NULL;
+	}
+
+	if (! cdn_globals->matrix_upld) {
+		matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_upld);
+		if ((cdn_globals->matrix_upld = init_auth_matrix(r, matrix_str)) == NULL)
+			return NULL;
+	}
+
+	if (! cdn_globals->matrix_del) {
+		matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_del);
+		if ((cdn_globals->matrix_del = init_auth_matrix(r, matrix_str)) == NULL)
+			return NULL;
+	}
 
 	// Check if we need to load JWT key into the globals (which we use to cache the file key to avoid I/O)
 	// NB: As multiple threads may run this block concurrently, we use a local var to read the key and then atomically assign to a global var.
@@ -425,14 +444,14 @@ session_t *init_session(ngx_http_request_t *r) {
 
 		// Check if we need to load the JWT key from file (i.e. key starts with a "/", so it is a path)
 		if (strstr(jwt_key, "/") == jwt_key) {
-			if ((fd = open(session->jwt_key, O_RDONLY)) < 0) {
+			if ((fd = open(jwt_key, O_RDONLY)) < 0) {
 				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to open JWT key file %s: %s", jwt_key, strerror(errno));
 				return NULL;
 			}
 
 			fstat(fd, &statbuf);
 
-			if ((jwt_key_malloc = malloc(r->pool, statbuf.st_size + 1)) == NULL) {
+			if ((jwt_key_malloc = malloc(statbuf.st_size + 1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", statbuf.st_size + 1);
 				return NULL;
 			}
@@ -449,13 +468,24 @@ session_t *init_session(ngx_http_request_t *r) {
 		}
 		else {
 			// Copy the string from config
-			if ((jwt_key_malloc = strdup(jwt_key) == NULL) {
+			if ((jwt_key_malloc = strdup(jwt_key)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", statbuf.st_size + 1);
 				return NULL;
 			}
 		}
 
 		cdn_globals->jwt_key = jwt_key_malloc;
+	}
+
+	// Check if we need to parse the DSN (only for Redis, Oracle and MySQL transport)
+	if (! cdn_globals->dsn) {
+		if ((! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL)) ||
+		(! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE)) ||
+		(! strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)))
+			parse_dsn(session, r);
+		else
+			// Set to some fake value to avoid this check
+			cdn_globals->dsn = malloc(1);
 	}
 
 	// Set options for GET, HEAD and DELETE
@@ -523,12 +553,15 @@ metadata_t *init_metadata(ngx_http_request_t *r) {
 globals_t *init_globals() {
 	globals_t *globals;
 
-	if ((cache = malloc(sizeof(globals_t))) == NULL)
+	if ((globals = malloc(sizeof(globals_t))) == NULL)
 		return NULL;
 
 	globals->cache = NULL;
 	globals->jwt_key = NULL;
-
+	globals->dsn = NULL;
+	globals->matrix_dnld = NULL;
+	globals->matrix_del = NULL;
+	globals->matrix_upld = NULL;
 	return globals;
 }
 

@@ -17,20 +17,16 @@ ngx_int_t transport_redis(session_t *session, metadata_t *metadata, ngx_http_req
 	ngx_int_t ret;
 	struct timeval timeout = {5, 0}; 
 
-	// Parse DNS
-	if ((ret = parse_dsn(session, r)) > 0)
-		return ret;
-
 	// Connect Redis w/ 5 sec timeout
-	if (session->dsn->socket) {
+	if (cdn_globals->dsn->socket) {
 		// Connect via Unix socket
-		if ((context = redisConnectUnixWithTimeout(session->dsn->socket, timeout)) == NULL) {
+		if ((context = redisConnectUnixWithTimeout(cdn_globals->dsn->socket, timeout)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unable to create Redis context.");
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 	}
 	else {
-		if ((context = redisConnectWithTimeout(session->dsn->host, session->dsn->port, timeout)) == NULL) {
+		if ((context = redisConnectWithTimeout(cdn_globals->dsn->host, cdn_globals->dsn->port, timeout)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unable to create Redis context.");
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}

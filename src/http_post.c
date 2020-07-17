@@ -27,7 +27,7 @@ static void upload_cleanup(ngx_http_request_t *r, upload_t *upload, int status) 
 			curl_free(upload->curl_content_type);
 		if (upload->curl_content_disposition)
 			curl_free(upload->curl_content_disposition);
-		curl_easy_cleanup(upload->session->curl);
+		curl_easy_cleanup(upload->curl);
 	}
 
 	ngx_http_finalize_request(r, status);
@@ -619,22 +619,22 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		if (session->auth_value) {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = session->matrix_upld.auth_resp;
+				metadata->status = cdn_globals->matrix_upld->auth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value +resp setting status %l.", metadata->status);
 			}
 			else {
-				metadata->status = session->matrix_upld.auth_noresp;
+				metadata->status = cdn_globals->matrix_upld->auth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value -resp setting status %l.", metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = session->matrix_upld.noauth_resp;
+				metadata->status = cdn_globals->matrix_upld->noauth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value +resp setting status %l.", metadata->status);
 			}
 			else {
-				metadata->status = session->matrix_upld.noauth_noresp;
+				metadata->status = cdn_globals->matrix_upld->noauth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value -resp setting status %l.", metadata->status);
 			}
 		}
@@ -656,7 +656,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			curl_free(upload->curl_content_type);
 		if (upload->curl_content_disposition)
 			curl_free(upload->curl_content_disposition);
-		curl_easy_cleanup(upload->session->curl);
+		curl_easy_cleanup(upload->curl);
 	}
 
 	// Save file to CDN

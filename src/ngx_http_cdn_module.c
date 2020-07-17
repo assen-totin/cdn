@@ -75,6 +75,18 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 
 	if (cdn_globals->jwt_key)
 		free(cdn_globals->jwt_key);
+
+	if (cdn_globals->dsn)
+		free(cdn_globals->dsn);
+
+	if (cdn_globals->matrix_dnld)
+		free(cdn_globals->matrix_dnld);
+
+	if (cdn_globals->matrix_upld)
+		free(cdn_globals->matrix_upld);
+
+	if (cdn_globals->matrix_del)
+		free(cdn_globals->matrix_del);
 }
 
 /**

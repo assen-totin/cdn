@@ -227,16 +227,13 @@ typedef struct {
 	uint auth_noresp;
 	uint noauth_resp;
 	uint noauth_noresp;
-} auth_matrix;
+} auth_matrix_t;
 
 typedef struct {
 	ngx_http_request_t *r;
 	time_t exp;
 	uint server_id;
 	uint fs_depth;
-	auth_matrix matrix_dnld;
-	auth_matrix matrix_del;
-	auth_matrix matrix_upld;
 	char *fs_root;
 	char *read_only;
 	char *http_method;
@@ -260,13 +257,11 @@ typedef struct {
 	int auth_response_len;
 	int auth_response_pos;
 	int auth_response_count;
-	char *jwt_key;
 	char *jwt_json;
 	char *jwt_field;
 	char *sql_query;
 	char *sql_query2;
 	char *db_dsn;
-	db_dsn_t *dsn;
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
 	char *unix_socket;
@@ -300,7 +295,7 @@ typedef struct {
 // Upload structure
 typedef struct {
 	char *rb;
-	bool rb_malloc = false;
+	bool rb_malloc;
 	char *curl_filename;
 	char *curl_content_type;
 	char *curl_content_disposition;
@@ -329,6 +324,10 @@ typedef struct {
 typedef struct {
 	cache_t *cache;
 	char *jwt_key;
+	db_dsn_t *dsn;
+	auth_matrix_t *matrix_dnld;
+	auth_matrix_t *matrix_del;
+	auth_matrix_t *matrix_upld;
 } globals_t;
 
 enum {
