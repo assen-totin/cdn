@@ -297,6 +297,16 @@ typedef struct {
 #endif
 } session_t;
 
+// Upload structure
+typedef struct {
+	char *rb;
+	bool rb_malloc = false;
+	char *curl_filename;
+	char *curl_content_type;
+	char *curl_content_disposition;
+	CURL *curl;
+} upload_t;
+
 // BTree node structure
 typedef struct btree_s btree_t;
 struct btree_s {
@@ -315,6 +325,12 @@ typedef struct {
 	pthread_mutex_t lock;
 } cache_t;
 
+// Globals
+typedef struct {
+	cache_t *cache;
+	char *jwt_key;
+} globals_t;
+
 enum {
 	METADATA_NONE = 0,
 	METADATA_SELECT,
@@ -329,5 +345,5 @@ enum {
 };
 
 // Globals
-cache_t *ngx_http_cdn_cache;
+globals_t *cdn_globals;
 

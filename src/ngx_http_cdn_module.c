@@ -44,12 +44,17 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	// Init cURL
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
-	// Init cache for internal transport
-	if ((ngx_http_cdn_cache = cache_init()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init in-memory cache (malloc failed)");
+	// Init globals
+	if ((cdn_globals = init_globals()) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init global variables (malloc failed)");
 		return NGX_ERROR;
 	}
 
+	// Init cache for internal transport
+	if ((cdn_globals->cache = cache_init()) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init in-memory cache (malloc failed)");
+		return NGX_ERROR;
+	}
 
 	return NGX_OK;
 }
@@ -66,7 +71,10 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 	OCI_Cleanup();
 #endif
 
-	cache_destroy(ngx_http_cdn_cache);
+	cache_destroy(cdn_globals->cache);
+
+	if (cdn_globals->jwt_key)
+		free(cdn_globals->jwt_key);
 }
 
 /**

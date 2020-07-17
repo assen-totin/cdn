@@ -14,6 +14,7 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r);
 ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 session_t *init_session(ngx_http_request_t *r);
 metadata_t *init_metadata(ngx_http_request_t *r);
+globals_t *init_globals();
 ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r);
 void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 

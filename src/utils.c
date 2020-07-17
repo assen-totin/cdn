@@ -344,7 +344,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	session_t *session;
 	int fd;
-	char *jwt_key, *matrix_dnld, *matrix_upld, *matrix_del;
+	char *jwt_key, *jwt_key_malloc, *matrix_dnld, *matrix_upld, *matrix_del;
 	struct stat statbuf;
 
 	// Init session
@@ -384,7 +384,6 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->auth_response = NULL;
 	session->auth_response_count = 0;
 	session->curl = NULL;
-	session->jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
 	session->jwt_field = from_ngx_str(r->pool, cdn_loc_conf->jwt_field);
 	session->jwt_json = NULL;
 	session->http_method = ngx_pcalloc(r->pool, 8);
@@ -417,31 +416,46 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->mongo_filter = from_ngx_str(r->pool, cdn_loc_conf->mongo_filter);
 #endif
 
-	// Check if we need to load the JWT key from file (i.e. key starts with a "/", so it is a path)
-	if (strstr(session->jwt_key, "/") == session->jwt_key) {
-		if ((fd = open(session->jwt_key, O_RDONLY)) < 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to open JWT key file %s: %s", session->jwt_key, strerror(errno));
-			return NULL;
+	// Check if we need to load JWT key into the globals (which we use to cache the file key to avoid I/O)
+	// NB: As multiple threads may run this block concurrently, we use a local var to read the key and then atomically assign to a global var.
+	// This may create some small one-fime memory leak, but avoids the need to have mutexes and check then on every HTTP request
+	if (! cdn_globals->jwt_key) {
+		// Convert Nginx string to normal string
+		jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
+
+		// Check if we need to load the JWT key from file (i.e. key starts with a "/", so it is a path)
+		if (strstr(jwt_key, "/") == jwt_key) {
+			if ((fd = open(session->jwt_key, O_RDONLY)) < 0) {
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to open JWT key file %s: %s", jwt_key, strerror(errno));
+				return NULL;
+			}
+
+			fstat(fd, &statbuf);
+
+			if ((jwt_key_malloc = malloc(r->pool, statbuf.st_size + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", statbuf.st_size + 1);
+				return NULL;
+			}
+
+			if (read(fd, jwt_key_malloc, statbuf.st_size) < statbuf.st_size) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to read %l bytes from JWT key file %s: %s", statbuf.st_size, jwt_key, strerror(errno));
+				return NULL;
+			}
+
+			if (close(fd) < 0)
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to close JWT key file %s: %s", jwt_key, strerror(errno));
+
+			jwt_key_malloc[statbuf.st_size] = '\0';
+		}
+		else {
+			// Copy the string from config
+			if ((jwt_key_malloc = strdup(jwt_key) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", statbuf.st_size + 1);
+				return NULL;
+			}
 		}
 
-		fstat(fd, &statbuf);
-
-		if ((jwt_key = ngx_pcalloc(r->pool, statbuf.st_size + 1)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", statbuf.st_size + 1);
-			return NULL;
-		}
-
-		if (read(fd, jwt_key, statbuf.st_size) < statbuf.st_size) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to read %l bytes from JWT key file %s: %s", statbuf.st_size, session->jwt_key, strerror(errno));
-			return NULL;
-		}
-
-		if (close(fd) < 0)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to close JWT key file %s: %s", session->jwt_key, strerror(errno));
-
-		jwt_key[statbuf.st_size] = '\0';
-
-		session->jwt_key = jwt_key;
+		cdn_globals->jwt_key = jwt_key_malloc;
 	}
 
 	// Set options for GET, HEAD and DELETE
@@ -456,7 +470,7 @@ session_t *init_session(ngx_http_request_t *r) {
 		session->hdr_if_modified_since = -1;
 
 		if (session->cache_size > 0)
-			ngx_http_cdn_cache->mem_max = CACHE_SIZE_MULTIPLIER * session->cache_size;
+			cdn_globals->cache->mem_max = CACHE_SIZE_MULTIPLIER * session->cache_size;
 
 		// Method-specific init
 		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
@@ -501,6 +515,21 @@ metadata_t *init_metadata(ngx_http_request_t *r) {
 	metadata->auth_value = NULL;
 
 	return metadata;
+}
+
+/**
+ * Init globals
+ */
+globals_t *init_globals() {
+	globals_t *globals;
+
+	if ((cache = malloc(sizeof(globals_t))) == NULL)
+		return NULL;
+
+	globals->cache = NULL;
+	globals->jwt_key = NULL;
+
+	return globals;
 }
 
 /**

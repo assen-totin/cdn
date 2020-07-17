@@ -53,7 +53,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 	else {
 		// Read metadata - first check memory cache if it is enabled
-		if (ngx_http_cdn_cache->mem_max) {
+		if (cdn_globals->cache->mem_max) {
 			// Convert the 32-character file ID to 16-byte key
 			tmp = malloc(17);
 			strncpy(tmp, metadata->file, 16);
@@ -69,9 +69,9 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			// Seek the key (motex-protected operation)
 			// If key was found, res->left will have the value (NULL-terminated string); cast it to char*
 			// If key was not found, it was added; store the value by passing the same res and the value (NULL-terminated char*) to cache_put()
-			pthread_mutex_lock(&ngx_http_cdn_cache->lock);
-			node = cache_seek(ngx_http_cdn_cache, key, &error);
-			pthread_mutex_unlock(&ngx_http_cdn_cache->lock);
+			pthread_mutex_lock(&cdn_globals->cache->lock);
+			node = cache_seek(cdn_globals->cache, key, &error);
+			pthread_mutex_unlock(&cdn_globals->cache->lock);
 
 			free(key);
 
@@ -112,9 +112,9 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		session->auth_response[statbuf.st_size] = '\0';
 
 		// Save the data to the cache if it is enabled
-		if (ngx_http_cdn_cache->mem_max) {
+		if (cdn_globals->cache->mem_max) {
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: saving metadata in cache", path);
-			cache_put(ngx_http_cdn_cache, node, strdup(session->auth_response));
+			cache_put(cdn_globals->cache, node, strdup(session->auth_response));
 		}
 
 		close(file_fd);
