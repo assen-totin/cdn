@@ -61,6 +61,7 @@ build_common $@
 # Package-specific constants
 RPM_PACKAGE="nginx-cdn"
 [ x$ARG_RPM_PACKAGE != 'x' ] && RPM_PACKAGE=$ARG_RPM_PACKAGE
+NEXUS_SLEEP=30
 
 # Check out proper version
 git_checkout
