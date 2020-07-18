@@ -334,7 +334,10 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r) {
 	if (dsn->port == 0)
 		dsn->socket = dsn->port_str;
 
-	cdn_globals->dsn = dsn;
+	if (! cdn_globals->dsn)
+		cdn_globals->dsn = dsn;
+	else
+		free(dsn);
 
 	return NGX_OK;
 }
@@ -474,7 +477,11 @@ session_t *init_session(ngx_http_request_t *r) {
 			}
 		}
 
-		cdn_globals->jwt_key = jwt_key_malloc;
+		// Double-check to avoid memory leaks
+		if (! cdn_globals->jwt_key)
+			cdn_globals->jwt_key = jwt_key_malloc;
+		else
+			free(jwt_key_malloc);
 	}
 
 	// Check if we need to parse the DSN (only for Redis, Oracle and MySQL transport)
