@@ -65,10 +65,8 @@ ngx_int_t request_post_mongo(session_t *session, metadata_t *metadata, ngx_http_
 	bson_init (&doc);
 	BSON_APPEND_UTF8 (&doc, "file_id", metadata->file);
 	BSON_APPEND_UTF8 (&doc, "filename", metadata->filename);
-	BSON_APPEND_INT32 (&doc, "length", metadata->length);
 	BSON_APPEND_UTF8 (&doc, "content_type", metadata->content_type);
 	BSON_APPEND_UTF8 (&doc, "content_disposition", metadata->content_disposition);
-	BSON_APPEND_TIME_T (&doc, "upload_date", metadata->upload_date);
 	BSON_APPEND_UTF8 (&doc, "etag", metadata->etag);
 
 	if (session->auth_value)

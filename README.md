@@ -191,8 +191,6 @@ The following parameter names are used throughout this document (both for reques
 - `content_type`: string, content type for the file; default is `application/octet-stream`
 - `content_disposition"`: string, content disposition; if set to `attachment`, the file will be served as attachment; default is to serve inline.
 - `etag`: string, the Rtag for the file; default is `00000000000000000000000000000000`
-- `length`: int, the length of the file in bytes; default is to call `stat()` on the file
-- `upload_date`: int, Unix timestamp for the upload time; default is to call `stat()` on the file
 - `status`: int, HTTP-style code; use `200` or `304` to approve request, `403` to deny it, `500` to denote processing error
 - `error`: string, will be logged by Nginx if the `status` code indicates an error
 
@@ -204,13 +202,13 @@ Set the transport to the same value.
 
 ### Upload
 
-Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It may have up to eight placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `length`, `content_type`, `content_disposition`, `upload_date`, `etag`. All these placeholders should be `'%s'` (for strings) except for the fourth and seventh which should be `%u` (because they are integers); don't forget the single quotes around the string placeholder. If the authorisation value is not found in the request, it will be substituted by an empty string.
+Set the SQL INSERT query to run in the configuration option `cdn_sql_insert`. It may have up to eight placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `content_type`, `content_disposition`, `etag`. All these placeholders should be `'%s'` (for strings); don't forget the single quotes around the string placeholder. If the authorisation value is not found in the request, it will be substituted by an empty string.
 
 NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure('%s', '%s', '%s', %u, '%s', '%s', %u, '%s')`.
 
 The query may return a row (e.g., if using a stored procedure or if using `INSERT ... RETRUNING`) having a column `status` (or `STATUS` for Oracle) with the HTTP code to allow or deny the operation. 
 
-The default query is `INSERT INTO cdn (auth_value, file_id, filename, length, content_type, content_disposition, upload_date, etag) VALUES ('%s','%s','%s',%u,'%s','%s', %u,'%s')`.
+The default query is `INSERT INTO cdn (auth_value, file_id, filename, content_type, content_disposition, etag) VALUES ('%s','%s','%s','%s','%s','%s')`.
 
 ### Download
 
@@ -271,8 +269,6 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 	"content_type": "image/jpeg",
 	"content_disposition": "attachment",
 	"etag": "12345678901234567890123456789012",
-	"length": 12345,
-	"upload_date": 1234567890
 }
 ```
 
@@ -327,8 +323,6 @@ The field `auth_value` from authentication token is included only if configurati
 	"content_type": "image/jpeg",
 	"content_disposition": "attachment",
 	"etag": "12345678901234567890123456789012",
-	"length": 12345,
-	"upload_date": 1234567890
 	"error": "none"
 }
 ```
@@ -358,8 +352,6 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 	<content_type>image/jpeg</content_type>
 	<content_disposition>attachment</content_disposition>
 	<etag>12345678901234567890123456789012</etag>
-	<length>12345</length>
-	<upload_date>1234567890</upload_date>
 </request>
 ```
 
@@ -414,8 +406,6 @@ The element `auth_value` from authentication token is included only if configura
 	<content_type>image/jpeg</content_type>
 	<content_disposition>attachment</content_disposition>
 	<etag>12345678901234567890123456789012</etag>
-	<length>12345</length>
-	<upload_date>1234567890</upload_date>
 	<error>none</error>
 </response>
 ```

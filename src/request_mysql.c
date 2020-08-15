@@ -64,16 +64,6 @@ ngx_int_t response_get_mysql(session_t *session, metadata_t *metadata, ngx_http_
 				metadata->status = atol(mysql_row[i]);
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 			}
-
-			else if (! strcmp(fields[i].name, "length")) {
-				metadata->length = atol(mysql_row[i]);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
-			}
-
-			else if (! strcmp(fields[i].name, "upload_date")) {
-				metadata->upload_date = atol(mysql_row[i]);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
-			}
 		}
 	}
 

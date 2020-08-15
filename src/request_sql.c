@@ -69,9 +69,9 @@ ngx_int_t request_post_sql(session_t *session, metadata_t *metadata, ngx_http_re
 	}
 
 	if (session->auth_value)
-		sprintf(session->sql_query, query, session->auth_value, metadata->file, metadata->filename, metadata->length, metadata->content_type, metadata->content_disposition, metadata->upload_date, metadata->etag);
+		sprintf(session->sql_query, query, session->auth_value, metadata->file, metadata->filename, metadata->content_type, metadata->content_disposition, metadata->etag);
 	else
-		sprintf(session->sql_query, query, "", metadata->file, metadata->filename, metadata->length, metadata->content_type, metadata->content_disposition, metadata->upload_date, metadata->etag);
+		sprintf(session->sql_query, query, "", metadata->file, metadata->filename, metadata->content_type, metadata->content_disposition, metadata->etag);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "SQL to run: %s", session->sql_query);
 

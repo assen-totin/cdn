@@ -74,10 +74,8 @@ ngx_int_t request_post_json(session_t *session, metadata_t *metadata, ngx_http_r
 	BSON_APPEND_UTF8 (&doc, "http_method", session->http_method);
 	BSON_APPEND_UTF8 (&doc, "file_id", metadata->file);
 	BSON_APPEND_UTF8 (&doc, "filename", metadata->filename);
-	BSON_APPEND_INT32 (&doc, "length", metadata->length);
 	BSON_APPEND_UTF8 (&doc, "content_type", metadata->content_type);
 	BSON_APPEND_UTF8 (&doc, "content_disposition", metadata->content_disposition);
-	BSON_APPEND_TIME_T (&doc, "upload_date", metadata->upload_date);
 	BSON_APPEND_UTF8 (&doc, "etag", metadata->etag);
 
 	if (session->auth_value)
@@ -154,19 +152,6 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 		else if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
 			metadata->status = bson_iter_int32 (&iter);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
-		}
-
-		else if (! strcmp(bson_key, "length")) {
-			if (bson_iter_type(&iter) == BSON_TYPE_INT32)
-				metadata->length = bson_iter_int32 (&iter);
-			else if (bson_iter_type(&iter) == BSON_TYPE_INT64)
-				metadata->length = bson_iter_int64 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
-		}
-
-		else if ((! strcmp(bson_key, "upload_date")) && (bson_iter_type(&iter) == BSON_TYPE_DATE_TIME)) {
-			metadata->upload_date = bson_iter_date_time (&iter) / 1000;
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
 		}
 	}
 

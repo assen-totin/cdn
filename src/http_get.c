@@ -116,14 +116,6 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
 	}
 
-	// Check if we have the file length specified
-	if (metadata->length < 0)
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s length not found, will use stat() to determine it", metadata->file);
-
-	// Check if we have the upload date specified
-	if (metadata->upload_date < 0)
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s upload_date not found, will use stat() to determine it", metadata->file);
-
 	// Return 304 in certain cases
 	if (session->hdr_if_none_match && metadata->etag && ! strcmp(session->hdr_if_none_match, metadata->etag))
 		return NGX_HTTP_NOT_MODIFIED;
@@ -148,10 +140,8 @@ static ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r) {
 	}
 
 	fstat(fd, &statbuf);
-	if (metadata->length < 0) 
-		metadata->length = statbuf.st_size;
-	if (metadata->upload_date < 0)
-		metadata->upload_date = statbuf.st_mtime;
+	metadata->length = statbuf.st_size;
+	metadata->upload_timestamp = statbuf.st_mtime;
 
 	if (close(fd) < 0) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
@@ -168,15 +158,8 @@ ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *
 	int fd, ret;
 	ngx_http_cleanup_t *c;
 
-	// Get stat if not set
-	if ((metadata->length < 0) || (metadata->upload_date < 0)) {
-		ret = get_stat(metadata, r);
-		if (ret)
-			return ret;
-	}
-
 	// If file unmodifed, return 304
-	if (session->hdr_if_modified_since >= metadata->upload_date)
+	if (session->hdr_if_modified_since >= metadata->upload_timestamp)
 		return NGX_HTTP_NOT_MODIFIED;
 
 	// Read the file: use mmap to map the physical file to memory
@@ -239,7 +222,7 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 	r->headers_out.content_type.data = (u_char*)metadata->content_type;
 	
 	// Last-Modified
-	r->headers_out.last_modified_time = metadata->upload_date;
+	r->headers_out.last_modified_time = metadata->upload_timestamp;
 
 	// ETag
 	b1_len = strlen(metadata->etag) + 2;
@@ -407,10 +390,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		return ret;
 
 	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
-	if ((metadata->length < 0) || (metadata->upload_date < 0)) {
-		if ((ret = get_stat(metadata, r)) > 0)
-			return ret;
-	}
+	if ((ret = get_stat(metadata, r)) > 0)
+		return ret;
 
 	// Process Header If-Modified-Since
 	if (r->headers_in.if_modified_since) {

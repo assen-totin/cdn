@@ -536,9 +536,6 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 	}
 
-	// Metadata: set upload_date
-	metadata->upload_date = time(NULL);
-
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file;
 

@@ -180,11 +180,6 @@ ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_re
 	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "filename", (const xmlChar *) metadata->filename)) < 0)
 		return error_xml(r, writer, buf, "filename");
 
-	// Add length
-	sprintf(s1, "%li", metadata->length);
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "length", (const xmlChar *) s1)) < 0)
-		return error_xml(r, writer, buf, "length");
-
 	// Add content_type
 	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "content_type", (const xmlChar *) metadata->content_type)) < 0)
 		return error_xml(r, writer, buf, "content_type");
@@ -192,11 +187,6 @@ ngx_int_t request_post_xml(session_t *session, metadata_t *metadata, ngx_http_re
 	// Add content_disposition
 	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "content_disposition", (const xmlChar *) metadata->content_disposition)) < 0)
 		return error_xml(r, writer, buf, "content_disposition");
-
-	// Add upload_date
-	sprintf(s2, "%li", metadata->upload_date);
-	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "upload_date", (const xmlChar *) s2)) < 0)
-		return error_xml(r, writer, buf, "upload_date");
 
 	// Add etag
 	if ((ret = xmlTextWriterWriteElement(writer, BAD_CAST "etag", (const xmlChar *) metadata->etag)) < 0)
@@ -279,16 +269,6 @@ ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_re
 			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"status")) {
 				metadata->status = atoi((const char *) cur_node->children->content);
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
-			}
-
-			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"length")) {
-				metadata->length = atoi((const char *) cur_node->children->content);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
-			}
-
-			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"upload_date")) {
-				metadata->upload_date = atoi((const char *) cur_node->children->content);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
 			}
 		}
 	}

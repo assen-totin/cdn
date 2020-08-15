@@ -56,16 +56,6 @@ ngx_int_t response_get_postgresql(session_t *session, metadata_t *metadata, ngx_
 					metadata->status = atol(PQgetvalue(session->postgresql_result, 0, i));
 					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 				}
-
-				else if (! strcmp(PQfname(session->postgresql_result, i), "length")) {
-					metadata->length = atol(PQgetvalue(session->postgresql_result, 0, i));
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
-				}
-
-				else if (! strcmp(PQfname(session->postgresql_result, i), "upload_date")) {
-					metadata->upload_date = atol(PQgetvalue(session->postgresql_result, 0, i));
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
-				}
 			}
 		}
 

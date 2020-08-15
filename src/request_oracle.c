@@ -35,12 +35,6 @@ ngx_int_t response_get_oracle(session_t *session, metadata_t *metadata, ngx_http
 
 		metadata->status = OCI_GetInt2(session->oracle_result, "STATUS");
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
-
-		metadata->length = OCI_GetBigInt2(session->oracle_result, "LENGTH");
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata length: %l", metadata->length);
-
-		metadata->upload_date = OCI_GetInt2(session->oracle_result, "UPLOAD_DATE");
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata upload_date: %l", metadata->upload_date);
 	}
 
 	if (session->oracle_statement)
