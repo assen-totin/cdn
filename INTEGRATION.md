@@ -4,21 +4,21 @@ The module implements an optimised, custom delivery of authorised content (e.g.,
 
 The module performs all tasks needed to manage the content: upload, download and delete. You may still implement the uploads and deletions yourself if preferred (e.g. if a custom post-processing of uploaded files like thumbnail generation is required); the CDN may be put in read-only mode in this case.
 
-Each file request for must be authorised before served. Authorisation is handled by an external body to which the module connects. The authorisation body should return some file metadata for an approved download.
+Each file request must be authorised before served. Authorisation is handled by an external body to which the module connects. The authorisation body should return some file metadata for an approved download.
 
 The business logic for authorisation consists of three main elements:
 
-- Authorisation method: we support JWT, session ID  and transparent (completely offloaded)
+- Authorisation method: we support JWT, session ID  and transparent (completely offloaded ro external app/service)
 - Request type: specifies the format of the request that will be sent to the external authorisation body; we support SQL, JSON, XML and Mongo.
-- Transport type: specifies how to connect to the external authorisation body; we support MySQL, PostgreSQL, Oracle, Mongo, Redis, Internal, HTTP, TCP and Unix domain socket.
+- Transport type: specifies how to connect to the external authorisation body; we support MySQL, PostgreSQL, Oracle, Mongo, Redis, HTTP, TCP and Unix domain socket plus an extra one called Internal.
 
 # Authorisation method
 
 Authorisation token may be supplied in:
 
 - Authorization header, as `Bearer <token>` (default)
-- In custom header: set its name in configuration
-- In a cookie: set its name in configuration
+- In custom header: set its name in CDN configuration
+- In a cookie: set its name in CDN configuration
 
 The authorisation method determines how this authentication token will be processed to extract the actual authorisation token, which is then passed to the authorisation backend. 
 
@@ -51,7 +51,7 @@ This method may be used with some complex request types like `json` or `xml`. It
 
 ## Authorisation value filters
 
-If the authorisation value needs processing, you may configure a build-in filter to be applied to it. 
+If the authorisation value needs processing, you may configure a built-in filter to be applied to it. 
 
 The following filters are currently defined:
 
@@ -68,7 +68,7 @@ The following parameter names are used throughout this document (both for reques
 - `file_id`: string, the ID for the file that is being uploaded, downloaded or deleted
 - `filename`: string, the original filename; default is `file`
 - `content_type`: string, content type for the file; default is `application/octet-stream`
-- `content_disposition"`: string, content disposition; if set to `attachment`, the file will be served as attachment; default is to serve inline.
+- `content_disposition`: string, content disposition; if set to `attachment`, the file will be served as attachment; default is to serve inline.
 - `etag`: string, the Rtag for the file; default is `00000000000000000000000000000000`
 - `status`: int, HTTP-style code; use `200` or `304` to approve request, `403` to deny it, `500` to denote processing error
 - `error`: string, will be logged by Nginx if the `status` code indicates an error
@@ -81,11 +81,11 @@ NB: for complex SQL queries, create instead a stored procedure and use stanza li
 
 ### Upload
 
-Define the SQL INSERT query. It must have eight placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `content_type`, `content_disposition`, `etag`. All these placeholders should be `'%s'` (for strings); don't forget the single quotes around the string placeholder.
+Define the SQL INSERT query. It must have placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `content_type`, `content_disposition`, `etag`. All these placeholders should be `'%s'` (for strings); don't forget the single quotes around the string placeholder.
 
 ### Download
 
-Define the SQL SELECT. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
+Define the SQL SELECT query. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
 
 The SQL query should return a single row with column names matching the keys described above if the request is authorised and no rows if request is declined.
 
