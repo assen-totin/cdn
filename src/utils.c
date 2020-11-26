@@ -358,6 +358,11 @@ auth_matrix_t *init_auth_matrix(ngx_http_request_t *r, char *matrix_str) {
 	matrix->noauth_resp = (! strcmp(filter_token(r, matrix_str, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
 	matrix->noauth_noresp = (! strcmp(filter_token(r, matrix_str, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
 
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Matrix: setting auth_resp=%l", matrix->auth_resp);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Matrix: setting auth_noresp=%l", matrix->auth_noresp);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Matrix: setting noauth_resp=%l", matrix->noauth_resp);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Matrix: setting noauth_noresp=%l", matrix->noauth_noresp);
+
 	return matrix;
 }
 
@@ -422,18 +427,21 @@ session_t *init_session(ngx_http_request_t *r) {
 	// Build authorisation matrices
 	if (! cdn_globals->matrix_dnld) {
 		matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_dnld);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing matrix: matrix_dnld: %s", matrix_str);
 		if ((cdn_globals->matrix_dnld = init_auth_matrix(r, matrix_str)) == NULL)
 			return NULL;
 	}
 
 	if (! cdn_globals->matrix_upld) {
 		matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_upld);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing matrix: matrix_upld: %s", matrix_str);
 		if ((cdn_globals->matrix_upld = init_auth_matrix(r, matrix_str)) == NULL)
 			return NULL;
 	}
 
 	if (! cdn_globals->matrix_del) {
 		matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_del);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing matrix: matrix_del: %s", matrix_str);
 		if ((cdn_globals->matrix_del = init_auth_matrix(r, matrix_str)) == NULL)
 			return NULL;
 	}
