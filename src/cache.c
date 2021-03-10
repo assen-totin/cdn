@@ -111,6 +111,7 @@ static void btree_evict(cache_t *cache, void *key, btree_t *node, int level) {
 	}
 }
 
+// Seek a path or create it as we go
 void *cache_seek (cache_t *cache, void *key, int *error) {
 	int i;
 	uint64_t pos;
@@ -136,7 +137,7 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 		// Ensure node allocation was successful
 		if (! node) {
 			*error = 1;
-			return NULL;
+			return;
 		}
 	}
 
@@ -176,6 +177,28 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 	return node;
 }
 
+// Search for a key and evict it if found
+void cache_remove (cache_t *cache, void *key) {
+	uint64_t i;
+
+	// Try to find found the key, so now find its position in the list
+	for (i=0; i < cache->list_cnt; i++) {
+		if (memcmp(cache->list + i * CACHE_KEY_LEN, key, CACHE_KEY_LEN) == 0)
+			break;
+	}
+
+	// If not found, return
+	if (i == cache->list_cnt)
+		return;
+
+	// Shift the index to remove the key from it
+	memmove(cache->list + i * CACHE_KEY_LEN, cache->list + (i+1) * CACHE_KEY_LEN, (cache->list_cnt - i - 1) * CACHE_KEY_LEN);
+
+	// Evict the key from the btree
+	btree_evict(cache, key, cache->root, 0);
+}
+
+// Save a value at the top of the tree
 void cache_put (cache_t *cache, btree_t *node, char *value) {
 	node->left = (void *)value;
 	cache->mem_used += strlen(value);

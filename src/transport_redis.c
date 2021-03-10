@@ -39,7 +39,7 @@ ngx_int_t transport_redis(session_t *session, metadata_t *metadata, ngx_http_req
 	}
 
 	// Save, delete or read metadata
-	if (mode == METADATA_INSERT) {
+	if ((mode == METADATA_INSERT) || (mode == METADATA_UPDATE)) {
 		// Save metadata to Redis
 		if ((reply = redisCommand(context, "SET %s %s", metadata->file, session->auth_request)) == NULL) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Redis transport: failed to write metadata %s for file %s: %s", session->auth_request, metadata->file, context->errstr);

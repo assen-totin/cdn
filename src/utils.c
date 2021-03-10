@@ -42,6 +42,35 @@ char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 	return ret;
 }
 
+
+/**
+ * Get stat of a file
+ */
+ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r) {
+	struct stat statbuf;
+	int fd;
+
+	// Open file
+	if ((fd = open(metadata->path, O_RDONLY)) < 0) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %s", metadata->file, metadata->path, strerror(errno));
+		if (errno == ENOENT)
+			return NGX_HTTP_NOT_FOUND;
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	fstat(fd, &statbuf);
+	metadata->length = statbuf.st_size;
+	metadata->upload_timestamp = statbuf.st_mtime;
+
+	if (close(fd) < 0) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+
+	return NGX_OK;
+}
+
+
 /**
  * Get the full path from a file name
  */
@@ -649,6 +678,40 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 }
 
 /**
+ * Extract URI
+ */
+ngx_int_t get_uri(metadata_t *metadata, ngx_http_request_t *r) {
+	char *s0, *str1, *saveptr1;
+
+	// URI
+	uri = from_ngx_str(r->pool, r->uri);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", uri);
+
+	// Extract file ID
+	// URL format: http://cdn.example.com/some-file-id
+	s0 = from_ngx_str(r->pool, r->uri);
+	str1 = strtok_r(s0, "/", &saveptr1);
+	if (str1 == NULL)
+		return NGX_HTTP_BAD_REQUEST;
+
+	metadata->file = ngx_pnalloc(r->pool, strlen(str1) + 1);
+	if (metadata->file == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str1) + 1);
+		return NGX_ERROR;
+	}
+	strcpy(metadata->file, str1);
+
+	// Get path
+	if ((ret = get_path(session, metadata, r)) > 0)
+		return ret;
+
+	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
+	if ((ret = get_stat(metadata, r)) > 0)
+		return ret;
+}
+
+
+/**
  * Perform authorisation check
  */
 void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
@@ -664,4 +727,5 @@ void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r)
 		}
 	}
 }
+
 

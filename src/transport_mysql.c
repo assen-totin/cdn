@@ -46,16 +46,11 @@ ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r, int mode) {
 	}
 
 	// Only fetch result when getting or putting data
-	if (mode == METADATA_SELECT) {
+	if ((mode == METADATA_SELECT) || (mode == METADATA_INSERT) || (mode == METADATA_UPDATE)) {
 		if ((session->mysql_result = mysql_store_result(&conn)) == NULL) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MySQL METADATA_SELECT result is NULL: %s", session->sql_query, mysql_error(&conn));
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MySQL %s result is NULL: %s", mode, session->sql_query, mysql_error(&conn));
 			return close_mysql(&conn, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
-	}
-
-	if (mode == METADATA_INSERT) {
-		if ((session->mysql_result = mysql_store_result(&conn)) == NULL)
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "MySQL METADATA_INSERT result is NULL: %s", session->sql_query, mysql_error(&conn));
 	}
 
 	close_mysql(&conn, NGX_OK);

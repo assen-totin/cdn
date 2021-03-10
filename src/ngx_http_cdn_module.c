@@ -167,7 +167,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 		return cdn_handler_options(r);
 
 	// POST set callback and return
-	if (r->method & (NGX_HTTP_POST)) {
+	if (r->method & (NGX_HTTP_POST | NGX_HTTP_PUT)) {
 		// Set body handler
 		if ((ret = ngx_http_read_client_request_body(r, cdn_handler_post)) >= NGX_HTTP_SPECIAL_RESPONSE)
 			return ret;

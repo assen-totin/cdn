@@ -124,32 +124,6 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 	return (metadata->status == NGX_HTTP_OK) ? 0 : metadata->status;
 }
 
-/**
- * Helper: get stat of a file
- */
-static ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r) {
-	struct stat statbuf;
-	int fd;
-
-	// Open file
-	if ((fd = open(metadata->path, O_RDONLY)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %s", metadata->file, metadata->path, strerror(errno));
-		if (errno == ENOENT)
-			return NGX_HTTP_NOT_FOUND;
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	fstat(fd, &statbuf);
-	metadata->length = statbuf.st_size;
-	metadata->upload_timestamp = statbuf.st_mtime;
-
-	if (close(fd) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	return NGX_OK;
-}
 
 /**
  * Read file
@@ -349,7 +323,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	ngx_int_t ret = NGX_OK;
 	session_t *session;
 	metadata_t *metadata;
-	char *uri, *s0, *s1, *s2, *str1, *saveptr1;
+	char *uri, *s0, *s1, *s2;
 	struct tm ltm;
 
 	// Init session
@@ -367,31 +341,9 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	if ((! strcmp(session->read_only, "yes")) && (r->method & (NGX_HTTP_DELETE)))
 		return NGX_HTTP_BAD_REQUEST;
 
-	// URI
-	uri = from_ngx_str(r->pool, r->uri);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", uri);
-
-	// Extract file ID
-	// URL format: http://cdn.example.com/some-file-id
-	s0 = from_ngx_str(r->pool, r->uri);
-	str1 = strtok_r(s0, "/", &saveptr1);
-	if (str1 == NULL)
-		return NGX_HTTP_BAD_REQUEST;
-
-	metadata->file = ngx_pnalloc(r->pool, strlen(str1) + 1);
-	if (metadata->file == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(str1) + 1);
-		return NGX_ERROR;
-	}
-	strcpy(metadata->file, str1);
-
-	// Get path
-	if ((ret = get_path(session, metadata, r)) > 0)
-		return ret;
-
-	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
-	if ((ret = get_stat(metadata, r)) > 0)
-		return ret;
+	// Get the URI and split into parts
+	if ((ret = get_uri(metadata, r)) > 0)
+		return ret;		
 
 	// Process Header If-Modified-Since
 	if (r->headers_in.if_modified_since) {
@@ -475,11 +427,11 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 
 	// Query for metadata based on transport
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
-		ret = transport_http(session, r);
+		ret = transport_http(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL))
 		ret = transport_internal(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
-		ret = transport_mongo(session, r, METADATA_SELECT);
+		ret = transport_mongo(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
@@ -563,7 +515,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 
-		// Delete metadata (only for MongoDB and SQL)
+		// Delete metadata (only for some transport types)
+		// FIXME: No DELETE for HTTP transport?
 		// NB: we ignore errors here
 		if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) {
 			// NB: Our JSON/XML request was already prepared above for the AUTH step
@@ -571,7 +524,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		}
 		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO)) {
 			// NB: Our MongoDB request was already prepared above for the AUTH step
-			ret = transport_mongo(session, r, METADATA_DELETE);
+			ret = transport_mongo(session, metadata, r, METADATA_DELETE);
 			if (session->auth_request)
 				bson_free(session->auth_request);
 		}
@@ -597,7 +550,6 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			// NB: Our JSON/XML request was already prepared above for the AUTH step
 			ret = transport_redis(session, metadata, r, METADATA_DELETE);
 		}
-
 
 		return NGX_HTTP_NO_CONTENT;
 	}

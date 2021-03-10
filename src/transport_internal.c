@@ -9,14 +9,46 @@
 #include "cache.h"
 
 /**
+ * Helper: get key from metadata
+ */
+char *get_key(metadata_t *metadata, ngx_http_request_t *r) {
+	char *tmp, *key;
+	uint64_t h1, h2;
+
+	// Convert the 32-character file ID to 16-byte key
+	tmp = malloc(17);
+	if (! tmp) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Internal transport: failed to allocate %l bytes for key.", 17);
+		return NULL;
+	}
+
+	strncpy(tmp, metadata->file, 16);
+	h1 = strtoul(tmp, NULL, 16);
+	strncpy(tmp, metadata->file + 16, 16);
+	h2 = strtoul(tmp, NULL, 16);
+	free(tmp);
+
+	key = malloc(16);
+	if (! key) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Internal transport: failed to allocate %l bytes for key.", 16);
+		return NULL;
+	}
+
+	memcpy(key, &h1, 8);
+	memcpy(key + 8, &h2, 8);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with key: %016xL%016xL", path, *((uint64_t*)key), *((uint64_t*)(key+8)));
+
+	return key;
+}
+
+/**
  * File metadata from internal
  */
 ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode) {
-	char *path, *key, *tmp;
+	char *path, *key;
 	int file_fd, error;
 	struct stat statbuf;
 	btree_t *node = NULL;
-	uint64_t h1, h2;
 
 	// Set path to metadata file: original file name + ".meta"
 	if ((path = ngx_pcalloc(r->pool, strlen(metadata->path) + 6)) == NULL) {
@@ -27,9 +59,9 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	sprintf(path, "%s.meta", metadata->path);
 
 	// Save, delete or read metadata
-	if (mode == METADATA_INSERT) {
+	if ((mode == METADATA_INSERT) || (mode == METADATA_UPDATE)) {
 		// Save metadata to CDN meta file
-		if ((file_fd = open(path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
+		if ((file_fd = open(path, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to create metadata file %s: %s", path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
@@ -41,6 +73,17 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		}
 
 		close(file_fd);
+
+		// Purge the record from the cache if found there
+		if ((mode == METADATA_REPLACE) && (cdn_globals->cache->mem_max)) {
+			// Get the key
+			if ((key = get_key(metadata, r)) == NULL)
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+
+			pthread_mutex_lock(&cdn_globals->cache->lock);
+			cache_remove (cdn_globals->cache, key);
+			pthread_mutex_unlock(&cdn_globals->cache->lock);
+		}			
 	}
 
 	else if (mode == METADATA_DELETE) {
@@ -54,19 +97,10 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	else {
 		// Read metadata - first check memory cache if it is enabled
 		if (cdn_globals->cache->mem_max) {
-			// Convert the 32-character file ID to 16-byte key
-			tmp = malloc(17);
-			strncpy(tmp, metadata->file, 16);
-			h1 = strtoul(tmp, NULL, 16);
-			strncpy(tmp, metadata->file + 16, 16);
-			h2 = strtoul(tmp, NULL, 16);
-			free(tmp);
-			key = malloc(16);
-			memcpy(key, &h1, 8);
-			memcpy(key + 8, &h2, 8);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with key: %016xL%016xL", path, *((uint64_t*)key), *((uint64_t*)(key+8)));
+			if ((key = get_key(metadata, r)) == NULL)
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
-			// Seek the key (motex-protected operation)
+			// Seek the key (mutex-protected operation)
 			// If key was found, res->left will have the value (NULL-terminated string); cast it to char*
 			// If key was not found, it was added; store the value by passing the same res and the value (NULL-terminated char*) to cache_put()
 			pthread_mutex_lock(&cdn_globals->cache->lock);

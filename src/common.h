@@ -70,7 +70,7 @@
 // Definitions
 #define DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN "*"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS "If-None-Match, If-Modified-Since"
-#define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, POST, OPTIONS, DELETE"
+#define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, POST, PUT, OPTIONS, DELETE"
 #define DEFAULT_ALL_COOKIES "no"
 #define DEFAULT_ALL_HEADERS "no"
 #define DEFAULT_AUTH_HEADER "none"
@@ -100,7 +100,7 @@
 #define DEFAULT_REQUEST_TYPE "none"
 #define DEFAULT_SERVER_ID "1"
 #define DEFAULT_SQL_QUERY_DELETE "DELETE FROM cdn WHERE file_id='%s'"
-#define DEFAULT_SQL_QUERY_INSERT "INSERT INTO cdn (auth_value, file_id, filename, content_type, content_disposition, etag) VALUES ('%s','%s','%s',%u,'%s','%s', %u,'%s')"
+#define DEFAULT_SQL_QUERY_INSERT "REPLACE INTO cdn (auth_value, file_id, filename, content_type, content_disposition, etag) VALUES ('%s','%s','%s',%u,'%s','%s', %u,'%s')"
 #define DEFAULT_SQL_QUERY_SELECT "SELECT * FROM cdn WHERE file_id='%s' AND auth_value='%s'"
 #define DEFAULT_TCP_HOST "example.com"
 #define DEFAULT_TCP_PORT "12345"
@@ -334,6 +334,7 @@ enum {
 	METADATA_NONE = 0,
 	METADATA_SELECT,
 	METADATA_INSERT,
+	METADATA_UPDATE,
 	METADATA_DELETE
 };
 

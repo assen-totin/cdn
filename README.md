@@ -184,7 +184,7 @@ The following filters are currently defined:
 
 The following parameter names are used throughout this document (both for requests and responses):
 
-- `http_method`: string, the name of the HTTP method used like `POST`, `GET`, `DELETE`. Uses capital letters.
+- `http_method`: string, the name of the HTTP method used like `POST`, `PUT`, `GET`, `DELETE`. Uses capital letters.
 - `auth_value`: string, the authentication value (e.g., user ID) extracted from the authorisation token, if any
 - `file_id`: string, the ID for the file that is being uploaded, downloaded or deleted
 - `filename`: string, the original filename; default is `file`
@@ -208,7 +208,13 @@ NB: for complex queries, create a stored procedure and use stanza like `CALL my_
 
 The query may return a row (e.g., if using a stored procedure or if using `INSERT ... RETRUNING`) having a column `status` (or `STATUS` for Oracle) with the HTTP code to allow or deny the operation. 
 
-The default query is `INSERT INTO cdn (auth_value, file_id, filename, content_type, content_disposition, etag) VALUES ('%s','%s','%s','%s','%s','%s')`.
+The default query is `REPLACE INTO cdn (auth_value, file_id, filename, content_type, content_disposition, etag) VALUES ('%s','%s','%s','%s','%s','%s')`.
+
+### Update
+
+Uses the same configuration as for the upload.
+
+Make sure the file ID is a UNIQUE key in the database and use REPLACE in the `cdn_sql_insert` statement so that the metadata may get updated. 
 
 ### Download
 
@@ -224,7 +230,7 @@ The default query is `SELECT * FROM cdn WHERE file_id='%s' AND auth_value='%s'`.
 
 Set the SQL DELETE query to run in the configuration option `cdn_sql_delete`. It must have a single `%s` placeholder, which will be filled with the file ID.
 
-NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s, %s)`.
+NB: for complex queries, create a stored procedure and use stanza like `CALL my_procedure(%s)`.
 
 The default query is `DELETE FROM cdn WHERE file_id='%s'`.
 
@@ -239,6 +245,10 @@ Because MongoDB does not allow for textual queries, both file metadata and autho
 ### Upload
 
 The CDN will create a document with the same properties as given, including `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). 
+
+### Update
+
+Same as with the upload. An existing document will be updated.
 
 ### Download
 

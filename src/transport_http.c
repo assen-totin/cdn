@@ -45,7 +45,7 @@ static uint http_cb(char *msg_in, uint size, uint bytes_in, session_t *session) 
 /**
  * Get/Send file metadata over HTTP POST (due to data size, if including headers/cookies)
  */
-ngx_int_t transport_http(session_t *session, ngx_http_request_t *r) {
+ngx_int_t transport_http(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode) {
 	CURLcode res;
 
 	if ((session->curl = curl_easy_init()) == NULL) {

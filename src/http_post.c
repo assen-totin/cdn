@@ -149,7 +149,7 @@ static char *mpfd_get_field(ngx_http_request_t *r, upload_t *upload, char *from,
 }
 
 /**
- * POST request body processing callback
+ * POST and PUT request body processing callback
  */
 void cdn_handler_post (ngx_http_request_t *r) {
 	off_t len = 0, len_buf;
@@ -159,7 +159,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	char *content_length_z, *content_type, *boundary, *line, *part = NULL;
 	char *file_data_begin = NULL, *file_content_transfer_encoding = NULL;
 	char *part_pos = NULL, *part_field_name = NULL, *part_filename = NULL, *part_content_type = NULL, *part_content_transfer_encoding = NULL, *part_end;
-	int upload_content_type, file_fd, cnt_part = 0, cnt_header;
+	int upload_content_type, file_fd, cnt_part = 0, cnt_header, mode;
 	long content_length, rb_pos = 0;
 	uint64_t hash[2];
 	session_t *session;
@@ -193,6 +193,12 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body is ready for processing.");
+
+	// For PUT method, extract the file ID from the URL
+	if (r->method & (NGX_HTTP_PUT)) {
+		if ((ret = get_uri(metadata, r)) > 0)
+			return ret;		
+	}
 
 	// Extract content type from header
 	content_type = from_ngx_str(r->pool, r->headers_in.content_type->value);
@@ -456,26 +462,29 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}	
 	}
 
-	// Create hash salt: No of seconds for today with ms precision, mulitplied by server id =< 49
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    int sec = tv.tv_sec % 86400;
-    int msec = tv.tv_usec / 1000;
-    uint32_t salt = session->server_id * (1000 * sec + msec);
+	// For POST only: prepare file hash
+	if (r->method & (NGX_HTTP_POST)) {
+		// Create hash salt: No of seconds for today with ms precision, mulitplied by server id =< 49
+		struct timeval tv;
+		gettimeofday(&tv, NULL);
+		int sec = tv.tv_sec % 86400;
+		int msec = tv.tv_usec / 1000;
+		uint32_t salt = session->server_id * (1000 * sec + msec);
 
-	// Create file hash
-	murmur3((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
+		// Create file hash
+		murmur3((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
 
-	// Convert hash to hex string
-	if ((metadata->file = ngx_pcalloc(r->pool, 33)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate 33 bytes for file ID.");
-		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		// Convert hash to hex string
+		if ((metadata->file = ngx_pcalloc(r->pool, 33)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate 33 bytes for file ID.");
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		}
+		sprintf(metadata->file, "%016lx%016lx", hash[0], hash[1]);
+
+		// Obtain file path
+		if (get_path(session, metadata, r) > 0)
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
-	sprintf(metadata->file, "%016lx%016lx", hash[0], hash[1]);
-
-	// Obtain file path
-	if (get_path(session, metadata, r) > 0)
-		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
 	// Try to find an authorisation token
 	if ((ret = get_auth_token(session, r)) > 0)
@@ -557,20 +566,22 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, upload, ret);
 
 	// Query for metadata based on transport
+	mode = (r->method & (NGX_HTTP_POST)) ? METADATA_INSERT : METADATA_UPDATE;
+
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
-		ret = transport_http(session, r);
+		ret = transport_http(session, metadata, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL))
-		ret = transport_internal(session, metadata, r, METADATA_INSERT);
+		ret = transport_internal(session, metadata, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MONGO))
-		ret = transport_mongo(session, r, METADATA_INSERT);
+		ret = transport_mongo(session, metadata, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
-		ret = transport_mysql(session, r, METADATA_INSERT);
+		ret = transport_mysql(session, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
-		ret = transport_oracle(session, r, METADATA_INSERT);
+		ret = transport_oracle(session, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL))
-		ret = transport_postgresql(session, r, METADATA_INSERT);
+		ret = transport_postgresql(session, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_REDIS))
-		ret = transport_redis(session, metadata, r, METADATA_INSERT);
+		ret = transport_redis(session, metadata, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_TCP))
 		ret = transport_socket(session, r, SOCKET_TYPE_TCP);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
@@ -657,7 +668,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 
 	// Save file to CDN
-	if ((file_fd = open(metadata->path, O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
+	if ((file_fd = open(metadata->path, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to create file %s: %s", metadata->path, strerror(errno));
 		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}

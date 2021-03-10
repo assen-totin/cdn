@@ -5,13 +5,13 @@
  */
 
 // HTTP
-ngx_int_t transport_http(session_t *session, ngx_http_request_t *r);
+ngx_int_t transport_http(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode);
 
 // Internal
 ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode);
 
 // Mongo
-ngx_int_t transport_mongo(session_t *session, ngx_http_request_t *r, int mode);
+ngx_int_t transport_mongo(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode);
 
 // MySQL
 ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r, int mode);
