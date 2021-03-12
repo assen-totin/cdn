@@ -18,7 +18,7 @@ Packager: Assen Totin <assen.totin@gmail.com>
 Group: Applications
 License: Proprietary
 BuildArch: x86_64
-BuildRequires: libbson-devel, libcurl-devel, libxml2-devel
+BuildRequires: libbson-devel, libcurl-devel, libxml2-devel, libxslt-devel, gd-devel, perl-ExtUtils-Embed, gcc, make
 #BuildRequires: libjwt-devel
 #BuildRequires: mongo-c-driver-devel
 #BuildRequires: mariadb-connector-c-devel

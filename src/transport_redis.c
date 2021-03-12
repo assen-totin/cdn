@@ -14,7 +14,6 @@ ngx_int_t transport_redis(session_t *session, metadata_t *metadata, ngx_http_req
 #ifdef CDN_ENABLE_REDIS
 	redisContext *context;
 	redisReply *reply;
-	ngx_int_t ret;
 	struct timeval timeout = {5, 0}; 
 
 	// Connect Redis w/ 5 sec timeout

@@ -83,6 +83,12 @@ NB: for complex SQL queries, create instead a stored procedure and use stanza li
 
 Define the SQL INSERT query. It must have placeholders which will be filled with the following values in the given order: `auth_value`, `file`, `filename`, `content_type`, `content_disposition`, `etag`. All these placeholders should be `'%s'` (for strings); don't forget the single quotes around the string placeholder.
 
+### Update
+
+Uses the same configuration as for the upload.
+
+Make sure the file ID is a UNIQUE key in the database and use REPLACE in the `cdn_sql_insert` statement so that the metadata may get updated. 
+
 ### Download
 
 Define the SQL SELECT query. It must have two `%s` placeholders - the first will be filled with the file ID and the second - with the value, extracted from the JWT payload.
@@ -106,6 +112,10 @@ Because MongoDB does not allow for textual queries, both file metadata and autho
 ### Upload
 
 The CDN will create a document with the same properties as given above, including the `file_id`, containing the ID of the file to be served by the CDN and `auth_value`, containing the value that will be used by the CDN to authorise access to the file (e.g., user ID or group ID etc.). 
+
+### Update
+
+Same as with the upload. An existing document will be updated.
 
 ### Download
 
@@ -142,6 +152,12 @@ This request type can be used with transport type Unix socket, TCP socket HTTP r
 	"status": 200
 }
 ```
+
+### Delete
+
+The request will be the same as with upload, but the `http_method` will be set to PUT.
+
+The response should be the same as with upload.
 
 ### Download 
 
@@ -220,6 +236,12 @@ This request type can be used with transport type Unix socket, TCP socket HTTP r
 	<status>200</status>
 </response>
 ```
+
+### Delete
+
+The request will be the same as with upload, but the `http_method` will be set to PUT.
+
+The response should be the same as with upload.
 
 ### Download
 
@@ -342,7 +364,7 @@ The following form field names are recognised:
 - `d`: file field when uploading using `multipart/form-data`; the file content when using `application/x-www-form-urlencoded`.
 - `n`: original filename; mandatory for `application/x-www-form-urlencoded`; for `multipart/form-data` overrides the value, provided in the file part of the form itself.
 - `ct`: content type of the file; mandatory for `application/x-www-form-urlencoded`; for `multipart/form-data` overrides the value, provided in the file part of the form itself.
-- `cd`: content disposition to use for this file. All values except `attachment` are. If not set, file will be served inline.
+- `cd`: content disposition to use for this file. If set to `attachment`, the file will be served as attachment; for any other value (or if missing) the file will be served inline.
 
 The metadata can be created in two ways:
 
@@ -383,4 +405,16 @@ To get a file from the CDN, issue a `GET` HTTP request to the CDN endpoint, foll
 To delete a file from the filesystem, issue the same request as for downloading the file, but use DELETE HTTP method.
 
 NB: The metadata for the file will be deleted when using internal authorisation, SQL authorisation or MongoDB. In all other cases the authorisation body should delete the metadata (the `http_method` in the authorisation request will be set to `DELETE`).
+
+# Examples
+
+## Upload a file from command-line
+`curl -X POST -F n=test.jpg -F ct='image/jpeg' -F d=@test.jpg  http://cdn.example.com`
+
+## Get an uploaded file
+`curl -o test-dnld.jpg http://cdn.example.com/438fcf2c4d4eec4d92acc96dcaaa7940`
+
+## Update and upoaded file
+`curl -X PUT -F n=test2.jpg -F ct='image/jpeg' -F d=@test2.jpg  http://cdn.example.com/438fcf2c4d4eec4d92acc96dcaaa7940`
+
 

@@ -561,6 +561,10 @@ session_t *init_session(ngx_http_request_t *r) {
 		sprintf(session->http_method, "POST");
 		session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_insert);
 	}
+	else if (r->method & (NGX_HTTP_PUT)) {
+		sprintf(session->http_method, "PUT");
+		session->sql_query = from_ngx_str(r->pool, cdn_loc_conf->sql_insert);
+	}
 
 	return session;
 }
@@ -680,8 +684,9 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 /**
  * Extract URI
  */
-ngx_int_t get_uri(metadata_t *metadata, ngx_http_request_t *r) {
-	char *s0, *str1, *saveptr1;
+ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	char *uri, *s0, *str1, *saveptr1;
+	ngx_int_t ret;
 
 	// URI
 	uri = from_ngx_str(r->pool, r->uri);
@@ -708,6 +713,8 @@ ngx_int_t get_uri(metadata_t *metadata, ngx_http_request_t *r) {
 	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
 	if ((ret = get_stat(metadata, r)) > 0)
 		return ret;
+
+	return NGX_OK;
 }
 
 

@@ -292,6 +292,12 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 
 If the response lacks the `status` field, but has a `auth_value`, it will be compared to the authorisation value in the HTTP request, if such is present, and on mismatch the response will be treated as empty.
 
+### Delete
+
+The request will be the same as with upload, but the `http_method` will be set to PUT.
+
+The response should be the same as with upload.
+
 ### Download 
 
 *Request format*
@@ -374,6 +380,12 @@ This request type can be used with transport type set to `unix` (Unix socket), `
 ```
 
 If the response lacks the `status` element, but has a `auth_value`, it will be compared to the authorisation value in the HTTP request, if such is present, and on mismatch the response will be treated as empty.
+
+### Delete
+
+The request will be the same as with upload, but the `http_method` will be set to PUT.
+
+The response should be the same as with upload.
 
 ### Download
 
@@ -524,7 +536,7 @@ The following form field names are recognised:
 - `d`: file field when uploading using `multipart/form-data`; the file content when using `application/x-www-form-urlencoded`.
 - `n`: original filename; mandatory for `application/x-www-form-urlencoded`; for `multipart/form-data` overrides the value, provided in the file part of the form itself.
 - `ct`: content type of the file; mandatory for `application/x-www-form-urlencoded`; for `multipart/form-data` overrides the value, provided in the file part of the form itself.
-- `cd`: content disposition to use for this file. All values except `attachment` are. If not set, file will be served inline.
+- `cd`: content disposition to use for this file. If set to `attachment`, the file will be served as attachment; for any other value (or if missing) the file will be served inline.
 
 The metadata can be created in two ways:
 
@@ -671,5 +683,14 @@ systemctl restart nginx
 # Create empty CDN tree using tools/mkcdn.sh
 mkdir /opt/cdn
 mkcdn.sh --root /opt/cdn --depth 4 --user nginx --group nginx
+
+# Upload a file from command-line
+curl -X POST -F n=test.jpg -F ct='image/jpeg' -F d=@test.jpg  http://cdn.example.com
+
+# Get an uploaded file
+curl -o test-dnld.jpg http://cdn.example.com/438fcf2c4d4eec4d92acc96dcaaa7940
+
+# Update and upoaded file
+curl -X PUT -F n=test2.jpg -F ct='image/jpeg' -F d=@test2.jpg  http://cdn.example.com/438fcf2c4d4eec4d92acc96dcaaa7940
 ```
 

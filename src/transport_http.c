@@ -29,7 +29,7 @@ static uint http_cb(char *msg_in, uint size, uint bytes_in, session_t *session) 
 	if (session->auth_response_pos + bytes_in > session->auth_response_len - 1) {
 		if ((tmp = realloc(session->auth_response, session->auth_response_len + SOCKET_BUFFER_CHUNK)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, session->r->connection->log, 0, "Failed to reallocate %l bytes for auth_response.", session->auth_response_len + SOCKET_BUFFER_CHUNK);
-			return 0;
+			return NGX_OK;
 		}
 		session->auth_response = tmp;
 		session->auth_response_len += SOCKET_BUFFER_CHUNK;

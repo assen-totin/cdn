@@ -42,10 +42,6 @@ cache_t *cache_init() {
 	if ((cache = malloc(sizeof(cache_t))) == NULL)
 		return NULL;
 
-//	cache->list = malloc(CACHE_KEY_LEN);
-//	cache->list_cnt = 1;
-//	cache->mem_used = sizeof(cache_t) + CACHE_KEY_LEN + CACHE_BTREE_DEPTH * CACHE_BTREE_DEPTH;
-
 	cache->list = NULL;
 	cache->list_cnt = 0;
 	cache->mem_used = sizeof(cache_t) + CACHE_BTREE_DEPTH * CACHE_BTREE_DEPTH;
@@ -75,7 +71,7 @@ static int btree_match(cache_t *cache, void *key, int level) {
 			return 1;
 	}
 
-	return 0;
+	return NGX_OK;
 }
 
 // Remove a path until a fork is found
@@ -137,7 +133,7 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 		// Ensure node allocation was successful
 		if (! node) {
 			*error = 1;
-			return;
+			return NULL;
 		}
 	}
 

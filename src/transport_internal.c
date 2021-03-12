@@ -11,7 +11,7 @@
 /**
  * Helper: get key from metadata
  */
-char *get_key(metadata_t *metadata, ngx_http_request_t *r) {
+char *get_key(metadata_t *metadata, ngx_http_request_t *r, char *path) {
 	char *tmp, *key;
 	uint64_t h1, h2;
 
@@ -75,9 +75,9 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		close(file_fd);
 
 		// Purge the record from the cache if found there
-		if ((mode == METADATA_REPLACE) && (cdn_globals->cache->mem_max)) {
+		if ((mode == METADATA_UPDATE) && (cdn_globals->cache->mem_max)) {
 			// Get the key
-			if ((key = get_key(metadata, r)) == NULL)
+			if ((key = get_key(metadata, r, path)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
 			pthread_mutex_lock(&cdn_globals->cache->lock);
@@ -97,7 +97,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	else {
 		// Read metadata - first check memory cache if it is enabled
 		if (cdn_globals->cache->mem_max) {
-			if ((key = get_key(metadata, r)) == NULL)
+			if ((key = get_key(metadata, r, path)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
 			// Seek the key (mutex-protected operation)

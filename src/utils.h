@@ -16,7 +16,7 @@ session_t *init_session(ngx_http_request_t *r);
 metadata_t *init_metadata(ngx_http_request_t *r);
 globals_t *init_globals();
 ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r);
-ngx_int_t get_uri(metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 
 

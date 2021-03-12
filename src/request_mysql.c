@@ -82,7 +82,6 @@ ngx_int_t response_post_mysql(session_t *session, metadata_t *metadata, ngx_http
 	int i, fields_num;
 	MYSQL_FIELD *fields;
 	MYSQL_ROW mysql_row;
-	ngx_int_t ret;
 
 	// NB: we only expect one row in response or no rows
 	if (! session->mysql_result)

@@ -129,7 +129,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
  * Read file
  */
 ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
-	int fd, ret;
+	int fd;
 	ngx_http_cleanup_t *c;
 
 	// If file unmodifed, return 304
@@ -323,7 +323,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	ngx_int_t ret = NGX_OK;
 	session_t *session;
 	metadata_t *metadata;
-	char *uri, *s0, *s1, *s2;
+	char *s0, *s1, *s2;
 	struct tm ltm;
 
 	// Init session
@@ -342,7 +342,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		return NGX_HTTP_BAD_REQUEST;
 
 	// Get the URI and split into parts
-	if ((ret = get_uri(metadata, r)) > 0)
+	if ((ret = get_uri(session, metadata, r)) > 0)
 		return ret;		
 
 	// Process Header If-Modified-Since

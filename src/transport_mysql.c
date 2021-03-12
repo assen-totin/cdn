@@ -25,7 +25,6 @@ static ngx_int_t close_mysql(void *con, ngx_int_t ret) {
 ngx_int_t transport_mysql(session_t *session, ngx_http_request_t *r, int mode) {
 #ifdef CDN_ENABLE_MYSQL
 	MYSQL conn;
-	ngx_int_t ret;
 
 	// Init MySQL
 	if (mysql_init(&conn) == NULL) {

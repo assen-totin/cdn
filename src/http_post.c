@@ -196,8 +196,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// For PUT method, extract the file ID from the URL
 	if (r->method & (NGX_HTTP_PUT)) {
-		if ((ret = get_uri(metadata, r)) > 0)
-			return ret;		
+		if ((ret = get_uri(session, metadata, r)) > 0)
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);		
 	}
 
 	// Extract content type from header

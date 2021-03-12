@@ -82,7 +82,7 @@ ngx_int_t transport_mongo(session_t *session, metadata_t *metadata, ngx_http_req
 		else if (mode == METADATA_UPDATE) {
 			// Prepare a separate filter to match on file ID
 			filter_json = malloc(64);
-			strncpy(filter_json, "{\"file_id\": \"%s\"}", metadata->file, 32);
+			snprintf(filter_json, 32, "{\"file_id\": \"%s\"}", metadata->file);
 
 			if ((filter = bson_new_from_json((const unsigned char *) filter_json, -1, &error)) == NULL) {
 				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to process JSON->BSON filter %s: %s", session->auth_request, &error.message[0]);

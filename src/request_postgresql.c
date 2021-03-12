@@ -80,7 +80,6 @@ ngx_int_t response_get_postgresql(session_t *session, metadata_t *metadata, ngx_
 ngx_int_t response_post_postgresql(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_POSTGRESQL
 	int i;
-	ngx_int_t ret;
 
 	// NB: we only expect one row in response, but empty may also be OK (depending on default HTTP status code)
 	if (session->postgresql_result) {
