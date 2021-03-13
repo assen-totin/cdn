@@ -7,6 +7,7 @@
 #include "common.h"
 #include "auth.h"
 #include "filter.h"
+#include "index.h"
 #include "request.h"
 #include "transport.h"
 #include "utils.h"
@@ -514,6 +515,12 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s unlink() error %s", metadata->file, metadata->path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
+
+		// Write to index (protect by mutex) - but only log errors
+		pthread_mutex_lock(&cdn_globals->index->lock);
+		if ((ret = index_write(cdn_globals->index, INDEX_ACTION_DELETE, metadata->file)) > 0)
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file, strerror(ret));
+		pthread_mutex_unlock(&cdn_globals->index->lock);
 
 		// Delete metadata (only for some transport types)
 		// FIXME: No DELETE for HTTP transport?

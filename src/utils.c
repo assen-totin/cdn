@@ -26,14 +26,15 @@ char *memstr(char *haystack, char *needle, int size) {
 }
 
 /**
- * Convert Nginx string to normal
+ * Convert Nginx string to normal using Nginx pool
  */
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
+	char *ret;
+
 	if (! ngx_str.len)
 		return NULL;
 
-	char *ret = ngx_pcalloc(pool, ngx_str.len + 1);
-	if (ret == NULL) {
+	if ((ret = ngx_pcalloc(pool, ngx_str.len + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
 		return NULL;
 	}
@@ -42,6 +43,22 @@ char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 	return ret;
 }
 
+/**
+ * Convert Nginx string to normal with malloc()
+ */
+char *from_ngx_str_malloc(ngx_str_t ngx_str) {
+	char *ret;
+
+	if (! ngx_str.len)
+		return NULL;
+
+	if ((ret = calloc(ngx_str.len + 1, 1)) == NULL)
+		return NULL;
+
+	memcpy(ret, ngx_str.data, ngx_str.len);
+
+	return ret;
+}
 
 /**
  * Get stat of a file
@@ -72,16 +89,49 @@ ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r) {
 
 
 /**
+ * Helper: Get the full path from a file name
+ */
+ngx_int_t get_path0(char *filename, char *result, int len) {
+	int i, pos=0;
+
+	// Protect from accidental overflow below
+	if ((strlen(cdn_globals->fs->root) + 1 + 2 * cdn_globals->fs->depth + strlen(filename)) > len)
+		return ENAMETOOLONG;
+
+	memcpy(result, cdn_globals->fs->root, strlen(cdn_globals->fs->root));
+	pos += strlen(cdn_globals->fs->root);
+
+	memcpy(result + pos, "/", 1);
+	pos ++;
+
+	for (i=0; i < cdn_globals->fs->depth; i++) {
+		memcpy(result + pos, filename + i, 1);
+		pos ++;
+		memcpy(result + pos, "/", 1);
+		pos ++;
+	}
+
+	memcpy(result + pos, filename, strlen(filename));
+
+	return NGX_OK;
+}
+
+
+/**
  * Get the full path from a file name
  */
 ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
-	int i, len, pos=0;
+	int len;
 
-	len = strlen(session->fs_root) + 1 + 2 * session->fs_depth + strlen(metadata->file) + 1;
+	len = strlen(cdn_globals->fs->root) + 1 + 2 * cdn_globals->fs->depth + strlen(metadata->file) + 1;
 	if ((metadata->path = ngx_pcalloc(r->pool, len)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
 		return NGX_ERROR;
 	}
+
+	get_path0(metadata->file, metadata->path, len);
+
+/*
 	memset(metadata->path, '\0', len);
 
 	memcpy(metadata->path, session->fs_root, strlen(session->fs_root));
@@ -98,6 +148,7 @@ ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t 
 	}
 
 	memcpy(metadata->path + pos, metadata->file, strlen(metadata->file));
+*/
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, metadata->path);
 
@@ -310,7 +361,7 @@ ngx_int_t parse_dsn(session_t *session, ngx_http_request_t *r) {
 	db_dsn_t *dsn;
 
 	// NB: As multiple threads may run this block concurrently, we use a local var to read the key and then atomically assign to a global var.
-	// This may create some small one-fime memory leak, but avoids the need to have mutexes and check then on every HTTP request
+	// This may create some small one-fime memory leak, but avoids the need to have mutexes and check them on every HTTP request
 
 	if ((dsn = malloc(sizeof(db_dsn_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for dsn", sizeof(db_dsn_t));
@@ -420,10 +471,7 @@ session_t *init_session(ngx_http_request_t *r) {
 		return session;
 	}
 
-	// Set common options (for GET|HEAD|DELETE and POST)
-	session->server_id = atoi(from_ngx_str(r->pool, cdn_loc_conf->server_id)) % MAX_SERVER_ID + 1;
-	session->fs_depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
-	session->fs_root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
+	// Set common options (for GET|HEAD|DELETE, POST and PUT)
 	session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
 	session->transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
 	session->auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
@@ -445,7 +493,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->jwt_json = NULL;
 	session->http_method = ngx_pcalloc(r->pool, 8);
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
-	session->cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
+//	session->cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
 
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
@@ -543,9 +591,6 @@ session_t *init_session(ngx_http_request_t *r) {
 		session->hdr_if_none_match = NULL;
 		session->hdr_if_modified_since = -1;
 
-		if (session->cache_size > 0)
-			cdn_globals->cache->mem_max = CACHE_SIZE_MULTIPLIER * session->cache_size;
-
 		// Method-specific init
 		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
 			sprintf(session->http_method, "GET");
@@ -610,6 +655,9 @@ globals_t *init_globals() {
 	globals->matrix_dnld = NULL;
 	globals->matrix_del = NULL;
 	globals->matrix_upld = NULL;
+	globals->index = NULL;
+	globals->fs = NULL;
+
 	return globals;
 }
 

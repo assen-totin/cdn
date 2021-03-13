@@ -47,6 +47,14 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
+		ngx_string("cdn_index_prefix"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, index_prefix),
+		NULL
+	},
+	{
 		ngx_string("cdn_request_type"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,
@@ -280,7 +288,7 @@ static ngx_http_module_t ngx_http_cdn_module_ctx = {
 // Globals: module definition
 ngx_module_t ngx_http_cdn_module = {
 	NGX_MODULE_V1,
-	&ngx_http_cdn_module_ctx,	// pointer to be passed to calls made by NGINX’s API to your module
+	&ngx_http_cdn_module_ctx,	// pointer to be passed to calls made by NGINX API to your module
 	ngx_http_cdn_commands,		// pointer to a struct with extra configuration directives used by the module
 	NGX_HTTP_MODULE,			// type of module defined
 	NULL,						// hook into the initialisation of the master process (not implemented)

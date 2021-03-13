@@ -7,6 +7,8 @@
 #include "common.h"
 #include "ngx_http_cdn_module.h"
 #include "cache.h"
+#include "index.h"
+#include "fs.h"
 #include "http.h"
 #include "utils.h"
 
@@ -50,6 +52,18 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 		return NGX_ERROR;
 	}
 
+	// Init FS
+	if ((cdn_globals->fs = fs_init()) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init FS");
+		return NGX_ERROR;
+	}
+
+	// Init index
+	if ((cdn_globals->index = index_init()) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init index");
+		return NGX_ERROR;
+	}
+
 	// Init cache for internal transport
 	if ((cdn_globals->cache = cache_init()) == NULL) {
 		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init in-memory cache (malloc failed)");
@@ -72,6 +86,10 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 #endif
 
 	cache_destroy(cdn_globals->cache);
+
+	index_destroy(cdn_globals->index);
+
+	fs_destroy(cdn_globals->fs);
 
 	if (cdn_globals->jwt_key)
 		free(cdn_globals->jwt_key);
@@ -113,6 +131,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->server_id, parent->server_id, DEFAULT_SERVER_ID);
 	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, DEFAULT_FS_ROOT);
 	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
+	ngx_conf_merge_str_value(child->index_prefix, parent->index_prefix, DEFAULT_INDEX_PREFIX);
 	ngx_conf_merge_str_value(child->request_type, parent->request_type, DEFAULT_REQUEST_TYPE);
 	ngx_conf_merge_str_value(child->transport_type, parent->transport_type, DEFAULT_TRANSPORT_TYPE);
 	ngx_conf_merge_str_value(child->unix_socket, parent->unix_socket, DEFAULT_UNIX_SOCKET);
@@ -161,6 +180,38 @@ char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
  */
 ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_int_t ret;
+
+	//FIXME: MOVE THSE AWAY FROM HERE!
+	ngx_http_cdn_loc_conf_t *cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
+
+	// Set globals: FS
+	if (! cdn_globals->fs->depth) {
+		char *tmp_fs_depth = from_ngx_str_malloc(cdn_loc_conf->fs_depth);
+		cdn_globals->fs->depth = atoi(tmp_fs_depth);
+		free(tmp_fs_depth);
+	}
+
+	if (! cdn_globals->fs->root)
+		cdn_globals->fs->root = from_ngx_str_malloc(cdn_loc_conf->fs_root);
+
+	if (! cdn_globals->fs->server_id) {
+		char *tmp_server_id = from_ngx_str_malloc(cdn_loc_conf->server_id);
+		cdn_globals->fs->server_id = atoi(tmp_server_id);
+		free(tmp_server_id);
+	}
+
+	// Set globals: cache
+	if (! cdn_globals->cache->mem_max) {
+		char *tmp_cache_size = from_ngx_str_malloc(cdn_loc_conf->cache_size);
+		cdn_globals->cache->mem_max = CACHE_SIZE_MULTIPLIER * atoi(tmp_cache_size);
+		free(tmp_cache_size);
+	}
+
+	// Set globals: index
+	if (! cdn_globals->index->prefix)
+		cdn_globals->index->prefix = from_ngx_str_malloc(cdn_loc_conf->index_prefix);
+
+
 
 	// OPTIONS handling (CORS)
 	if (r->method & (NGX_HTTP_OPTIONS))

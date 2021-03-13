@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "auth.h"
+#include "index.h"
 #include "filter.h"
 #include "murmur3.h"
 #include "request.h"
@@ -469,7 +470,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		gettimeofday(&tv, NULL);
 		int sec = tv.tv_sec % 86400;
 		int msec = tv.tv_usec / 1000;
-		uint32_t salt = session->server_id * (1000 * sec + msec);
+		//uint32_t salt = session->server_id * (1000 * sec + msec);
+		uint32_t salt = cdn_globals->fs->server_id * (1000 * sec + msec);
 
 		// Create file hash
 		murmur3((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
@@ -678,6 +680,16 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 	close(file_fd);
+
+	// Write to index (protect by mutex) - but only log errors
+	pthread_mutex_lock(&cdn_globals->index->lock);
+	if (r->method & (NGX_HTTP_POST))
+		ret = index_write(cdn_globals->index, INDEX_ACTION_INSERT, metadata->file);
+	else if (r->method & (NGX_HTTP_PUT))
+		ret = index_write(cdn_globals->index, INDEX_ACTION_UPDATE, metadata->file);
+	pthread_mutex_unlock(&cdn_globals->index->lock);
+	if (ret)
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file, strerror(ret));
 
 	// Prepare output chain
 	out = ngx_alloc_chain_link(r->pool);

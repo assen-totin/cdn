@@ -86,6 +86,7 @@
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
 #define DEFAULT_HTTP_URL "http://example.com"
+#define DEFAULT_INDEX_PREFIX "aaaaaa"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
 #define DEFAULT_MATRIX_ALLOW "allow"
@@ -163,6 +164,7 @@ typedef struct {
 	ngx_str_t server_id;
 	ngx_str_t fs_root;
 	ngx_str_t fs_depth;
+	ngx_str_t index_prefix;
 	ngx_str_t request_type;
 	ngx_str_t transport_type;
 	ngx_str_t unix_socket;
@@ -232,9 +234,6 @@ typedef struct {
 typedef struct {
 	ngx_http_request_t *r;
 	time_t exp;
-	uint server_id;
-	uint fs_depth;
-	char *fs_root;
 	char *read_only;
 	char *http_method;
 	char *request_type;
@@ -269,7 +268,7 @@ typedef struct {
 	int tcp_port;
 	char *http_url;
 	CURL *curl;
-	int cache_size;
+//	int cache_size;
 #ifdef CDN_ENABLE_JWT
 	jwt_t *jwt;
 #endif
@@ -309,6 +308,13 @@ struct btree_s {
 	btree_t *right;
 };
 
+// FS structure
+typedef struct {
+	int server_id;
+	int depth;
+	char *root;
+} fs_t;
+
 // Cache structure
 typedef struct {
 	btree_t* root;
@@ -320,6 +326,17 @@ typedef struct {
 	pthread_mutex_t lock;
 } cache_t;
 
+// Index structure
+typedef struct {
+	int fd;
+	char *prefix;
+	int year;
+	int month;
+	int day;
+	int hour;
+	pthread_mutex_t lock;
+} index_t;
+
 // Globals
 typedef struct {
 	cache_t *cache;
@@ -328,6 +345,8 @@ typedef struct {
 	auth_matrix_t *matrix_dnld;
 	auth_matrix_t *matrix_del;
 	auth_matrix_t *matrix_upld;
+	index_t *index;
+	fs_t *fs;
 } globals_t;
 
 enum {
@@ -342,6 +361,13 @@ enum {
 	UPLOAD_CONTENT_TYPE_NONE = 0,
 	UPLOAD_CONTENT_TYPE_MPFD,
 	UPLOAD_CONTENT_TYPE_AXWFU,
+};
+
+enum {
+	INDEX_ACTION_NONE = 0,
+	INDEX_ACTION_INSERT,
+	INDEX_ACTION_UPDATE,
+	INDEX_ACTION_DELETE,
 };
 
 // Globals
