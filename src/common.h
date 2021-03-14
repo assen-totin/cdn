@@ -162,6 +162,7 @@ typedef struct {
 
 typedef struct {
 	ngx_str_t server_id;
+	ngx_int_t instance_id;
 	ngx_str_t fs_root;
 	ngx_str_t fs_depth;
 	ngx_str_t index_prefix;
@@ -215,6 +216,7 @@ typedef struct {
 } cdn_kvp_t;
 
 typedef struct {
+	char *dsn;
 	char *host;
 	char *port_str;
 	int port;
@@ -222,7 +224,7 @@ typedef struct {
 	char *user;
 	char *password;
 	char *db;
-} db_dsn_t;
+} dsn_t;
 
 typedef struct {
 	uint auth_resp;
@@ -231,7 +233,57 @@ typedef struct {
 	uint noauth_noresp;
 } auth_matrix_t;
 
+// FS structure
 typedef struct {
+	int server_id;
+	int depth;
+	char *root;
+} fs_t;
+
+// BTree node structure
+typedef struct btree_s btree_t;
+struct btree_s {
+	btree_t *left;
+	btree_t *right;
+};
+
+// Cache structure
+typedef struct {
+	btree_t* root;
+	void *list;
+	uint64_t list_cnt;
+	uint64_t mem_used;
+	uint64_t mem_max;
+	uint64_t *btree_mask;
+	pthread_mutex_t lock;
+} cache_t;
+
+// Index structure
+typedef struct {
+	int fd;
+	char *prefix;
+	int year;
+	int month;
+	int day;
+	int hour;
+	pthread_mutex_t lock;
+} index_t;
+
+// Globals for a CDN instance
+typedef struct {
+	int id;
+	char *jwt_key;
+	dsn_t *dsn;
+	auth_matrix_t *matrix_dnld;
+	auth_matrix_t *matrix_del;
+	auth_matrix_t *matrix_upld;
+	cache_t *cache;
+	index_t *index;
+	fs_t *fs;
+} instance_t;
+
+typedef struct {
+	instance_t *instance;
 	ngx_http_request_t *r;
 	time_t exp;
 	char *read_only;
@@ -268,7 +320,6 @@ typedef struct {
 	int tcp_port;
 	char *http_url;
 	CURL *curl;
-//	int cache_size;
 #ifdef CDN_ENABLE_JWT
 	jwt_t *jwt;
 #endif
@@ -301,52 +352,10 @@ typedef struct {
 	CURL *curl;
 } upload_t;
 
-// BTree node structure
-typedef struct btree_s btree_t;
-struct btree_s {
-	btree_t *left;
-	btree_t *right;
-};
-
-// FS structure
-typedef struct {
-	int server_id;
-	int depth;
-	char *root;
-} fs_t;
-
-// Cache structure
-typedef struct {
-	btree_t* root;
-	void *list;
-	uint64_t list_cnt;
-	uint64_t mem_used;
-	uint64_t mem_max;
-	uint64_t *btree_mask;
-	pthread_mutex_t lock;
-} cache_t;
-
-// Index structure
-typedef struct {
-	int fd;
-	char *prefix;
-	int year;
-	int month;
-	int day;
-	int hour;
-	pthread_mutex_t lock;
-} index_t;
-
 // Globals
 typedef struct {
-	cache_t *cache;
-	char *jwt_key;
-	db_dsn_t *dsn;
-	auth_matrix_t *matrix_dnld;
-	auth_matrix_t *matrix_del;
-	auth_matrix_t *matrix_upld;
-	index_t *index;
-	fs_t *fs;
+	instance_t *instances;
+	int instances_cnt;
 } globals_t;
 
 enum {
@@ -371,5 +380,5 @@ enum {
 };
 
 // Globals
-globals_t *cdn_globals;
+globals_t *globals;
 

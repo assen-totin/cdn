@@ -8,7 +8,7 @@
 #include "auth.h"
 #include "index.h"
 #include "filter.h"
-#include "murmur3.h"
+#include "murmur3_128.h"
 #include "request.h"
 #include "transport.h"
 #include "utils.h"
@@ -163,8 +163,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	int upload_content_type, file_fd, cnt_part = 0, cnt_header, mode;
 	long content_length, rb_pos = 0;
 	uint64_t hash[2];
-	session_t *session;
 	metadata_t *metadata;
+	session_t *session;
 	upload_t *upload;
 
 	// Prepare our custom upload handler
@@ -470,11 +470,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		gettimeofday(&tv, NULL);
 		int sec = tv.tv_sec % 86400;
 		int msec = tv.tv_usec / 1000;
-		//uint32_t salt = session->server_id * (1000 * sec + msec);
-		uint32_t salt = cdn_globals->fs->server_id * (1000 * sec + msec);
+		uint32_t salt = session->instance->fs->server_id * (1000 * sec + msec);
 
 		// Create file hash
-		murmur3((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
+		murmur3_128((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
 
 		// Convert hash to hex string
 		if ((metadata->file = ngx_pcalloc(r->pool, 33)) == NULL) {
@@ -629,22 +628,22 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		if (session->auth_value) {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = cdn_globals->matrix_upld->auth_resp;
+				metadata->status = session->instance->matrix_upld->auth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value +resp setting status %l.", metadata->status);
 			}
 			else {
-				metadata->status = cdn_globals->matrix_upld->auth_noresp;
+				metadata->status = session->instance->matrix_upld->auth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value -resp setting status %l.", metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = cdn_globals->matrix_upld->noauth_resp;
+				metadata->status = session->instance->matrix_upld->noauth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value +resp setting status %l.", metadata->status);
 			}
 			else {
-				metadata->status = cdn_globals->matrix_upld->noauth_noresp;
+				metadata->status = session->instance->matrix_upld->noauth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value -resp setting status %l.", metadata->status);
 			}
 		}
@@ -682,12 +681,12 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	close(file_fd);
 
 	// Write to index (protect by mutex) - but only log errors
-	pthread_mutex_lock(&cdn_globals->index->lock);
+	pthread_mutex_lock(&session->instance->index->lock);
 	if (r->method & (NGX_HTTP_POST))
-		ret = index_write(cdn_globals->index, INDEX_ACTION_INSERT, metadata->file);
+		ret = index_write(session, INDEX_ACTION_INSERT, metadata->file);
 	else if (r->method & (NGX_HTTP_PUT))
-		ret = index_write(cdn_globals->index, INDEX_ACTION_UPDATE, metadata->file);
-	pthread_mutex_unlock(&cdn_globals->index->lock);
+		ret = index_write(session, INDEX_ACTION_UPDATE, metadata->file);
+	pthread_mutex_unlock(&session->instance->index->lock);
 	if (ret)
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file, strerror(ret));
 

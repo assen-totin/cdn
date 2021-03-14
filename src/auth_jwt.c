@@ -22,7 +22,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	}
 
 	// Validate and extract the token
-	if ((ret = jwt_decode(&session->jwt, session->auth_token, (unsigned char*)cdn_globals->jwt_key, strlen(cdn_globals->jwt_key)))) {
+	if ((ret = jwt_decode(&session->jwt, session->auth_token, (unsigned char*)session->instance->jwt_key, strlen(session->instance->jwt_key)))) {
 		jwt_free(session->jwt);
 
 		if (ret == EINVAL) {

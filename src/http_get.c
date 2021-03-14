@@ -48,22 +48,22 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 		if (session->auth_value) {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? cdn_globals->matrix_dnld->auth_resp : cdn_globals->matrix_del->auth_resp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->auth_resp : session->instance->matrix_del->auth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value +resp setting status %l.", metadata->file, metadata->status);
 			}
 			else {
-				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? cdn_globals->matrix_dnld->auth_noresp : cdn_globals->matrix_del->auth_noresp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->auth_noresp : session->instance->matrix_del->auth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value -resp setting status %l.", metadata->file, metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? cdn_globals->matrix_dnld->noauth_resp : cdn_globals->matrix_del->noauth_resp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->noauth_resp : session->instance->matrix_del->noauth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value +resp setting status %l.", metadata->file, metadata->status);
 			}
 			else {
-				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? cdn_globals->matrix_dnld->noauth_noresp : cdn_globals->matrix_del->noauth_noresp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->noauth_noresp : session->instance->matrix_del->noauth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value -resp setting status %l.", metadata->file, metadata->status);
 			}
 		}
@@ -322,8 +322,8 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
  */
 ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	ngx_int_t ret = NGX_OK;
-	session_t *session;
 	metadata_t *metadata;
+	session_t *session;
 	char *s0, *s1, *s2;
 	struct tm ltm;
 
@@ -517,10 +517,10 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		}
 
 		// Write to index (protect by mutex) - but only log errors
-		pthread_mutex_lock(&cdn_globals->index->lock);
-		if ((ret = index_write(cdn_globals->index, INDEX_ACTION_DELETE, metadata->file)) > 0)
+		pthread_mutex_lock(&session->instance->index->lock);
+		if ((ret = index_write(session, INDEX_ACTION_DELETE, metadata->file)) > 0)
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file, strerror(ret));
-		pthread_mutex_unlock(&cdn_globals->index->lock);
+		pthread_mutex_unlock(&session->instance->index->lock);
 
 		// Delete metadata (only for some transport types)
 		// FIXME: No DELETE for HTTP transport?

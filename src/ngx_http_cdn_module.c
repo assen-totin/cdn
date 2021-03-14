@@ -11,11 +11,11 @@
 #include "fs.h"
 #include "http.h"
 #include "utils.h"
+#include "murmur3_32.h"
 
 /**
  * Module initialisation
  */
-
 ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	int ret; 
 
@@ -46,29 +46,13 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	// Init cURL
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
-	// Init globals
-	if ((cdn_globals = init_globals()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init global variables (malloc failed)");
+	// Init the globals
+	if ((globals = malloc(sizeof(globals_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for globals.", sizeof(globals_t));
 		return NGX_ERROR;
 	}
-
-	// Init FS
-	if ((cdn_globals->fs = fs_init()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init FS");
-		return NGX_ERROR;
-	}
-
-	// Init index
-	if ((cdn_globals->index = index_init()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init index");
-		return NGX_ERROR;
-	}
-
-	// Init cache for internal transport
-	if ((cdn_globals->cache = cache_init()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init in-memory cache (malloc failed)");
-		return NGX_ERROR;
-	}
+	globals->instances = NULL;
+	globals->instances_cnt = 0;
 
 	return NGX_OK;
 }
@@ -76,8 +60,10 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 /**
  * Module termination
  */
-
 void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
+	int i;
+	instance_t *instance;
+
 #ifdef CDN_ENABLE_MYSQL
 	mysql_library_end();
 #endif
@@ -85,26 +71,33 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 	OCI_Cleanup();
 #endif
 
-	cache_destroy(cdn_globals->cache);
+	// Clean all instances
+	for (i=0; i < globals->instances_cnt; i++) {
+		instance = &globals->instances[i];
 
-	index_destroy(cdn_globals->index);
+		cache_destroy(instance->cache);
 
-	fs_destroy(cdn_globals->fs);
+		index_destroy(instance->index);
 
-	if (cdn_globals->jwt_key)
-		free(cdn_globals->jwt_key);
+		fs_destroy(instance->fs);
 
-	if (cdn_globals->dsn)
-		free(cdn_globals->dsn);
+		if (instance->jwt_key)
+			free(instance->jwt_key);
 
-	if (cdn_globals->matrix_dnld)
-		free(cdn_globals->matrix_dnld);
+		if (instance->dsn)
+			free(instance->dsn);
 
-	if (cdn_globals->matrix_upld)
-		free(cdn_globals->matrix_upld);
+		if (instance->matrix_dnld)
+			free(instance->matrix_dnld);
 
-	if (cdn_globals->matrix_del)
-		free(cdn_globals->matrix_del);
+		if (instance->matrix_upld)
+			free(instance->matrix_upld);
+
+		if (instance->matrix_del)
+			free(instance->matrix_del);
+	}
+
+	free(globals);
 }
 
 /**
@@ -160,6 +153,12 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->matrix_dnld, parent->matrix_dnld, DEFAULT_MATRIX_DNLD);
 	ngx_conf_merge_str_value(child->matrix_del, parent->matrix_del, DEFAULT_MATRIX_DEL);
 
+	// Calculate and save instance ID hash only if working on real location
+	if (child->fs_root.len != strlen(DEFAULT_FS_ROOT)) {
+		murmur3_32((void *)child->fs_root.data, child->fs_root.len, 42, (void *) &child->instance_id);
+		ngx_log_error(NGX_LOG_INFO, cf->log, 0, "Setting instance ID to %l", child->instance_id);
+	}
+
 	return NGX_CONF_OK;
 }
 
@@ -180,38 +179,6 @@ char *ngx_http_cdn_init(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
  */
 ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	ngx_int_t ret;
-
-	//FIXME: MOVE THSE AWAY FROM HERE!
-	ngx_http_cdn_loc_conf_t *cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
-
-	// Set globals: FS
-	if (! cdn_globals->fs->depth) {
-		char *tmp_fs_depth = from_ngx_str_malloc(cdn_loc_conf->fs_depth);
-		cdn_globals->fs->depth = atoi(tmp_fs_depth);
-		free(tmp_fs_depth);
-	}
-
-	if (! cdn_globals->fs->root)
-		cdn_globals->fs->root = from_ngx_str_malloc(cdn_loc_conf->fs_root);
-
-	if (! cdn_globals->fs->server_id) {
-		char *tmp_server_id = from_ngx_str_malloc(cdn_loc_conf->server_id);
-		cdn_globals->fs->server_id = atoi(tmp_server_id);
-		free(tmp_server_id);
-	}
-
-	// Set globals: cache
-	if (! cdn_globals->cache->mem_max) {
-		char *tmp_cache_size = from_ngx_str_malloc(cdn_loc_conf->cache_size);
-		cdn_globals->cache->mem_max = CACHE_SIZE_MULTIPLIER * atoi(tmp_cache_size);
-		free(tmp_cache_size);
-	}
-
-	// Set globals: index
-	if (! cdn_globals->index->prefix)
-		cdn_globals->index->prefix = from_ngx_str_malloc(cdn_loc_conf->index_prefix);
-
-
 
 	// OPTIONS handling (CORS)
 	if (r->method & (NGX_HTTP_OPTIONS))

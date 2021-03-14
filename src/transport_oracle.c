@@ -28,7 +28,7 @@ ngx_int_t transport_oracle(session_t *session, ngx_http_request_t *r, int mode) 
 	ngx_int_t ret;
 
 	// Connect Oracle
-	session->oracle_connection = OCI_ConnectionCreate(cdn_globals->dsn->host, cdn_globals->dsn->user, cdn_globals->dsn->password, OCI_SESSION_DEFAULT);
+	session->oracle_connection = OCI_ConnectionCreate(session->instance->dsn->host, session->instance->dsn->user, session->instance->dsn->password, OCI_SESSION_DEFAULT);
 	if (! session->oracle_connection) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to connect to Oracle: %s", OCI_ErrorGetString(OCI_GetLastError()));
 		return close_oracle(session, NGX_HTTP_INTERNAL_SERVER_ERROR);

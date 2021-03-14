@@ -30,7 +30,7 @@ ngx_int_t transport_postgresql(session_t *session, ngx_http_request_t *r, int mo
 	session->postgresql_result = NULL;
 
 	// Connect postgresql
-	session->postgresql_connection = PQconnectdb(session->db_dsn);
+	session->postgresql_connection = PQconnectdb(session->instance->dsn->dsn);
 	if (PQstatus(session->postgresql_connection) != CONNECTION_OK) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to connect to postgresql: %s", PQerrorMessage(session->postgresql_connection));
 		return close_postgresql(session, NGX_HTTP_INTERNAL_SERVER_ERROR);

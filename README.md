@@ -492,6 +492,8 @@ There are no configuration options for this transport.
 
 To enable the in-memory cache of metadata, set the `cdn_cache_size` to the desired amount in MB; default value is 0 (meaning cache is disabled). Each cached entry consumes around 3 KB of memory (when the allocated amount is exhausted, oldest entry will be evicted from the cache).
 
+NB: The cache is global (for all CDN instances that have it enabled), so its size will only be set once - therefore, if you want to use the cache for multiple CDN instances, make sure you have the same size set in each one (this will be the shared global cache size).
+
 ## MySQL
 
 This transport is only useful when request type is set to `mysql`.

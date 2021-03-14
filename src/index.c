@@ -29,11 +29,16 @@ index_t *index_init() {
 }
 
 // Open index
-ngx_int_t index_open(index_t *index) {
+ngx_int_t index_open(session_t* session) {
 	struct tm t;
 	char filename[256], path[256];
 	ngx_int_t ret;
 	time_t lt;
+	index_t *index;
+	fs_t *fs;
+
+	index = session->instance->index;
+	fs = session->instance->fs;
 
 	// Get the time in UTC
 	lt = time(NULL);
@@ -54,7 +59,7 @@ ngx_int_t index_open(index_t *index) {
 		// Compose new index name and path
 		snprintf(&filename[0], 256, "%s%02u%02u%02u%02u", index->prefix, index->year + 1900, index->month + 1, index->day, index->hour);
 		memset(&path[0], '\0', 256);
-		if ((ret = (get_path0(&filename[0], &path[0], 256))) > 0)
+		if ((ret = get_path0(fs->root, fs->depth, &filename[0], &path[0], 256)) > 0)
 			return ret;
 
 		// Open new index file
@@ -66,9 +71,12 @@ ngx_int_t index_open(index_t *index) {
 }
 
 // Write to index
-ngx_int_t index_write(index_t *index, int action, char* filename) {
+ngx_int_t index_write(session_t *session, int action, char* filename) {
 	char line[256];
 	ngx_int_t ret;
+	index_t *index;
+
+	index = session->instance->index;
 
 	// Prepare line to write
 	switch(action) {
@@ -84,7 +92,7 @@ ngx_int_t index_write(index_t *index, int action, char* filename) {
 	}
 
 	// Check if we need to open a new index file
-	if ((ret = index_open(index)) > 0)
+	if ((ret = index_open(session)) > 0)
 		return ret;
 
 	if (write(index->fd, &line[0], strlen(&line[0])) < strlen(&line[0]))

@@ -75,14 +75,14 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		close(file_fd);
 
 		// Purge the record from the cache if found there
-		if ((mode == METADATA_UPDATE) && (session->cache_size)) {
+		if ((mode == METADATA_UPDATE) && (session->instance->cache)) {
 			// Get the key
 			if ((key = get_key(metadata, r, path)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
-			pthread_mutex_lock(&cdn_globals->cache->lock);
-			cache_remove (cdn_globals->cache, key);
-			pthread_mutex_unlock(&cdn_globals->cache->lock);
+			pthread_mutex_lock(&session->instance->cache->lock);
+			cache_remove (session->instance->cache, key);
+			pthread_mutex_unlock(&session->instance->cache->lock);
 		}			
 	}
 
@@ -96,16 +96,16 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 	else {
 		// Read metadata - first check memory cache if it is enabled for current session
-		if (session->cache_size) {
+		if (session->instance->cache) {
 			if ((key = get_key(metadata, r, path)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
 			// Seek the key (mutex-protected operation)
 			// If key was found, res->left will have the value (NULL-terminated string); cast it to char*
 			// If key was not found, it was added; store the value by passing the same res and the value (NULL-terminated char*) to cache_put()
-			pthread_mutex_lock(&cdn_globals->cache->lock);
-			node = cache_seek(cdn_globals->cache, key, &error);
-			pthread_mutex_unlock(&cdn_globals->cache->lock);
+			pthread_mutex_lock(&session->instance->cache->lock);
+			node = cache_seek(session->instance->cache, key, &error);
+			pthread_mutex_unlock(&session->instance->cache->lock);
 
 			free(key);
 
@@ -146,9 +146,9 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		session->auth_response[statbuf.st_size] = '\0';
 
 		// Save the data to the cache if it is enabled
-		if (session->cache_size) {
+		if (session->instance->cache) {
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: saving metadata in cache", path);
-			cache_put(cdn_globals->cache, node, strdup(session->auth_response));
+			cache_put(session->instance->cache, node, strdup(session->auth_response));
 		}
 
 		close(file_fd);

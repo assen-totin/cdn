@@ -17,7 +17,7 @@
 
 // Prototypes
 index_t *index_init();
-ngx_int_t index_open (index_t *index);
-ngx_int_t index_write (index_t *index, int action, char *filename);
+ngx_int_t index_open (session_t *session);
+ngx_int_t index_write (session_t *session, int action, char *filename);
 void index_destroy(index_t *index);
 
