@@ -75,7 +75,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		close(file_fd);
 
 		// Purge the record from the cache if found there
-		if ((mode == METADATA_UPDATE) && (cdn_globals->cache->mem_max)) {
+		if ((mode == METADATA_UPDATE) && (session->cache_size)) {
 			// Get the key
 			if ((key = get_key(metadata, r, path)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -95,8 +95,8 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	}
 
 	else {
-		// Read metadata - first check memory cache if it is enabled
-		if (cdn_globals->cache->mem_max) {
+		// Read metadata - first check memory cache if it is enabled for current session
+		if (session->cache_size) {
 			if ((key = get_key(metadata, r, path)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
@@ -146,7 +146,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		session->auth_response[statbuf.st_size] = '\0';
 
 		// Save the data to the cache if it is enabled
-		if (cdn_globals->cache->mem_max) {
+		if (session->cache_size) {
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: saving metadata in cache", path);
 			cache_put(cdn_globals->cache, node, strdup(session->auth_response));
 		}
