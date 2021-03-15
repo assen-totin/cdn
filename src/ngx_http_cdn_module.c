@@ -84,8 +84,21 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 		if (instance->jwt_key)
 			free(instance->jwt_key);
 
-		if (instance->dsn)
+		if (instance->dsn) {
+			if (instance->dsn->dsn)
+				free(instance->dsn->dsn);
+			if (instance->dsn->host)
+				free(instance->dsn->host);
+			if (instance->dsn->port_str)
+				free(instance->dsn->port_str);
+			if (instance->dsn->user)
+				free(instance->dsn->user);
+			if (instance->dsn->password)
+				free(instance->dsn->password);
+			if (instance->dsn->db)
+				free(instance->dsn->db);
 			free(instance->dsn);
+		}
 
 		if (instance->matrix_dnld)
 			free(instance->matrix_dnld);
@@ -156,7 +169,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	// Calculate and save instance ID hash only if working on real location
 	if (child->fs_root.len != strlen(DEFAULT_FS_ROOT)) {
 		murmur3_32((void *)child->fs_root.data, child->fs_root.len, 42, (void *) &child->instance_id);
-		ngx_log_error(NGX_LOG_INFO, cf->log, 0, "Setting instance ID to %l", child->instance_id);
+		ngx_log_error(NGX_LOG_INFO, cf->log, 0, "Setting instance ID to %uD", child->instance_id);
 	}
 
 	return NGX_CONF_OK;

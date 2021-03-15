@@ -46,22 +46,25 @@ char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 	return ret;
 }
 
+
 /**
- * Convert Nginx string to normal with malloc()
+ * Convert Nginx string to normal using malloc
  */
-char *from_ngx_str_malloc(ngx_str_t ngx_str) {
+char *from_ngx_str_malloc(ngx_pool_t *pool, ngx_str_t ngx_str) {
 	char *ret;
 
 	if (! ngx_str.len)
 		return NULL;
 
-	if ((ret = calloc(ngx_str.len + 1, 1)) == NULL)
+	if ((ret = calloc(ngx_str.len + 1, 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
 		return NULL;
+	}
 
 	memcpy(ret, ngx_str.data, ngx_str.len);
-
 	return ret;
 }
+
 
 /**
  * Get stat of a file
@@ -126,8 +129,8 @@ ngx_int_t get_path0(char *fs_root, int fs_depth, char *filename, char *result, i
 ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int len;
 
-	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file) + 1;
-	if ((metadata->path = ngx_pcalloc(r->pool, len)) == NULL) {
+	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file);
+	if ((metadata->path = ngx_pcalloc(r->pool, len+1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
 		return NGX_ERROR;
 	}
@@ -323,7 +326,7 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 static inline ngx_int_t property_sql(ngx_http_request_t *r, char **field, char *field_name, char *value) {
 	char *f;
 
-	if ((f = ngx_pcalloc(r->pool, strlen(value) + 1)) == NULL) {
+	if ((f = calloc(strlen(value) + 1, 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for SQL property %s: %s.", strlen(value) + 1, field_name, value);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
@@ -399,7 +402,7 @@ instance_t *instance_init(ngx_http_request_t *r) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init FS");
 		return NULL;
 	}
-	instance->fs->root = from_ngx_str(r->pool, cdn_loc_conf->fs_root);
+	instance->fs->root = from_ngx_str_malloc(r->pool, cdn_loc_conf->fs_root);
 	instance->fs->depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
 	instance->fs->server_id = atoi(from_ngx_str(r->pool, cdn_loc_conf->server_id));
 
@@ -408,7 +411,7 @@ instance_t *instance_init(ngx_http_request_t *r) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init index");
 		return NULL;
 	}
-	instance->index->prefix = from_ngx_str(r->pool, cdn_loc_conf->index_prefix);
+	instance->index->prefix = from_ngx_str_malloc(r->pool, cdn_loc_conf->index_prefix);
 
 	// Init cache for internal transport
 	if ((instance->cache = cache_init()) == NULL) {
@@ -434,7 +437,7 @@ instance_t *instance_init(ngx_http_request_t *r) {
 		return NULL;
 
 	// Init JWT
-	jwt_key = from_ngx_str(r->pool, cdn_loc_conf->jwt_key);
+	jwt_key = from_ngx_str_malloc(r->pool, cdn_loc_conf->jwt_key);
 	if (strstr(jwt_key, "/") == jwt_key) {
 		if ((fd = open(jwt_key, O_RDONLY)) < 0) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to open JWT key file %s: %s", jwt_key, strerror(errno));
@@ -473,7 +476,7 @@ instance_t *instance_init(ngx_http_request_t *r) {
 			return NULL;
 		}
 
-		instance->dsn->dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
+		instance->dsn->dsn = from_ngx_str_malloc(r->pool, cdn_loc_conf->db_dsn);
 		instance->dsn->host = NULL;
 		instance->dsn->port_str = NULL;
 		instance->dsn->port = 0;
@@ -559,13 +562,13 @@ session_t *init_session(ngx_http_request_t *r) {
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
 	// Check if we have the instance saved and retrieve it
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Looking for instance ID %l", cdn_loc_conf->instance_id);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Looking for instance ID %uD", cdn_loc_conf->instance_id);
 	session->instance = instance_get(cdn_loc_conf->instance_id);
 	if (session->instance) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found instance ID %l", session->instance->id);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found instance ID %uD", session->instance->id);
 	}
 	else {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Instance ID %l not found, creating new", cdn_loc_conf->instance_id);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Instance ID %uD not found, creating new", cdn_loc_conf->instance_id);
 		if ((session->instance = instance_init(r)) == NULL)
 			return NULL;
 	}

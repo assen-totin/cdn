@@ -162,7 +162,7 @@ typedef struct {
 
 typedef struct {
 	ngx_str_t server_id;
-	ngx_int_t instance_id;
+	uint32_t instance_id;
 	ngx_str_t fs_root;
 	ngx_str_t fs_depth;
 	ngx_str_t index_prefix;
@@ -271,7 +271,7 @@ typedef struct {
 
 // Globals for a CDN instance
 typedef struct {
-	int id;
+	uint32_t id;
 	char *jwt_key;
 	dsn_t *dsn;
 	auth_matrix_t *matrix_dnld;

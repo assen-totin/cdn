@@ -584,6 +584,16 @@ To delete a file from the filesystem, issue the same request as for downloading 
 
 NB: The metadata for the file will be deleted when using internal authorisation, SQL authorisation or MongoDB. In all other cases the authorisation body should delete the metadata (the `http_method` in the authorisation request will be set to `DELETE`).
 
+# Replication
+
+You can mirror the CDN in any way desired (e.g., rsync). As an alternative, to only transfer files that were changed and to avoid the need to compare both sides file by file, the CDN keeps a change log of all changes. The log file is written as plain text file inside the CDN and is rotated on the top of every hour. The file name is `<prefix>YYYYMMDDHH` where the date is always in UTC and the prefix can be set in the `index_prefix` configuration options (the default is `aaaaaa`). 
+
+The file is tab-delimited with two fields: single letter for the operation (I - file inserted, U - file updated, D - file deleted) and the ID of the file. 
+
+The remote side may retrieve the list from the previous hour and the fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf`
+
+To clean up the change log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/index.conf`.
+
 # Examples
 
 `unix_socket_server.js` is an example Unix socket server in Node.js which can be used as a skeleton for creating an authorisation body. It contains the necessary code minus the actual authorisation part. The server can easily be adapted to use TCP socket.
