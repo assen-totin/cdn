@@ -18,6 +18,5 @@ INDEX_PREFIX="aaaaaa"
 # Path to status file from last sync
 STATUS_FILE="/var/lib/cdn/${INSTANCE_NAME}"
 
-# Number of parallel downloads when mirroring (0 = auto, i.e. the number of CPU cores)
-WORKERS=0
+
 

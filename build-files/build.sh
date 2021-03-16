@@ -176,6 +176,9 @@ if [ x$ARG_CDN_ENABLE_REDIS != 'x' ] ; then
 	sed -i 's|^.*Requires: hiredis.$|Requires: hiredis|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 fi
 
+sed -i 's|etc/cdn|etc/curaden/cdn|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+sed -i 's|lib/cdn|lib/curaden/cdn|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+
 # Build the RPM and SRPM
 set_rpm_version
 [ x$RPM_RELEASE == 'x' ] && RPM_RELEASE=1

@@ -590,9 +590,11 @@ You can mirror the CDN in any way desired (e.g., rsync). As an alternative, to o
 
 The file is tab-delimited with two fields: single letter for the operation (I - file inserted, U - file updated, D - file deleted) and the ID of the file. 
 
-The remote side may retrieve the list from the previous hour and the fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf`
-
 To clean up the change log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/index.d/XYZ.conf`.
+
+The remote side may retrieve the list from the previous hour and the fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf`. You also need to create an initial savepoint file in `/var/lib/cdn/mirror.d/XYZ.conf` with the following line, containing the date and hour (in UTC) from which to start the replication:
+
+`SAVEPOINT=YYYYMMDDHH`
 
 # Examples
 

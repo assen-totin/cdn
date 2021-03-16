@@ -5,6 +5,15 @@
 CONFIG_ROOT="/etc/cdn/mirror.d"
 SAVED_ROOT="/var/lib/cdn/mirror.d"
 
+# Function to get the path of a file from its name
+get_file_path() {
+	FILE_PATH=$FS_ROOT
+	for i in $(seq 1 $FS_DEPTH) ; do
+		POS=$(echo $FILE_NAME | cut -c $i)
+		FILE_PATH="$FILE_PATH/$POS"
+	done
+}
+
 # Get the UTC down to an hour as it was an hour ago
 UNIX_TIMESTAMP=$(date +%s)
 ((UNIX_TIMESTAMP=UNIX_TIMESTAMP-3600))
@@ -28,10 +37,10 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	source $SAVED_ROOT/$INSTANCE_NAME
 
 	# Compare our save point to the current time and build indices to read
-	SAVED_YEAR=$(echo $SAVEPOINT | cut -c 1 4)
-	SAVED_MONTH=$(echo $SAVEPOINT | cut -c 5 6)
-	SAVED_DAY=$(echo $SAVEPOINT | cut -c 7 8)
-	SAVED_HOUR=$(echo $SAVEPOINT | cut -c 9 10)
+	SAVED_YEAR=$(echo $SAVEPOINT | cut -c 1-4)
+	SAVED_MONTH=$(echo $SAVEPOINT | cut -c 5-6)
+	SAVED_DAY=$(echo $SAVEPOINT | cut -c 7-8)
+	SAVED_HOUR=$(echo $SAVEPOINT | cut -c 9-10)
 
 	# Loop for years
 	for YEAR in $(seq $SAVED_YEAR $CURR_YEAR) ; do
@@ -81,14 +90,17 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 					END_HOUR=23
 				fi
 
-				# Compose index name and read it
-				[[ $MONTH -lt 10 ]] && MY_MONTH="0$MONTH" ||  MY_MONTH="$MONTH"
-				[[ $DAY -lt 10 ]] && MY_DAY="0$DAY" ||  MY_DAY="$DAY"
-				[[ $HOUR -lt 10 ]] && MY_HOUR="0$MY_HOUR" ||  MY_HOUR="$MY_HOUR"
-				INDEX_NAME="$INDEX_PREFIX$YEAR$MY_MONTH$MY_DAY$MY_HOUR"
-				curl -s -o /tmp/$INDEX_NAME $URL/$INDEX_NAME
-				cat /tmp/$INDEX_NAME >> /tmp/$INSTANCE_NAME
-				rm -f /tmp/$INDEX_NAME
+				# Loop for hours
+				for HOUR in $(seq $START_HOUR $END_HOUR) ; do
+					# Compose index name and read it
+					[[ $MONTH -lt 10 ]] && MY_MONTH="0$MONTH" ||  MY_MONTH="$MONTH"
+					[[ $DAY -lt 10 ]] && MY_DAY="0$DAY" ||  MY_DAY="$DAY"
+					[[ $HOUR -lt 10 ]] && MY_HOUR="0$HOUR" ||  MY_HOUR="$HOUR"
+					INDEX_NAME="$INDEX_PREFIX$YEAR$MY_MONTH$MY_DAY$MY_HOUR"
+					curl -s -o /tmp/$INDEX_NAME $URL/$INDEX_NAME
+					cat /tmp/$INDEX_NAME >> /tmp/$INSTANCE_NAME
+					rm -f /tmp/$INDEX_NAME
+				done
 			done
 		done
 	done
@@ -96,31 +108,47 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	# Save our save point
 	echo "SAVEPOINT=$CURR_YEAR$CURR_MONTH$CURR_DAY$CURR_HOUR" > $SAVED_ROOT/$INSTANCE_NAME
 
-	# Check parallelism
-	[ $WORKERS -eq 0 ] && WORKERS=$(cat /proc/cpuinfo | grep processor | wc -l)
-
-	# Process the downloaded log
-	/tmp/$INSTANCE_NAME
-
-
-
-
-	# Find our index path from the index prefix and the CDN filesystem root
-	INDEX_PATH=$FS_ROOT
-	for i in $(seq 1 $FS_DEPTH) ; do
-		    POS=$(echo $INDEX_PREFIX | cut -c $i)
-		    INDEX_PATH="$INDEX_PATH/$POS"
+	# Process the log file: inserts
+	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
+		get_file_path
+		curl -o $FILE_PATH/$FILE_NAME $URL/$FILE_NAME
 	done
 
-	# List the index files for the CDN instance
-	INDEX_FILES=$(ls $INDEX_PATH/$INDEX_PREFIX*)
+	# Process the log file: updates
+	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
+		get_file_path
+		curl -o $FILE_PATH/$FILE_NAME $URL/$FILE_NAME
+	done
 
-	# Decide which to keep and which to delete
-	for INDEX_FILE in $INDEX_FILES ; do
-		FILE_TSTAMP=$(echo $INDEX_FILE | awk -F '/' '{print $NF}' | sed "s/$INDEX_PREFIX//")
-		[ $FILE_TSTAMP -lt $TSTAMP ] && rm -f $INDEX_FILE
+	# Process the log file: deletes
+	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
+		get_file_path
+		rm -f $FILE_PATH/$FILE_NAME
 	done
 done
+
+
+## Check parallelism
+#[ $WORKERS -eq 0 ] && WORKERS=$(cat /proc/cpuinfo | grep processor | wc -l)
+#[ $WORKERS -gt 9 ] && WORKERS=9
+#
+## Prepare the downloaded log file (find unique entries and move deletes to be last)
+#cat /tmp/$INSTANCE_NAME | sort -u -r > /tmp/$$
+#mv -f /tmp/$$ /tmp/$INSTANCE_NAME
+#
+## Split the downloaded log into chunks
+#pushd /tmp
+#split -a 1 -n l/$WORKERS -d /tmp/$INSTANCE_NAME $INSTANCE_NAME
+#popd
+
+
+
+
+
+
+
+
+
 
 
 

@@ -42,10 +42,10 @@ CDN Nginx module
 
 %install
 
-mkdir -p $RPM_BUILD_ROOT/etc/curaden/cdn/index.d
-cp -r ${RPM_SOURCE_DIR}/config-files/nginx/modules/index* $RPM_BUILD_ROOT/etc/curaden/cdn/index.d
-mkdir -p $RPM_BUILD_ROOT/etc/curaden/cdn/mirror.d
-cp -r ${RPM_SOURCE_DIR}/config-files/nginx/modules/mirror* $RPM_BUILD_ROOT/etc/curaden/cdn/mirror.d
+mkdir -p $RPM_BUILD_ROOT/etc/cdn/index.d
+cp -r ${RPM_SOURCE_DIR}/config-files/nginx/modules/index* $RPM_BUILD_ROOT/etc/cdn/index.d
+mkdir -p $RPM_BUILD_ROOT/etc/cdn/mirror.d
+cp -r ${RPM_SOURCE_DIR}/config-files/nginx/modules/mirror* $RPM_BUILD_ROOT/etc/cdn/mirror.d
 
 mkdir -p $RPM_BUILD_ROOT/etc/cron.d
 cp -r ${RPM_SOURCE_DIR}/support-files/cron/* $RPM_BUILD_ROOT/etc/cron.d
@@ -68,7 +68,7 @@ rm -rf $RPM_BUILD_ROOT $RPM_BUILD_DIR
 
 %defattr(-, root, root)
 
-/etc/curaden/cdn
+/etc/cdn
 
 /etc/cron.d/*
 
