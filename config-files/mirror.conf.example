@@ -1,0 +1,23 @@
+# Config file for a CDN instance mirror
+
+# Instance name (alpha-numeric)
+INSTANCE_NAME="some_instance"
+
+# The root of the CDN instance
+FS_ROOT="/opt/cdn"
+
+# The depht of the CDN instance
+FS_DEPTH=4
+
+# URL of the remote (master) instance
+URL="https://cdn.example.com"
+
+# The index prefix
+INDEX_PREFIX="aaaaaa"
+
+# Path to status file from last sync
+STATUS_FILE="/var/lib/cdn/${INSTANCE_NAME}"
+
+# Number of parallel downloads when mirroring (0 = auto, i.e. the number of CPU cores)
+WORKERS=0
+

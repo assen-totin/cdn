@@ -42,6 +42,14 @@ CDN Nginx module
 
 %install
 
+mkdir -p $RPM_BUILD_ROOT/etc/curaden/cdn/index.d
+cp -r ${RPM_SOURCE_DIR}/config-files/nginx/modules/index* $RPM_BUILD_ROOT/etc/curaden/cdn/index.d
+mkdir -p $RPM_BUILD_ROOT/etc/curaden/cdn/mirror.d
+cp -r ${RPM_SOURCE_DIR}/config-files/nginx/modules/mirror* $RPM_BUILD_ROOT/etc/curaden/cdn/mirror.d
+
+mkdir -p $RPM_BUILD_ROOT/etc/cron.d
+cp -r ${RPM_SOURCE_DIR}/support-files/cron/* $RPM_BUILD_ROOT/etc/cron.d
+
 mkdir -p $RPM_BUILD_ROOT/usr/share/nginx/modules
 cp -r ${RPM_SOURCE_DIR}/support-files/nginx/modules/* $RPM_BUILD_ROOT/usr/share/nginx/modules
 
@@ -49,15 +57,25 @@ mkdir -p $RPM_BUILD_ROOT/usr/lib64/nginx/modules
 cp -r ${RPM_SOURCE_DIR}/lib/* $RPM_BUILD_ROOT/usr/lib64/nginx/modules
 
 mkdir -p $RPM_BUILD_ROOT/usr/bin
-cp -r ${RPM_SOURCE_DIR}/tools/* $RPM_BUILD_ROOT/usr/bin
+cp -r ${RPM_SOURCE_DIR}/bin/* $RPM_BUILD_ROOT/usr/bin
+
+mkdir -p $RPM_BUILD_ROOT/var/lib/cdn/mirror.d
 
 %clean
 rm -rf $RPM_BUILD_ROOT $RPM_BUILD_DIR
 
 %files
+
 %defattr(-, root, root)
+
+/etc/curaden/cdn
+
+/etc/cron.d/*
+
 /usr/share/nginx/modules/*
 /usr/lib64/nginx/modules/*
+
+/var/lib/cdn
 
 %defattr(755, root, root)
 /usr/bin/*
@@ -67,6 +85,7 @@ rm -rf $RPM_BUILD_ROOT $RPM_BUILD_DIR
 %post
 
 systemctl restart nginx
+systemctl restart cron
 
 %preun
 

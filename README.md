@@ -592,7 +592,7 @@ The file is tab-delimited with two fields: single letter for the operation (I - 
 
 The remote side may retrieve the list from the previous hour and the fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf`
 
-To clean up the change log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/index.conf`.
+To clean up the change log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/index.d/XYZ.conf`.
 
 # Examples
 

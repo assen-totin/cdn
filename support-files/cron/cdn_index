@@ -1,0 +1,5 @@
+# CDN crontab file for indices
+
+# Clean up indices
+5 0 * * *	root	/usr/bin/cdn_index.sh
+
