@@ -17,7 +17,6 @@
  * Module initialisation
  */
 ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
-	int ret; 
 
 #ifdef CDN_ENABLE_MONGO
 	// Init Mongo
