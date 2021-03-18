@@ -127,7 +127,6 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	done
 done
 
-
 ## Check parallelism
 #[ $WORKERS -eq 0 ] && WORKERS=$(cat /proc/cpuinfo | grep processor | wc -l)
 #[ $WORKERS -gt 9 ] && WORKERS=9
@@ -140,16 +139,4 @@ done
 #pushd /tmp
 #split -a 1 -n l/$WORKERS -d /tmp/$INSTANCE_NAME $INSTANCE_NAME
 #popd
-
-
-
-
-
-
-
-
-
-
-
-
 

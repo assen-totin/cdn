@@ -30,7 +30,7 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	done
 
 	# List the index files for the CDN instance
-	INDEX_FILES=$(ls $INDEX_PATH/$INDEX_PREFIX*)
+	INDEX_FILES=$(ls $INDEX_PATH/$INDEX_PREFIX* 2>/dev/null)
 
 	# Decide which to keep and which to delete
 	for INDEX_FILE in $INDEX_FILES ; do
@@ -38,7 +38,4 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		[ $FILE_TSTAMP -lt $TSTAMP ] && rm -f $INDEX_FILE
 	done
 done
-
-
-
 

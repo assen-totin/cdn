@@ -176,6 +176,8 @@ if [ x$ARG_CDN_ENABLE_REDIS != 'x' ] ; then
 	sed -i 's|^.*Requires: hiredis.$|Requires: hiredis|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 fi
 
+sed -i 's|etc/cdn|etc/curaden/cdn|' $RPM_HOME/SOURCES/bin/cdn_*
+
 sed -i 's|etc/cdn|etc/curaden/cdn|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 sed -i 's|lib/cdn|lib/curaden/cdn|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 
