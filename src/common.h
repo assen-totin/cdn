@@ -356,6 +356,7 @@ typedef struct {
 typedef struct {
 	instance_t *instances;
 	int instances_cnt;
+	pthread_mutex_t lock;
 } globals_t;
 
 enum {

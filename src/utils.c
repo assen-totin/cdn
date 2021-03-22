@@ -366,7 +366,7 @@ static inline auth_matrix_t *init_auth_matrix(ngx_http_request_t *r, char *matri
  * Init instance
  */
 instance_t *instance_init(ngx_http_request_t *r) {
-	instance_t *instance;
+	instance_t *instance, *instance_tmp;
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
 	int fd, i, ret;
@@ -375,20 +375,18 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	// Get config
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
-	// Create or expand the global array of instances
-	if (globals->instances_cnt) {
-		globals->instances = realloc(globals->instances, (globals->instances_cnt + 1) * sizeof(instance_t));
-		instance = &globals->instances[globals->instances_cnt];
-		globals->instances_cnt ++;
+	// Create a new instance in the global array
+	pthread_mutex_lock(&globals->lock);
+	if ((instance_tmp = realloc(globals->instances, (globals->instances_cnt + 1) * sizeof(instance_t))) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to realloc global instances");
+		pthread_mutex_unlock(&globals->lock);
+		return NULL;
 	}
-	else {
-		globals->instances_cnt = 1;
-		if ((globals->instances = malloc(sizeof(instance_t))) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for instance", sizeof(instance_t));
-			return NULL;
-		}
-		instance = globals->instances;
-	}
+	globals->instances = instance_tmp;
+	instance = globals->instances + globals->instances_cnt * sizeof(instance_t);
+	globals->instances_cnt ++;
+	pthread_mutex_unlock(&globals->lock);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Created global space for new instance, count is now %l", globals->instances_cnt);
 
 	instance->id = cdn_loc_conf->instance_id;
 	instance->jwt_key = NULL;
@@ -531,15 +529,16 @@ instance_t *instance_init(ngx_http_request_t *r) {
 /**
  * Get instance
  */
-instance_t *instance_get(int instance_id) {
+instance_t *instance_get(ngx_http_request_t *r, int instance_id) {
 	int i;
 
-	if (! globals->instances_cnt)
-		return NULL;
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Instance count is %l", globals->instances_cnt);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Searching for instance with ID %uD", instance_id);
 
 	for (i=0; i < globals->instances_cnt; i++) {
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Checking existing instance in slot %l with ID %uD", i, globals->instances[i].id);
 		if (instance_id == globals->instances[i].id)
-			return &globals->instances[i];
+			return globals->instances + i * sizeof(instance_t);
 	}
 
 	return NULL;
@@ -563,7 +562,7 @@ session_t *init_session(ngx_http_request_t *r) {
 
 	// Check if we have the instance saved and retrieve it
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Looking for instance ID %uD", cdn_loc_conf->instance_id);
-	session->instance = instance_get(cdn_loc_conf->instance_id);
+	session->instance = instance_get(r, cdn_loc_conf->instance_id);
 	if (session->instance) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found instance ID %uD", session->instance->id);
 	}

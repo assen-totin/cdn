@@ -17,6 +17,7 @@
  * Module initialisation
  */
 ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
+	int ret;
 
 #ifdef CDN_ENABLE_MONGO
 	// Init Mongo
@@ -45,13 +46,21 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	// Init cURL
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
-	// Init the globals
+	// Init the globals and create a slot that will never be used, but which will save on conditional jump on every request
 	if ((globals = malloc(sizeof(globals_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for globals.", sizeof(globals_t));
 		return NGX_ERROR;
 	}
-	globals->instances = NULL;
-	globals->instances_cnt = 0;
+	if ((globals->instances = malloc(sizeof(instance_t))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for first instance.", sizeof(globals_t));
+		return NGX_ERROR;
+	}
+	if (pthread_mutex_init(&globals->lock, NULL) != 0) {
+		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init globals mutex.");
+		return NGX_ERROR;
+	}
+	globals->instances[0].id = 0;
+	globals->instances_cnt = 1;
 
 	return NGX_OK;
 }
@@ -72,7 +81,7 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 
 	// Clean all instances
 	for (i=0; i < globals->instances_cnt; i++) {
-		instance = &globals->instances[i];
+		instance = globals->instances + i * sizeof(instance_t);
 
 		cache_destroy(instance->cache);
 
@@ -109,6 +118,7 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 			free(instance->matrix_del);
 	}
 
+	free(globals->instances);
 	free(globals);
 }
 
