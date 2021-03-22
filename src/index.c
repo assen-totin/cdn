@@ -106,6 +106,9 @@ ngx_int_t index_write(session_t *session, int action, char* filename) {
 
 // Destroy index
 void index_destroy(index_t *index) {
+	if (! index)
+		return;
+
 	close(index->fd);
 
 	if (index->prefix)

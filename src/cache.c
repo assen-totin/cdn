@@ -42,9 +42,11 @@ cache_t *cache_init() {
 	if ((cache = malloc(sizeof(cache_t))) == NULL)
 		return NULL;
 
-	cache->list = NULL;
-	cache->list_cnt = 0;
-	cache->mem_used = sizeof(cache_t) + CACHE_BTREE_DEPTH * CACHE_BTREE_DEPTH;
+	if ((cache->list = malloc(CACHE_KEY_LEN)) == NULL)
+		return NULL;
+
+	cache->list_cnt = 1;
+	cache->mem_used = sizeof(cache_t) + CACHE_KEY_LEN + CACHE_BTREE_DEPTH * CACHE_BTREE_DEPTH;
 	cache->mem_max = 0;
 
 	cache->btree_mask = init_btree_mask();
@@ -224,10 +226,16 @@ static void btree_purge(btree_t *node, int level) {
 }
 
 void cache_destroy(cache_t *cache) {
-	btree_purge(cache->root, 0);
-	free(cache->root);
+	if (! cache)
+		return;
 
-	free(cache->btree_mask);
+	if (cache->root) {
+		btree_purge(cache->root, 0);
+		free(cache->root);
+	}
+
+	if (cache->btree_mask)
+		free(cache->btree_mask);
 
 	if (cache->list)
 		free(cache->list);

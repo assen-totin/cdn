@@ -22,6 +22,9 @@ fs_t *fs_init() {
 
 // Destroy fs
 void fs_destroy(fs_t *fs) {
+	if (! fs)
+		return;
+
 	if (fs->root)
 		free(fs->root);
 

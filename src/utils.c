@@ -375,6 +375,9 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	// Get config
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "CURRENT INSTANCES: %l", globals->instances_cnt);
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "SIZEOF(instance_t): %l", sizeof(instance_t));
+
 	// Create a new instance in the global array
 	pthread_mutex_lock(&globals->lock);
 	if ((instance_tmp = realloc(globals->instances, (globals->instances_cnt + 1) * sizeof(instance_t))) == NULL) {

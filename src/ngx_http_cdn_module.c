@@ -52,7 +52,7 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 		return NGX_ERROR;
 	}
 	if ((globals->instances = malloc(sizeof(instance_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for first instance.", sizeof(globals_t));
+		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for first instance.", sizeof(instance_t));
 		return NGX_ERROR;
 	}
 	if (pthread_mutex_init(&globals->lock, NULL) != 0) {
