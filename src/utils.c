@@ -369,7 +369,7 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	instance_t *instance, *instance_tmp;
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
-	int fd, i, ret;
+	int fd, i, ret, cache_size;
 	struct stat statbuf;
 
 	// Get config
