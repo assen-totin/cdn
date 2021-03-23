@@ -417,7 +417,7 @@ instance_t *instance_init(ngx_http_request_t *r) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init in-memory cache (malloc failed)");
 			return NULL;
 		}
-		instance->cache->mem_max = CACHE_SIZE_MULTIPLIER * cache_size);
+		instance->cache->mem_max = CACHE_SIZE_MULTIPLIER * cache_size;
 	}
 	else
 		instance->cache = NULL;
