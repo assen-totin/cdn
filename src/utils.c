@@ -411,12 +411,16 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	}
 	instance->index->prefix = from_ngx_str_malloc(r->pool, cdn_loc_conf->index_prefix);
 
-	// Init cache for internal transport
-	if ((instance->cache = cache_init()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init in-memory cache (malloc failed)");
-		return NULL;
+	// Init cache for internal transport (if enabled in config)
+	if ((cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size))) > 0) {
+		if ((instance->cache = cache_init()) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init in-memory cache (malloc failed)");
+			return NULL;
+		}
+		instance->cache->mem_max = CACHE_SIZE_MULTIPLIER * cache_size);
 	}
-	instance->cache->mem_max = CACHE_SIZE_MULTIPLIER * atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
+	else
+		instance->cache = NULL;
 
 	// Init authorisation matrices
 	matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_dnld);
