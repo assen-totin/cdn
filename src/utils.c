@@ -369,14 +369,11 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	instance_t *instance, *instance_tmp;
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
-	int fd, i, ret;
+	int fd, i, ret, cache_size;
 	struct stat statbuf;
 
 	// Get config
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
-
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "CURRENT INSTANCES: %l", globals->instances_cnt);
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "SIZEOF(instance_t): %l", sizeof(instance_t));
 
 	// Create a new instance in the global array
 	pthread_mutex_lock(&globals->lock);
@@ -386,7 +383,7 @@ instance_t *instance_init(ngx_http_request_t *r) {
 		return NULL;
 	}
 	globals->instances = instance_tmp;
-	instance = globals->instances + globals->instances_cnt * sizeof(instance_t);
+	instance = &globals->instances[globals->instances_cnt];
 	globals->instances_cnt ++;
 	pthread_mutex_unlock(&globals->lock);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Created global space for new instance, count is now %l", globals->instances_cnt);
@@ -414,12 +411,16 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	}
 	instance->index->prefix = from_ngx_str_malloc(r->pool, cdn_loc_conf->index_prefix);
 
-	// Init cache for internal transport
-	if ((instance->cache = cache_init()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init in-memory cache (malloc failed)");
-		return NULL;
+	// Init cache for internal transport (if enabled in config)
+	if ((cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size))) > 0) {
+		if ((instance->cache = cache_init()) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init in-memory cache (malloc failed)");
+			return NULL;
+		}
+		instance->cache->mem_max = CACHE_SIZE_MULTIPLIER * cache_size;
 	}
-	instance->cache->mem_max = CACHE_SIZE_MULTIPLIER * atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size));
+	else
+		instance->cache = NULL;
 
 	// Init authorisation matrices
 	matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_dnld);
@@ -541,7 +542,7 @@ instance_t *instance_get(ngx_http_request_t *r, int instance_id) {
 	for (i=0; i < globals->instances_cnt; i++) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Checking existing instance in slot %l with ID %uD", i, globals->instances[i].id);
 		if (instance_id == globals->instances[i].id)
-			return globals->instances + i * sizeof(instance_t);
+			return &globals->instances[i];
 	}
 
 	return NULL;
