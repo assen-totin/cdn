@@ -16,7 +16,7 @@ ngx_module_t ngx_http_cdn_module;
 /**
  * Polyfill for memstr()
  */
-char *memstr(char *haystack, char *needle, int size) {
+char *memstr(char *haystack, char *needle, int64_t size) {
 	char *p;
 	char needlesize = strlen(needle);
 
