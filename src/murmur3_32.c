@@ -48,9 +48,9 @@ static FORCE_INLINE uint32_t fmix32 ( uint32_t h )
 
 //-----------------------------------------------------------------------------
 
-void murmur3_32 (const void *key, int len, uint32_t seed, void *out ) {
+void murmur3_32 (const void *key, uint64_t len, uint32_t seed, void *out ) {
 	const uint8_t * data = (const uint8_t*)key;
-	const int nblocks = len / 4;
+	const uint64_t nblocks = len / 4;
 	int i;
 
 	uint32_t h1 = seed;

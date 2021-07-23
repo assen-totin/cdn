@@ -1,2 +1,2 @@
-void murmur3_128 (const void *, const int, const uint32_t, void *);
+void murmur3_128 (const void *, const uint64_t, const uint32_t, void *);
 
