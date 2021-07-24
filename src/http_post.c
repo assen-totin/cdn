@@ -684,7 +684,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 
 		written_total += written_last;
-		if (written_total == length)
+		if (written_total == metadata->length)
 			break;
 	}
 	close(file_fd);
