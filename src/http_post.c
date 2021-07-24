@@ -163,6 +163,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	int upload_content_type, file_fd, cnt_part = 0, cnt_header, mode;
 	long content_length, rb_pos = 0;
 	uint64_t hash[2];
+	int64_t written_last, written_total = 0;
 	metadata_t *metadata;
 	session_t *session;
 	upload_t *upload;
@@ -673,10 +674,18 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to create file %s: %s", metadata->path, strerror(errno));
 		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
-	if (write(file_fd, (const void *)file_data_begin, metadata->length) < metadata->length) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to write %l bytes to file %s: %s", metadata->length, metadata->path, strerror(errno));
-		close(file_fd);
-		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	while(1) {
+		written_last = write(file_fd, (const void *)file_data_begin + written_total, length - written_total);
+
+		if (errno) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to write %l bytes to file %s: %s", metadata->length, metadata->path, strerror(errno));
+			close(file_fd);
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		}
+
+		written_total += written_last;
+		if (written_total == length)
+			break;
 	}
 	close(file_fd);
 
