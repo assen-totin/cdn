@@ -675,7 +675,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 	while(1) {
-		written_last = write(file_fd, (const void *)file_data_begin + written_total, length - written_total);
+		written_last = write(file_fd, (const void *)file_data_begin + written_total, metadata->length - written_total);
 
 		if (errno) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: failed to write %l bytes to file %s: %s", metadata->length, metadata->path, strerror(errno));
