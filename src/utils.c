@@ -18,10 +18,9 @@ ngx_module_t ngx_http_cdn_module;
  */
 char *memstr(char *haystack, char *needle, int64_t size) {
 	char *p;
-	char needlesize = strlen(needle);
 
-	for (p = haystack; p <= (haystack - needlesize + size); p++) {
-		if (memcmp(p, needle, needlesize) == 0)
+	for (p = haystack; p <= (haystack - strlen(needle) + size); p++) {
+		if (memcmp(p, needle, strlen(needle)) == 0)
 			return p;
 	}
 
