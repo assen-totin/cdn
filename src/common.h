@@ -112,6 +112,9 @@
 #define CACHE_KEY_LEN 16
 #define CACHE_SIZE_MULTIPLIER 1048576
 
+#define EAGAIN_MAX_COUNT = 10
+#define EAGAIN_SLEEP = 5
+
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
 #define HEADER_ACCESS_CONTROL_ALLOW_HEADERS "Access-Control-Allow-Headers"
