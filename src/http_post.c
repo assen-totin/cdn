@@ -286,7 +286,6 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			}
 
 			// Seek a boundary and move past it + CRLF
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "CALLING memstr with part %l boundary %s size %l", part, boundary, upload->rb - part + content_length);
 			if (! (part_pos = memstr(part, boundary, upload->rb - part + content_length))) {
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: boundary not found in body: %s", boundary);
 				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -340,12 +339,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			}
 
 			// Move past the CRLF of the empty line to start reading data
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "CALLING memstr with part %l boundary %s size %l", part_pos, boundary, upload->rb - part_pos + content_length);
 			if ((part_end = memstr(part_pos, boundary, upload->rb - part_pos + content_length)) == NULL) {
-				int myfd = open("/tmp/DEBUG-1", O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP);
-				write(myfd, (const void *)part_pos, upload->rb - part_pos + content_length);
-				close(myfd);
-
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: unable to find next boundary: %s", boundary);
 				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
