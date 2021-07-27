@@ -266,6 +266,8 @@ The CDN will compose and execute the same query as with download. The document, 
 
 This request type can be used with transport type set to `unix` (Unix socket), `tcp` (TCP socket) or `http` (HTTP request).
 
+NB: The CDN modules uses libbson to create and parse JSON. This library expects your strings (e.g., file name) to be valid UTF-8. If not, your request will likely fail. Keep in mind that there are technically valid UTF-8 sequences (like 0x96) which are not valid UTF-8 characters (as, in this example, it sis a control character). 
+
 ### Upload
 
 *Request format*

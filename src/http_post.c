@@ -43,7 +43,7 @@ static char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
 	end = strstr(begin, "\r\n");
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Header line length: %l", end - begin);
 
-	// Sanity check - line should exceed 1000 bytes
+	// Sanity check - line should not exceed 1 KB
 	if ((end - begin) > 1024) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Header line too long: %l", end - begin);
 		return NULL;
