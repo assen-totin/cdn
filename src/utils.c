@@ -620,6 +620,7 @@ session_t *init_session(ngx_http_request_t *r) {
 		session->cookies_count = 0;
 		session->hdr_if_none_match = NULL;
 		session->hdr_if_modified_since = -1;
+		session->hdr_range = NULL;
 
 		// Method-specific init
 		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {

@@ -4,10 +4,13 @@
  * @author: Assen Totin assen.totin@gmail.com
  */
 
+//// PRE-INCLUDES
+
 #define __USE_XOPEN
 #define _GNU_SOURCE
 
-// Includes
+//// INCLUDES
+
 #include "modules.h"
 #include <curl/curl.h>
 #include <errno.h>
@@ -67,7 +70,8 @@
 	#include <bson/bson.h>
 #endif
 
-// Definitions
+//// DEFINITIONS
+
 #define DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN "*"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS "If-None-Match, If-Modified-Since"
 #define DEFAULT_ACCESS_CONTROL_ALLOW_METHODS "GET, HEAD, POST, PUT, OPTIONS, DELETE"
@@ -121,6 +125,7 @@
 #define HEADER_ACCESS_CONTROL_ALLOW_METHODS "Access-Control-Allow-Methods"
 #define HEADER_AUTHORIZATION "Authorization"
 #define HEADER_CONTENT_DISPOSITION "Content-Disposition"
+#define HEADER_CONTENT_RANGE "Content-Range"
 #define HEADER_ETAG "ETag"
 
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
@@ -159,11 +164,14 @@
 #define TRANSPORT_TYPE_TCP "tcp"
 #define TRANSPORT_TYPE_UNIX "unix"
 
-// Structures
+// STRUCTURES
+
+// Main config
 typedef struct {
 	ngx_array_t loc_confs; 		// ngx_http_cdn_conf_t
 } ngx_http_cdn_main_conf_t;
 
+// Local config
 typedef struct {
 	ngx_str_t server_id;
 	uint32_t instance_id;
@@ -199,6 +207,7 @@ typedef struct {
 	ngx_str_t matrix_upld;
 } ngx_http_cdn_loc_conf_t;
 
+// Metadata
 typedef struct {
 	char *file;
 	char *filename;
@@ -214,11 +223,13 @@ typedef struct {
 	int64_t length;
 } metadata_t;
 
+// Key-value pair
 typedef struct {
 	char *name;
 	char *value;
 } cdn_kvp_t;
 
+// Database DSN
 typedef struct {
 	char *dsn;
 	char *host;
@@ -230,6 +241,7 @@ typedef struct {
 	char *db;
 } dsn_t;
 
+// Authentication matrix
 typedef struct {
 	uint auth_resp;
 	uint auth_noresp;
@@ -286,6 +298,7 @@ typedef struct {
 	fs_t *fs;
 } instance_t;
 
+// Session
 typedef struct {
 	instance_t *instance;
 	ngx_http_request_t *r;
@@ -319,6 +332,7 @@ typedef struct {
 	char *db_dsn;
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
+	char *hdr_range;
 	char *unix_socket;
 	char *tcp_host;
 	int tcp_port;
@@ -346,7 +360,7 @@ typedef struct {
 #endif
 } session_t;
 
-// Upload structure
+// Upload
 typedef struct {
 	char *rb;
 	bool rb_malloc;
@@ -356,12 +370,22 @@ typedef struct {
 	CURL *curl;
 } upload_t;
 
+// FIXME Range header
+typedef struct {
+	uint64_t start;		// -1 means read length bytes from the end
+	uint64_t end;		// -1 means read till the end of file
+	uint64_t length;
+} hdr_range_t;
+
+
 // Globals
 typedef struct {
 	instance_t *instances;
 	int instances_cnt;
 	pthread_mutex_t lock;
 } globals_t;
+
+//// ENUMERATORS
 
 enum {
 	METADATA_NONE = 0,
@@ -384,6 +408,6 @@ enum {
 	INDEX_ACTION_DELETE,
 };
 
-// Globals
+//// GLOBALS
 globals_t *globals;
 

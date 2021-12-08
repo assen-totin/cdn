@@ -264,17 +264,26 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 		curl_easy_cleanup(session->curl);
 	}
 
+/*
 	//TODO: Return Content-Range header if Range header was specified in the request
-
+	// Accept-Ranges (not strictly necessary, but good to have)
+	r->headers_out.content_range = ngx_list_push(&r->headers_out.headers);
+	r->headers_out.content_range->hash = 1;
+	r->headers_out.content_range->key.len = sizeof(HEADER_CONTENT_RANGE) - 1;
+	r->headers_out.content_range->key.data = (u_char*)HEADER_CONTENT_RANGE;
+	// FIXME
+	r->headers_out.content_range->value.len = sizeof("bytes") - 1;
+	r->headers_out.content_range->value.data = (u_char*)"bytes";
+*/
 /*
 	//TODO: enable this block once Range inbond header is supported
-	// Accept-ranges (not strictly necessary, but good to have)
+	// Accept-Ranges (not strictly necessary, but good to have)
 	r->headers_out.accept_ranges = ngx_list_push(&r->headers_out.headers);
 	r->headers_out.accept_ranges->hash = 1;
 	r->headers_out.accept_ranges->key.len = sizeof(HEADER_ACCEPT_RANGES) - 1;
 	r->headers_out.accept_ranges->key.data = (u_char*)HEADER_ACCEPT_RANGES;
-	r->headers_out.accept_ranges->value.len = sizeof("none") - 1;
-	r->headers_out.accept_ranges->value.data = (u_char*)"none";
+	r->headers_out.accept_ranges->value.len = sizeof("bytes") - 1;
+	r->headers_out.accept_ranges->value.data = (u_char*)"bytes";
 */
 
 	// Send headers
@@ -374,8 +383,30 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session->hdr_if_none_match);
 	}
 
-	// TODO: support Range incoming header
+	// TODO Process Header Range
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
+/*
+Range: <unit>=<range-start>-
+Range: <unit>=<range-start>-<range-end>
+Range: <unit>=<range-start>-<range-end>, <range-start>-<range-end>
+Range: <unit>=<range-start>-<range-end>, <range-start>-<range-end>, <range-start>-<range-end>
+Range: <unit>=-<suffix-length>
+
+<unit>
+    The unit in which ranges are specified. This is usually bytes.
+
+<range-start>
+    An integer in the given unit indicating the beginning of the request range.
+
+<range-end>
+    An integer in the given unit indicating the end of the requested range. This value is optional and, if omitted, the end of the document is taken as the end of the range.
+
+<suffix-length>
+    An integer in the given unit indicating the number of units at the end of the file to return.
+*/
+	if (r->headers_in.range) {
+		session->hdr_range = from_ngx_str(r->pool, r->headers_in.hdr_range->value);
+	}
 
 	// Extract all headers if requested
 	if (! strcmp(session->all_headers, "yes")) {
