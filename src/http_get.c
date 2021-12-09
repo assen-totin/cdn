@@ -333,8 +333,10 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	ngx_int_t ret = NGX_OK;
 	metadata_t *metadata;
 	session_t *session;
-	char *s0, *s1, *s2;
+	char *s0, *s1, *s2, *p1, *p2, *p3, *str1, *str2, *str3;
+	int l1, l2;
 	struct tm ltm;
+	hdr_range_t *hdr_ranges;
 
 	// Init session
 	if ((session = init_session(r)) == NULL)
@@ -403,78 +405,68 @@ Range: <unit>=-<suffix-length>
 
 <suffix-length>
     An integer in the given unit indicating the number of units at the end of the file to return.
-
----
-
-	char *a = malloc(1024);
-	char *b = malloc(1024);
-	char *c = malloc(1024);
-	char *d = malloc(1024);
-	char *s1, *s2;
-	char *str1, *str2, *str3;
-	int l1, l2;
-
-	sprintf(a, "bytes=10000-25000 ,  50000-74000 ,  80000-90000 ");
-
-	// Split by equal sign
-	s1 = strchr(a, '=');
-	if (! s1) {
-		printf("Bad string!\n");
-		exit(0);
-	}
-	s1++;
-
-	printf("%s\n", s1);
-
-	// Loop around entries (we should have at least one)
-	do {
-		// Kill any leading space
-		while ( *(s1) == 32 )
-			s1++;
-
-		// Find next comma and its offset (or use end of string)
-		str1 = strchr(s1, ',');
-		str2 = (str1) ? str1 : s1 + strlen(s1);
-		l1 = str2 - s1;
-
-		// Print to a new string
-		snprintf(b, l1 + 1, "%s", s1);
-
-		// Kill any trailing space
-		while ( *(b + strlen(b) -1) == 32)
-			memset(b + strlen(b) - 1, '\0', 1);
-
-		printf("%s\n", b);
-
-		// Process the entry - split by dash
-		s2 = b;
-		str3 = strchr(s2, '-');
-
-		// Left side (kill any trailing space - any leading one was killed before)
-		l2 = str3 - s2;
-		snprintf(c, l2 + 1, "%s", s2);
-		while ( *(c + strlen(c) -1) == 32)
-			memset(c + strlen(c) - 1, '\0', 1);
-
-		printf("%u\n", atol(c));
-
-		// Right side (kill any leading space - any trailing one was killed before
-		s2 += l2 + 1;
-		while ( *(s2) == 32 )
-			s2++;
-
-		sprintf(d, "%s", s2);
-
-		printf("%u\n", atol(d));
-
-		// Move to next entry
-		s1 += l1 + 1;
-	} while(str1);
-
 */
 	// FIXME
 	if (r->headers_in.range) {
 		session->hdr_range = from_ngx_str(r->pool, r->headers_in.hdr_range->value);
+		ngx_log_error(NGX_LOG_INFO,, r->connection->log, 0, "Found Range header: %s", session->hdr_range);
+
+		// Split by equal sign
+		if (! (s1 = strchr(session->hdr_range, '=')))
+			return NGX_HTTP_BAD_REQUEST;
+		s1++;
+
+		// Loop around entries (we should have at least one)
+		do {
+			// Prepare a slot for the new range (allocate memory and copy existing ones)
+			if ((hdr_ranges = ngx_pcalloc(r->pool, (session->hdr_ranges_cnt + 1) * sizeof(hdr_range_t))) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_ranges.", (session->hdr_ranges_cnt + 1) * sizeof(hdr_range_t));
+				return NGX_ERROR;
+			}
+			if (session->hdr_ranges)
+				memcpy(hdr_ranges, session->hdr_ranges, session->hdr_ranges_cnt * sizeof(hdr_range_t));
+
+			// Find next comma and its offset (or use end of string)
+			str1 = strchr(s1, ',');
+			str2 = (str1) ? str1 : s1 + strlen(s1);
+			l1 = str2 - s1;
+
+			// Print the entry to a new string
+			if ((p1 = ngx_pcalloc(r->pool, l1 + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_range.", l1 + 1);
+				return NGX_ERROR;
+			}
+			snprintf(p1, l1 + 1, "%s", s1);
+
+			// Process the entry - split by dash
+			s2 = p1;
+			str3 = strchr(s2, '-');
+
+			// Left side of the entry
+			l2 = str3 - s2;
+			if ((p2 = ngx_pcalloc(r->pool, l2 + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_range.", l2 + 1);
+				return NGX_ERROR;
+			}
+			snprintf(p2, l2 + 1, "%s", s2);
+			hdr_ranges[session->hdr_ranges_cnt].start = get_trimmed_int(p2);
+
+			// Right side
+			s2 += l2 + 1;
+			if ((p3 = ngx_pcalloc(r->pool, l1 - l2)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_range.", l1 - l2);
+				return NGX_ERROR;
+			}
+			sprintf(p3, "%s", s2);
+			hdr_ranges[session->hdr_ranges_cnt].end = get_trimmed_int(p3);
+
+			// Move to next entry
+			s1 += l1 + 1;
+
+			// Increment range counter and save ranges
+			session->hdr_ranges_cnt++;
+			session->hdr_ranges = hdr_ranges;
+		} while(str1);
 	}
 
 	// Extract all headers if requested

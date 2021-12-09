@@ -621,6 +621,8 @@ session_t *init_session(ngx_http_request_t *r) {
 		session->hdr_if_none_match = NULL;
 		session->hdr_if_modified_since = -1;
 		session->hdr_range = NULL;
+		session->hdr_ranges = NULL;
+		session->hdr_ranges_cnt = 0;
 
 		// Method-specific init
 		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
@@ -798,4 +800,31 @@ void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r)
 	}
 }
 
+/**
+ * Trim a string and get it back as a 64-bit signed int (-1 for empty strings, -2 for malloc error)
+ */
+int64_t get_trimmed_int(char *in) {
+	char *s1, *s2;
+	long ret = -1;
+
+	if ((s1 = strdup(in)) == NULL)
+		return -2;
+	s2 = s1;
+
+	// Kill any trailing space (replace with NULL)
+	while ( *(s1 + strlen(s1) -1) == 32)
+		memset(s1 + strlen(s1) - 1, '\0', 1);
+
+	// Kill any leading space (shift forward a copy of the pointer)
+	while ( *(s2) == 32 )
+		s2++;
+
+	// Use default -1 for empty values
+	if (strlen(s2))
+		ret = atol(s2);
+
+	free(s1);
+
+	return ret;
+}
 

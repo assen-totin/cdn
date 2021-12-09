@@ -285,6 +285,12 @@ typedef struct {
 	pthread_mutex_t lock;
 } index_t;
 
+// FIXME Range header
+typedef struct {
+	int64_t start;		// -1 means read "end" bytes from the end
+	int64_t end;		// -1 means read "start" bytes from the beginning
+} hdr_range_t;
+
 // Globals for a CDN instance
 typedef struct {
 	uint32_t id;
@@ -333,6 +339,8 @@ typedef struct {
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
 	char *hdr_range;
+	hdr_range_t *hdr_ranges;
+	int hdr_ranges_cnt;
 	char *unix_socket;
 	char *tcp_host;
 	int tcp_port;
@@ -369,14 +377,6 @@ typedef struct {
 	char *curl_content_disposition;
 	CURL *curl;
 } upload_t;
-
-// FIXME Range header
-typedef struct {
-	uint64_t start;		// -1 means read length bytes from the end
-	uint64_t end;		// -1 means read till the end of file
-	uint64_t length;
-} hdr_range_t;
-
 
 // Globals
 typedef struct {
