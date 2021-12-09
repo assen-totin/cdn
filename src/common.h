@@ -288,7 +288,7 @@ typedef struct {
 // FIXME Range header
 typedef struct {
 	int64_t start;		// -1 means read "end" bytes from the end
-	int64_t end;		// -1 means read "start" bytes from the beginning
+	int64_t end;		// -1 means read from "start" to end of file
 } hdr_range_t;
 
 // Globals for a CDN instance

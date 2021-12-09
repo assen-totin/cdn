@@ -174,7 +174,7 @@ ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *
  * Send file to client
  */
 ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
-	int b1_len, b2_len;
+	int b1_len, b2_len, i;
 	char *encoded = NULL;
 	bool curl_encoded = false;
 	ngx_buf_t *b, *b1, *b2;
@@ -183,12 +183,29 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 	ngx_int_t ret;
 
 	// HTTP status
-	r->headers_out.status = NGX_HTTP_OK;
+	r->headers_out.status = (session->hdr_ranges_cnt) ? NGX_HTTP_PARTIAL_CONTENT : NGX_HTTP_OK;
 
 	// Content-Length
 	// NB: Nginx violates RFC 2616 and mandates the return of 0 in case of HEAD, otherwise the response never completes
-	if (r->method & (NGX_HTTP_GET))
-		r->headers_out.content_length_n = metadata->length;
+	if (r->method & (NGX_HTTP_GET)) {
+		if (session->hdr_ranges_cnt) {
+			r->headers_out.content_length_n = 0;
+			for (i=0; i < session->hdr_ranges_cnt; i++) {
+				// NB: The range inclue both the starting and ending byte! They are zero-indexed!
+				if ((session->hdr_ranges[i].start > -1) && (session->hdr_ranges[i].end > -1))
+					// Serve starting with byte M to byte N inclusive, so M + N + 1 bytes
+					r->headers_out.content_length_n += session->hdr_ranges[i].end - session->hdr_ranges[i].start + 1;
+				else if (session->hdr_ranges[i].start > -1)
+					// Serve starting with byte M to EOF (which is at index length-1, so no need to add 1 back here)
+					r->headers_out.content_length_n += metadata->length - session->hdr_ranges[i].start;
+				else if (session->hdr_ranges[i].end > -1)
+					// Serve last N bytes (which means start at length - bytes -1, so no need to add 1 back here)
+					r->headers_out.content_length_n += session->hdr_ranges[i].end;
+			}
+		}
+		else
+			r->headers_out.content_length_n = metadata->length;
+	}
 	else
 		r->headers_out.content_length_n = 0;
 
@@ -266,7 +283,6 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 /*
 	//TODO: Return Content-Range header if Range header was specified in the request
-	// Accept-Ranges (not strictly necessary, but good to have)
 	r->headers_out.content_range = ngx_list_push(&r->headers_out.headers);
 	r->headers_out.content_range->hash = 1;
 	r->headers_out.content_range->key.len = sizeof(HEADER_CONTENT_RANGE) - 1;
@@ -275,8 +291,7 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 	r->headers_out.content_range->value.len = sizeof("bytes") - 1;
 	r->headers_out.content_range->value.data = (u_char*)"bytes";
 */
-/*
-	//TODO: enable this block once Range inbond header is supported
+
 	// Accept-Ranges (not strictly necessary, but good to have)
 	r->headers_out.accept_ranges = ngx_list_push(&r->headers_out.headers);
 	r->headers_out.accept_ranges->hash = 1;
@@ -284,7 +299,6 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 	r->headers_out.accept_ranges->key.data = (u_char*)HEADER_ACCEPT_RANGES;
 	r->headers_out.accept_ranges->value.len = sizeof("bytes") - 1;
 	r->headers_out.accept_ranges->value.data = (u_char*)"bytes";
-*/
 
 	// Send headers
 	ret = ngx_http_send_header(r);
@@ -385,28 +399,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session->hdr_if_none_match);
 	}
 
-	// TODO Process Header Range
-	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range
-/*
-Range: <unit>=<range-start>-
-Range: <unit>=<range-start>-<range-end>
-Range: <unit>=<range-start>-<range-end>, <range-start>-<range-end>
-Range: <unit>=<range-start>-<range-end>, <range-start>-<range-end>, <range-start>-<range-end>
-Range: <unit>=-<suffix-length>
-
-<unit>
-    The unit in which ranges are specified. This is usually bytes.
-
-<range-start>
-    An integer in the given unit indicating the beginning of the request range.
-
-<range-end>
-    An integer in the given unit indicating the end of the requested range. This value is optional and, if omitted, the end of the document is taken as the end of the range.
-
-<suffix-length>
-    An integer in the given unit indicating the number of units at the end of the file to return.
-*/
-	// FIXME
+	// Process Header Range
 	if (r->headers_in.range) {
 		session->hdr_range = from_ngx_str(r->pool, r->headers_in.hdr_range->value);
 		ngx_log_error(NGX_LOG_INFO,, r->connection->log, 0, "Found Range header: %s", session->hdr_range);
