@@ -38,6 +38,8 @@ static void ngx_http_cdn_cleanup(void *a) {
  * Check metdata for errors
  */
 static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+	int i;
+
 	// Log an error if such was returned (with status 200 or no status)
 	if (metadata->error)
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned error: %s", metadata->error);
@@ -75,7 +77,17 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 		return metadata->status;
 	}
 
-	// NB: We are going to serve the request if beyound this line
+	// If having Range, check that we do not go beyond the end of the file
+	if (session->hdr_ranges_cnt) {
+		for (i=0; i < session->hdr_ranges_cnt; i++) {
+			if (session->hdr_ranges[i].end > metadata->length)
+				return NGX_HTTP_RANGE_NOT_SATISFIABLE;
+			if ((session->hdr_ranges[i].end < 0) && (session->hdr_ranges[i].begin > metadata->length))
+				return NGX_HTTP_RANGE_NOT_SATISFIABLE;
+			if ((session->hdr_ranges[i].start < 0) && (session->hdr_ranges[i].end > metadata->length))
+				return NGX_HTTP_RANGE_NOT_SATISFIABLE;
+		}
+	}
 
 	// Check if we have the file name to serve and return error if we don't have it
 	if (! metadata->file) {
@@ -175,10 +187,11 @@ ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *
  */
 ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int b1_len, b2_len, i;
+	int64_t hdr_content_range_start, hdr_content_range_end;
 	char *encoded = NULL;
 	bool curl_encoded = false;
 	ngx_buf_t *b, *b1, *b2;
-	ngx_chain_t *out = NULL;
+	ngx_chain_t *out = NULL, *curr, *prev = NULL;
 	ngx_table_elt_t *h;
 	ngx_int_t ret;
 
@@ -191,16 +204,25 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 		if (session->hdr_ranges_cnt) {
 			r->headers_out.content_length_n = 0;
 			for (i=0; i < session->hdr_ranges_cnt; i++) {
-				// NB: The range inclue both the starting and ending byte! They are zero-indexed!
-				if ((session->hdr_ranges[i].start > -1) && (session->hdr_ranges[i].end > -1))
+				// NB: The range includes both the starting and ending byte! They are zero-indexed!
+				if ((session->hdr_ranges[i].start > -1) && (session->hdr_ranges[i].end > -1)) {
 					// Serve starting with byte M to byte N inclusive, so M + N + 1 bytes
 					r->headers_out.content_length_n += session->hdr_ranges[i].end - session->hdr_ranges[i].start + 1;
-				else if (session->hdr_ranges[i].start > -1)
+					hdr_content_range_start = session->hdr_ranges[i].start;
+					hdr_content_range_end = session->hdr_ranges[i].end;
+				}
+				else if (session->hdr_ranges[i].start > -1) {
 					// Serve starting with byte M to EOF (which is at index length-1, so no need to add 1 back here)
 					r->headers_out.content_length_n += metadata->length - session->hdr_ranges[i].start;
-				else if (session->hdr_ranges[i].end > -1)
+					hdr_content_range_start = session->hdr_ranges[i].start;
+					hdr_content_range_end = metadata->length;
+				}
+				else if (session->hdr_ranges[i].end > -1) {
 					// Serve last N bytes (which means start at length - bytes -1, so no need to add 1 back here)
 					r->headers_out.content_length_n += session->hdr_ranges[i].end;
+					hdr_content_range_start = metadata->length - session->hdr_ranges[i].start;
+					hdr_content_range_end = metadata->length;
+				}
 			}
 		}
 		else
@@ -218,8 +240,7 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 	// ETag
 	b1_len = strlen(metadata->etag) + 2;
-	b1 = ngx_create_temp_buf(r->pool, b1_len);
-	if (b1 == NULL) {
+	if ((b1 = ngx_create_temp_buf(r->pool, b1_len)) == NULL) { 
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate bufer for etag header.");
 		return NGX_ERROR;
 	}
@@ -264,8 +285,8 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 		ngx_str_set(&h->key, HEADER_CONTENT_DISPOSITION);
 
 		b2_len = 23 + strlen(encoded);
-		b2 = ngx_create_temp_buf(r->pool, b2_len);
-		if (b2 == NULL) {
+
+		if ((b2 = ngx_create_temp_buf(r->pool, b2_len)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate buffer for Content-Disposition header.");
 			return NGX_ERROR;
 		}
@@ -281,24 +302,35 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 		curl_easy_cleanup(session->curl);
 	}
 
-/*
-	//TODO: Return Content-Range header if Range header was specified in the request
-	r->headers_out.content_range = ngx_list_push(&r->headers_out.headers);
-	r->headers_out.content_range->hash = 1;
-	r->headers_out.content_range->key.len = sizeof(HEADER_CONTENT_RANGE) - 1;
-	r->headers_out.content_range->key.data = (u_char*)HEADER_CONTENT_RANGE;
-	// FIXME
-	r->headers_out.content_range->value.len = sizeof("bytes") - 1;
-	r->headers_out.content_range->value.data = (u_char*)"bytes";
-*/
-
-	// Accept-Ranges (not strictly necessary, but good to have)
+	// Accept-Ranges header
 	r->headers_out.accept_ranges = ngx_list_push(&r->headers_out.headers);
 	r->headers_out.accept_ranges->hash = 1;
 	r->headers_out.accept_ranges->key.len = sizeof(HEADER_ACCEPT_RANGES) - 1;
 	r->headers_out.accept_ranges->key.data = (u_char*)HEADER_ACCEPT_RANGES;
 	r->headers_out.accept_ranges->value.len = sizeof("bytes") - 1;
 	r->headers_out.accept_ranges->value.data = (u_char*)"bytes";
+
+	// Content-Range header if Range header was specified in the request
+	if (session->hdr_ranges_cnt) {
+		if ((r->headers_out.content_range->value.data = ngx_pcalloc(r->pool, 72)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_content_range.", 72);
+			return NGX_ERROR;
+		}
+
+		if (session->hdr_ranges_cnt == 1) {
+			sprintf(r->headers_out.content_range->value.data, "bytes %l-%l/%l", hdr_content_range_start, hdr_content_range_start, metadata->length);
+			r->headers_out.content_range->value.len = strlen(r->headers_out.content_range->value.data);
+		}
+		else {
+			sprintf(r->headers_out.content_range->value.data, "bytes */%l", metadata->length);
+			r->headers_out.content_range->value.len = strlen(r->headers_out.content_range->value.data);
+		}
+
+		r->headers_out.content_range = ngx_list_push(&r->headers_out.headers);
+		r->headers_out.content_range->hash = 1;
+		r->headers_out.content_range->key.len = sizeof(HEADER_CONTENT_RANGE) - 1;
+		r->headers_out.content_range->key.data = (u_char*)HEADER_CONTENT_RANGE;
+	}
 
 	// Send headers
 	ret = ngx_http_send_header(r);
@@ -307,29 +339,78 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 	// Map the file we are going to serve in the body
 	if (r->method & (NGX_HTTP_GET)) {
-		// Prepare output chain
-		out = ngx_alloc_chain_link(r->pool);
-		if (out == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for buffer chain.", sizeof(ngx_chain_t));
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		// Output with or without Range header
+		if (session->hdr_ranges_cnt) {
+			for (i=0; i < session->hdr_ranges_cnt; i++) {
+				// Prepare new output chain link
+				if ((curr = ngx_alloc_chain_link(r->pool)) == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for buffer chain.", sizeof(ngx_chain_t));
+					return NGX_HTTP_INTERNAL_SERVER_ERROR;
+				}
+
+				// Prepare new output buffer in the link
+				if ((curr->buf = ngx_pcalloc(r->pool, sizeof(ngx_buf_t))) == NULL) {
+					ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
+					return NGX_HTTP_INTERNAL_SERVER_ERROR;
+				}
+
+				// Set the buffer
+				curr->buf->mmap = 1;
+				if ((session->hdr_ranges[i].start > -1) && (session->hdr_ranges[i].end > -1)) {
+					curr->buf->pos = session->hdr_ranges[i].start;
+					curr->buf->last = session->hdr_ranges[i].end;
+				}
+				else if (session->hdr_ranges[i].start > -1) {
+					curr->buf->pos = session->hdr_ranges[i].start;
+					curr->buf->last = metadata->data + metadata->length;
+				}
+				else if (session->hdr_ranges[i].end > -1) {
+					curr->buf->pos = metadata->data + metadata->length - session->hdr_ranges[i].end;
+					curr->buf->last = metadata->data + metadata->length;
+				}
+
+				// Set conditions
+				if (i == 0) {
+					// First link/buffer: remember this one
+					out = curr;
+					prev = curr;
+				}
+				else if (i == (session->hdr_ranges_cnt -1 )) {
+					// Last link/buffer
+					prev->next = curr;
+					curr->next = NULL;
+					curr->buf->last_buf = 1; 
+				}
+				else {
+					// Any other link/buffer: attach to previous one and keep a handle to this one for the next run
+					prev->next = curr;
+					prev = curr;					
+				}
+			}
 		}
+		else {
+			// Prepare output chain
+			if ((out = ngx_alloc_chain_link(r->pool)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for buffer chain.", sizeof(ngx_chain_t));
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
 
-		// Prepare output buffer
-		if ((b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t))) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			// Prepare output buffer
+			if ((b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t))) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for respone buffer.", sizeof(ngx_buf_t));
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+			}
+
+			// Prepare output chain; hook the buffer
+			out->buf = b;
+			out->next = NULL; 
+
+			// Set the buffer
+			b->pos = metadata->data;
+			b->last = metadata->data + metadata->length;
+			b->mmap = 1; 
+			b->last_buf = 1; 
 		}
-
-		// Prepare output chain; hook the buffer
-		out->buf = b;
-		out->next = NULL; 
-
-		// Set the buffer
-		// TODO: partial response if Range request header was set
-		b->pos = metadata->data;
-		b->last = metadata->data + metadata->length;
-		b->mmap = 1; 
-		b->last_buf = 1; 
 	}
 
 	// Send the body, and return the status code of the output filter chain

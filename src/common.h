@@ -285,7 +285,7 @@ typedef struct {
 	pthread_mutex_t lock;
 } index_t;
 
-// FIXME Range header
+// Range header
 typedef struct {
 	int64_t start;		// -1 means read "end" bytes from the end
 	int64_t end;		// -1 means read from "start" to end of file
