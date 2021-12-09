@@ -403,7 +403,76 @@ Range: <unit>=-<suffix-length>
 
 <suffix-length>
     An integer in the given unit indicating the number of units at the end of the file to return.
+
+---
+
+	char *a = malloc(1024);
+	char *b = malloc(1024);
+	char *c = malloc(1024);
+	char *d = malloc(1024);
+	char *s1, *s2;
+	char *str1, *str2, *str3;
+	int l1, l2;
+
+	sprintf(a, "bytes=10000-25000 ,  50000-74000 ,  80000-90000 ");
+
+	// Split by equal sign
+	s1 = strchr(a, '=');
+	if (! s1) {
+		printf("Bad string!\n");
+		exit(0);
+	}
+	s1++;
+
+	printf("%s\n", s1);
+
+	// Loop around entries (we should have at least one)
+	do {
+		// Kill any leading space
+		while ( *(s1) == 32 )
+			s1++;
+
+		// Find next comma and its offset (or use end of string)
+		str1 = strchr(s1, ',');
+		str2 = (str1) ? str1 : s1 + strlen(s1);
+		l1 = str2 - s1;
+
+		// Print to a new string
+		snprintf(b, l1 + 1, "%s", s1);
+
+		// Kill any trailing space
+		while ( *(b + strlen(b) -1) == 32)
+			memset(b + strlen(b) - 1, '\0', 1);
+
+		printf("%s\n", b);
+
+		// Process the entry - split by dash
+		s2 = b;
+		str3 = strchr(s2, '-');
+
+		// Left side (kill any trailing space - any leading one was killed before)
+		l2 = str3 - s2;
+		snprintf(c, l2 + 1, "%s", s2);
+		while ( *(c + strlen(c) -1) == 32)
+			memset(c + strlen(c) - 1, '\0', 1);
+
+		printf("%u\n", atol(c));
+
+		// Right side (kill any leading space - any trailing one was killed before
+		s2 += l2 + 1;
+		while ( *(s2) == 32 )
+			s2++;
+
+		sprintf(d, "%s", s2);
+
+		printf("%u\n", atol(d));
+
+		// Move to next entry
+		s1 += l1 + 1;
+	} while(str1);
+
 */
+	// FIXME
 	if (r->headers_in.range) {
 		session->hdr_range = from_ngx_str(r->pool, r->headers_in.hdr_range->value);
 	}
