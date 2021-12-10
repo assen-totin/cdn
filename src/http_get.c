@@ -82,7 +82,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 		for (i=0; i < session->hdr_ranges_cnt; i++) {
 			if (session->hdr_ranges[i].end > metadata->length)
 				return NGX_HTTP_RANGE_NOT_SATISFIABLE;
-			if ((session->hdr_ranges[i].end < 0) && (session->hdr_ranges[i].begin > metadata->length))
+			if ((session->hdr_ranges[i].end < 0) && (session->hdr_ranges[i].start > metadata->length))
 				return NGX_HTTP_RANGE_NOT_SATISFIABLE;
 			if ((session->hdr_ranges[i].start < 0) && (session->hdr_ranges[i].end > metadata->length))
 				return NGX_HTTP_RANGE_NOT_SATISFIABLE;
@@ -318,12 +318,12 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 		}
 
 		if (session->hdr_ranges_cnt == 1) {
-			sprintf(r->headers_out.content_range->value.data, "bytes %l-%l/%l", hdr_content_range_start, hdr_content_range_start, metadata->length);
-			r->headers_out.content_range->value.len = strlen(r->headers_out.content_range->value.data);
+			sprintf((char *)r->headers_out.content_range->value.data, "bytes %lu-%lu/%lu", hdr_content_range_start, hdr_content_range_end, metadata->length);
+			r->headers_out.content_range->value.len = strlen((const char*)r->headers_out.content_range->value.data);
 		}
 		else {
-			sprintf(r->headers_out.content_range->value.data, "bytes */%l", metadata->length);
-			r->headers_out.content_range->value.len = strlen(r->headers_out.content_range->value.data);
+			sprintf((char *)r->headers_out.content_range->value.data, "bytes */%lu", metadata->length);
+			r->headers_out.content_range->value.len = strlen((const char*)r->headers_out.content_range->value.data);
 		}
 
 		r->headers_out.content_range = ngx_list_push(&r->headers_out.headers);
@@ -356,6 +356,7 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 				// Set the buffer
 				curr->buf->mmap = 1;
+//FIXME! THESE BELOW SHOUDL BE char * NOT LONG INTS!
 				if ((session->hdr_ranges[i].start > -1) && (session->hdr_ranges[i].end > -1)) {
 					curr->buf->pos = session->hdr_ranges[i].start;
 					curr->buf->last = session->hdr_ranges[i].end;
@@ -482,8 +483,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 
 	// Process Header Range
 	if (r->headers_in.range) {
-		session->hdr_range = from_ngx_str(r->pool, r->headers_in.hdr_range->value);
-		ngx_log_error(NGX_LOG_INFO,, r->connection->log, 0, "Found Range header: %s", session->hdr_range);
+		session->hdr_range = from_ngx_str(r->pool, r->headers_in.range->value);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found Range header: %s", session->hdr_range);
 
 		// Split by equal sign
 		if (! (s1 = strchr(session->hdr_range, '=')))
