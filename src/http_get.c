@@ -356,13 +356,12 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 				// Set the buffer
 				curr->buf->mmap = 1;
-//FIXME! THESE BELOW SHOUDL BE char * NOT LONG INTS!
 				if ((session->hdr_ranges[i].start > -1) && (session->hdr_ranges[i].end > -1)) {
-					curr->buf->pos = session->hdr_ranges[i].start;
-					curr->buf->last = session->hdr_ranges[i].end;
+					curr->buf->pos = metadata->data + session->hdr_ranges[i].start;
+					curr->buf->last = metadata->data + session->hdr_ranges[i].end;
 				}
 				else if (session->hdr_ranges[i].start > -1) {
-					curr->buf->pos = session->hdr_ranges[i].start;
+					curr->buf->pos = metadata->data + session->hdr_ranges[i].start;
 					curr->buf->last = metadata->data + metadata->length;
 				}
 				else if (session->hdr_ranges[i].end > -1) {
