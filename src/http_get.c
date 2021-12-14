@@ -312,6 +312,11 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 	// Content-Range header if Range header was specified in the request
 	if (session->hdr_ranges_cnt) {
+		r->headers_out.content_range = ngx_list_push(&r->headers_out.headers);
+		r->headers_out.content_range->hash = 1;
+		r->headers_out.content_range->key.len = sizeof(HEADER_CONTENT_RANGE) - 1;
+		r->headers_out.content_range->key.data = (u_char*)HEADER_CONTENT_RANGE;
+
 		if ((r->headers_out.content_range->value.data = ngx_pcalloc(r->pool, 72)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_content_range.", 72);
 			return NGX_ERROR;
@@ -325,11 +330,6 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 			sprintf((char *)r->headers_out.content_range->value.data, "bytes */%lu", metadata->length);
 			r->headers_out.content_range->value.len = strlen((const char*)r->headers_out.content_range->value.data);
 		}
-
-		r->headers_out.content_range = ngx_list_push(&r->headers_out.headers);
-		r->headers_out.content_range->hash = 1;
-		r->headers_out.content_range->key.len = sizeof(HEADER_CONTENT_RANGE) - 1;
-		r->headers_out.content_range->key.data = (u_char*)HEADER_CONTENT_RANGE;
 	}
 
 	// Send headers
@@ -355,10 +355,9 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 				}
 
 				// Set the buffer
-				curr->buf->mmap = 1;
 				if ((session->hdr_ranges[i].start > -1) && (session->hdr_ranges[i].end > -1)) {
 					curr->buf->pos = metadata->data + session->hdr_ranges[i].start;
-					curr->buf->last = metadata->data + session->hdr_ranges[i].end;
+					curr->buf->last = metadata->data + session->hdr_ranges[i].end + 1;
 				}
 				else if (session->hdr_ranges[i].start > -1) {
 					curr->buf->pos = metadata->data + session->hdr_ranges[i].start;
@@ -370,22 +369,23 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 				}
 
 				// Set conditions
-				if (i == 0) {
-					// First link/buffer: remember this one
+				curr->next = NULL;
+				curr->buf->mmap = 1;
+
+				// First link: save as beginning of the chain
+				if (i == 0)
 					out = curr;
-					prev = curr;
-				}
-				else if (i == (session->hdr_ranges_cnt -1 )) {
-					// Last link/buffer
-					prev->next = curr;
-					curr->next = NULL;
+
+				// Last link: mark buffer and set next to NULL
+				if (i == (session->hdr_ranges_cnt -1 ))
 					curr->buf->last_buf = 1; 
-				}
-				else {
-					// Any other link/buffer: attach to previous one and keep a handle to this one for the next run
+
+				// Any link but the first: link to the previuos one
+				if (i > 0)
 					prev->next = curr;
-					prev = curr;					
-				}
+
+				// Remember link
+				prev = curr;
 			}
 		}
 		else {
