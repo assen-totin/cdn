@@ -370,6 +370,8 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
 	int fd, i, ret, cache_size;
 	struct stat statbuf;
+	time_t t = time(NULL);
+	struct tm lt = {0};
 
 	// Get config
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
@@ -526,6 +528,11 @@ instance_t *instance_init(ngx_http_request_t *r) {
 			instance->dsn->socket = instance->dsn->port_str;
 	}
 
+	// Init time offset
+	// NB: This effectively requires restart when DST goes on/off
+	localtime_r(&t, &lt);
+	instance->tm_gmtoff = lt.tm_gmtoff;
+
 	return instance;
 }
 
@@ -623,6 +630,8 @@ session_t *init_session(ngx_http_request_t *r) {
 		session->hdr_range = NULL;
 		session->hdr_ranges = NULL;
 		session->hdr_ranges_cnt = 0;
+		session->hdr_if_range_etag = NULL;
+		session->hdr_if_range_time = -1;
 
 		// Method-specific init
 		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
@@ -827,4 +836,26 @@ int64_t get_trimmed_int(char *in) {
 
 	return ret;
 }
+
+
+/**
+ * Extract header etag
+ */
+char *trim_quotes(ngx_http_request_t *r, char *s) {
+	char *ret, *s1, *s2;
+
+	s1 = strchr(s, '"');
+	s2 = strrchr(s, '"');
+	if ((s1 == s) && (s2 == s + strlen(s) - 1)) {
+		if ((ret = ngx_pcalloc(r->pool, strlen(s) - 1)) == NULL)
+			return NULL;
+
+		strncpy(ret, s + 1, strlen(s) - 2);
+	}
+	else
+		ret = s;
+
+	return ret;
+}
+
 

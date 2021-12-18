@@ -302,6 +302,7 @@ typedef struct {
 	cache_t *cache;
 	index_t *index;
 	fs_t *fs;
+	int tm_gmtoff;
 } instance_t;
 
 // Session
@@ -338,6 +339,8 @@ typedef struct {
 	char *db_dsn;
 	char *hdr_if_none_match;
 	time_t hdr_if_modified_since;
+	time_t hdr_if_range_time;
+	char *hdr_if_range_etag;
 	char *hdr_range;
 	hdr_range_t *hdr_ranges;
 	int hdr_ranges_cnt;

@@ -77,8 +77,31 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 		return metadata->status;
 	}
 
-	// If having Range, check that we do not go beyond the end of the file
+	// Check if we have the eTag and use the default one if missing
+	if (! metadata->etag) {
+		if ((metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(DEFAULT_ETAG) + 1);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+		strcpy(metadata->etag, DEFAULT_ETAG);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
+	}
+
+	// Check on ranges (headers Range and If-Range)
 	if (session->hdr_ranges_cnt) {
+		// If If-Range was sent, check whether we should serve the whole file or just the requested ranges
+		if (session->hdr_if_range_etag) {
+			// If header contains a tag, check if our file has the same; if not, serve complete file by resetting ranges
+			if (strcmp(session->hdr_if_range_etag, metadata->etag))
+				session->hdr_ranges_cnt = 0;
+		}
+		else if (session->hdr_if_range_time) {
+			// If header contains a timestamp, check if our file has the same; if not, serve complete file by resetting ranges
+			if (session->hdr_if_range_time < metadata->upload_timestamp)
+				session->hdr_ranges_cnt = 0;
+		}
+
+		// If having Range, check that we do not go beyond the end of the file
 		for (i=0; i < session->hdr_ranges_cnt; i++) {
 			if (session->hdr_ranges[i].end > metadata->length)
 				return NGX_HTTP_RANGE_NOT_SATISFIABLE;
@@ -119,19 +142,14 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 	if (! metadata->content_disposition)
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file);
 
-	// Check if we have the eTag and use the default one if missing
-	if (! metadata->etag) {
-		if ((metadata->etag = ngx_pcalloc(r->pool, strlen(DEFAULT_ETAG) + 1)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(DEFAULT_ETAG) + 1);
-			return NGX_HTTP_INTERNAL_SERVER_ERROR;
-		}
-		strcpy(metadata->etag, DEFAULT_ETAG);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
-	}
-
 	// Return 304 in certain cases
-	if (session->hdr_if_none_match && metadata->etag && ! strcmp(session->hdr_if_none_match, metadata->etag))
-		return NGX_HTTP_NOT_MODIFIED;
+	if (! session->hdr_ranges_cnt) {
+		if (session->hdr_if_none_match && ! strcmp(session->hdr_if_none_match, metadata->etag))
+			metadata->status = NGX_HTTP_NOT_MODIFIED;
+
+		if (session->hdr_if_modified_since >= metadata->upload_timestamp)
+			metadata->status = NGX_HTTP_NOT_MODIFIED;
+	}
 
 	// Return OK
 	return (metadata->status == NGX_HTTP_OK) ? 0 : metadata->status;
@@ -144,10 +162,6 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int fd;
 	ngx_http_cleanup_t *c;
-
-	// If file unmodifed, return 304
-	if (session->hdr_if_modified_since >= metadata->upload_timestamp)
-		return NGX_HTTP_NOT_MODIFIED;
 
 	// Read the file: use mmap to map the physical file to memory
 	if ((fd = open(metadata->path, O_RDONLY)) < 0) {
@@ -428,7 +442,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	ngx_int_t ret = NGX_OK;
 	metadata_t *metadata;
 	session_t *session;
-	char *s0, *s1, *s2, *p1, *p2, *p3, *str1, *str2, *str3;
+	char *s1, *s2, *p1, *p2, *p3, *str1, *str2, *str3;
 	int l1, l2;
 	struct tm ltm;
 	hdr_range_t *hdr_ranges;
@@ -452,35 +466,46 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	if ((ret = get_uri(session, metadata, r)) > 0)
 		return ret;		
 
-	// Process Header If-Modified-Since
+	// Process header If-Modified-Since
 	if (r->headers_in.if_modified_since) {
 		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
 		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
-			session->hdr_if_modified_since = mktime(&ltm);
+			session->hdr_if_modified_since = mktime(&ltm) + session->instance->tm_gmtoff;
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session->hdr_if_modified_since);
 		}
 		else
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
 	}
 
-	// Process Header If-None-Match
+	// Process header If-None-Match
 	if (r->headers_in.if_none_match) {
-		session->hdr_if_none_match = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
-		s1 = strchr(session->hdr_if_none_match, '"');
-		s2 = strrchr(session->hdr_if_none_match, '"');
-		if ((s1 == session->hdr_if_none_match) && (s2 == session->hdr_if_none_match + strlen(session->hdr_if_none_match) - 1)) {
-			if ((s0 = ngx_pcalloc(r->pool, strlen(session->hdr_if_none_match) - 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for hdr_if_none_match.", strlen(session->hdr_if_none_match) - 1);
-				return NGX_ERROR;
-			}
-
-			strncpy(s0, session->hdr_if_none_match + 1, strlen(session->hdr_if_none_match) - 2);
-			session->hdr_if_none_match = s0;
+		s1 = from_ngx_str(r->pool, r->headers_in.if_none_match->value);
+		if ((session->hdr_if_none_match = trim_quotes(r, s1)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for if_none_match.", strlen(s1) - 1);
+			return NGX_ERROR;
 		}
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session->hdr_if_none_match);
 	}
 
-	// Process Header Range
+	// Process header If-Range
+	if (r->headers_in.if_range) {
+		s1 = from_ngx_str(r->pool, r->headers_in.if_range->value);
+
+		// This header may either be time or etag
+		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
+			session->hdr_if_range_time = mktime(&ltm) + session->instance->tm_gmtoff;
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Range to timestamp: %l", session->hdr_if_range_time);
+		}
+		else {
+			if ((session->hdr_if_range_etag = trim_quotes(r, s1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for if_range.", strlen(s1) - 1);
+				return NGX_ERROR;
+			}
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Range: %s", session->hdr_if_range_etag);
+		}
+	}
+
+	// Process header Range
 	if (r->headers_in.range) {
 		session->hdr_range = from_ngx_str(r->pool, r->headers_in.range->value);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found Range header: %s", session->hdr_range);

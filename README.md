@@ -190,7 +190,7 @@ The following parameter names are used throughout this document (both for reques
 - `filename`: string, the original filename; default is `file`
 - `content_type`: string, content type for the file; default is `application/octet-stream`
 - `content_disposition"`: string, content disposition; if set to `attachment`, the file will be served as attachment; default is to serve inline.
-- `etag`: string, the Rtag for the file; default is `00000000000000000000000000000000`
+- `etag`: string, the eTag for the file; default is `00000000000000000000000000000000`
 - `status`: int, HTTP-style code; use `200` or `304` to approve request, `403` to deny it, `500` to denote processing error
 - `error`: string, will be logged by Nginx if the `status` code indicates an error
 
@@ -597,6 +597,14 @@ To clean up the change log files, put the `cdn_index.sh` into the cron and put a
 The remote side may retrieve the list from the previous hour and the fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf`. You also need to create an initial savepoint file in `/var/lib/cdn/mirror.d/XYZ.conf` with the following line, containing the date and hour (in UTC) from which to start the replication:
 
 `SAVEPOINT=YYYYMMDDHH`
+
+# Compliance
+
+The CDN supports a number of HTTP headers that govern the file delivery:
+- If-None-Match: an eTag that will be compared with the one of the file and on match 304 will be returned
+- If-Modified-Since: a timestamp that will be compared with the one of the file and on match 304 will be returned
+- If-Range: an eTag or timestamp that will be compared with the one of the file; on match, partial download as per the Range header with HTTP code 206 will be performed; on no match, full download with HTTP code 200 will be performed.
+- Range: one or more ranges of the file that will be served with HTTP 206 code (instead of a full file download).
 
 # Examples
 
