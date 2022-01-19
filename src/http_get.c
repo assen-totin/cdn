@@ -464,7 +464,11 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 
 	// Get the URI and split into parts
 	if ((ret = get_uri(session, metadata, r)) > 0)
-		return ret;		
+		return ret;
+
+	// Get path
+	if ((ret = get_path(session, metadata, r)) > 0)
+		return ret;
 
 	// Process header If-Modified-Since
 	if (r->headers_in.if_modified_since) {

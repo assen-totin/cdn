@@ -14,6 +14,7 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r);
 ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r);
 ngx_int_t get_path0(char *fs_root, int fs_depth, char *filename, char *result, int len);
 ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
+ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 int64_t get_trimmed_int(char *in);
 session_t *init_session(ngx_http_request_t *r);
 metadata_t *init_metadata(ngx_http_request_t *r);

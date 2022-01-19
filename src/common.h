@@ -86,6 +86,7 @@
 #define DEFAULT_CONTENT_DISPOSITION "none"
 #define DEFAULT_DB_DSN "none"
 #define DEFAULT_ETAG "00000000000000000000000000000000"
+#define DEFAULT_EXT "0"
 #define DEFAULT_FILE_NAME "unnamed"
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
@@ -119,6 +120,8 @@
 #define EAGAIN_MAX_COUNT 10
 #define EAGAIN_SLEEP 5
 
+#define HASH_SIZE 32
+
 #define HEADER_ACCEPT_RANGES "Accept-Ranges"
 #define HEADER_ACCESS_CONTROL_ALLOW_ORIGIN "Access-Control-Allow-Origin"
 #define HEADER_ACCESS_CONTROL_ALLOW_HEADERS "Access-Control-Allow-Headers"
@@ -132,6 +135,7 @@
 #define ERROR_MESSAGE_LENGTH 1024
 
 #define MAX_SERVER_ID 48
+#define MAX_VER 9999
 
 #define MATRIX_ALLOW_STATUS 200
 #define MATRIX_DENY_STATUS 403
@@ -209,6 +213,9 @@ typedef struct {
 
 // Metadata
 typedef struct {
+	char *hash;
+	char *ext;
+	char *pack;
 	char *file;
 	char *filename;
 	char *path;
@@ -219,8 +226,9 @@ typedef struct {
 	char *auth_value;
 	u_char *data;
 	time_t upload_timestamp; 
-	int32_t status;
 	int64_t length;
+	int32_t status;
+	int32_t ver;
 } metadata_t;
 
 // Key-value pair
@@ -375,9 +383,6 @@ typedef struct {
 typedef struct {
 	char *rb;
 	bool rb_malloc;
-	char *curl_filename;
-	char *curl_content_type;
-	char *curl_content_disposition;
 	CURL *curl;
 } upload_t;
 

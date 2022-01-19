@@ -21,15 +21,8 @@ static void upload_cleanup(ngx_http_request_t *r, upload_t *upload, int status) 
 	if (upload->rb_malloc)
 		free(upload->rb);
 
-	if (upload->curl) {
-		if (upload->curl_filename)
-			curl_free(upload->curl_filename);
-		if (upload->curl_content_type)
-			curl_free(upload->curl_content_type);
-		if (upload->curl_content_disposition)
-			curl_free(upload->curl_content_disposition);
+	if (upload->curl)
 		curl_easy_cleanup(upload->curl);
-	}
 
 	ngx_http_finalize_request(r, status);
 }
@@ -133,7 +126,7 @@ static char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
 }
 
 /**
- * Read a chunk of data (form field value) into string
+ * Read a field from MPFD
  */
 static char *mpfd_get_field(ngx_http_request_t *r, upload_t *upload, char *from, int len) {
 	char *ret;
@@ -148,6 +141,24 @@ static char *mpfd_get_field(ngx_http_request_t *r, upload_t *upload, char *from,
 
 	return ret;
 }
+
+/**
+ * Read a field from AXWFU
+ */
+static char *axwfu_get_field(ngx_http_request_t *r, upload_t *upload, char *from) {
+	char *ret;
+
+	if ((ret = ngx_pcalloc(r->pool, strlen(from) + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for upload field value.", strlen(from) + 1);
+		upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		return NULL;
+	}
+
+	strncpy(ret, from, len);
+
+	return ret;
+}
+
 
 /**
  * POST and PUT request body processing callback
@@ -173,9 +184,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for custom upload handler.", sizeof(upload_t));
 		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
-	upload->curl_filename = NULL;
-	upload->curl_content_type = NULL;
-	upload->curl_content_disposition = NULL;
+
 	upload->curl = NULL;
 
 	// Check if we have body
@@ -196,10 +205,13 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body is ready for processing.");
 
-	// For PUT method, extract the file ID from the URL
+	// For PUT method, extract the file ID from the URL and get file data
 	if (r->method & (NGX_HTTP_PUT)) {
 		if ((ret = get_uri(session, metadata, r)) > 0)
-			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);		
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+
+		if ((ret = get_path(session, metadata, r)) > 0)
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
 	// Extract content type from header
@@ -376,6 +388,14 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			else if (! strcmp(part_field_name, "cd"))
 				metadata->content_disposition = mpfd_get_field(r, upload, part_pos, part_end - part_pos);
 
+			// Check if the field name is pack leader
+			else if (! strcmp(part_field_name, "pl"))
+				metadata->pack = mpfd_get_field(r, upload, part_pos, part_end - part_pos);
+
+			// Check if the field is extention
+			else if (! strcmp(part_field_name, "ext"))
+				metadata->ext = mpfd_get_field(r, upload, part_pos, part_end - part_pos);
+
 			// Move the part forward
 			part = part_end;
 		}
@@ -452,40 +472,73 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 			// Decide what to do with the field
 			if (! strcmp(part_field_name, "d")) {
-				file_data_begin = form_field_value_decoded;
+				file_data_begin = axwfu_get_field(r, upload, form_field_value_decoded);
 				metadata->length = form_field_value_len;
 			}
 			else if (! strcmp(part_field_name, "n"))
-				upload->curl_filename = form_field_value_decoded;
+				metadata->filename = axwfu_get_field(r, upload, form_field_value_decoded);
 			else if (! strcmp(part_field_name, "ct"))
-				upload->curl_content_type = form_field_value_decoded;
+				metadata->content_type = axwfu_get_field(r, upload, form_field_value_decoded);
 			else if (! strcmp(part_field_name, "cd"))
-				upload->curl_content_disposition = form_field_value_decoded;
+				metadata->content_disposition = axwfu_get_field(r, upload, form_field_value_decoded);
+			else if (! strcmp(part_field_name, "pl"))
+				metadata->pack = axwfu_get_field(r, upload, form_field_value_decoded);
+			else if (! strcmp(part_field_name, "ext"))
+				metadata->ext = axwfu_get_field(r, upload, form_field_value_decoded);
+
+			free(form_field_value_decoded);
 		}	
 	}
 
-	// For POST only: prepare file hash
-	if (r->method & (NGX_HTTP_POST)) {
-		// Create hash salt: No of seconds for today with ms precision, mulitplied by server id =< 49
-		struct timeval tv;
-		gettimeofday(&tv, NULL);
-		int sec = tv.tv_sec % 86400;
-		int msec = tv.tv_usec / 1000;
-		uint32_t salt = session->instance->fs->server_id * (1000 * sec + msec);
+	// Check: if we have a pack, we must have an extension!
+	if ((metadata->pack) && (! metadata->ext)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Pack %s provided, but extenstion missing.", metadata->pack);
+		return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
+	}
 
-		// Create file hash
-		murmur3_128((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
-
-		// Convert hash to hex string
-		if ((metadata->file = ngx_pcalloc(r->pool, 33)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate 33 bytes for file ID.");
+	// Metadata: merge of defaults if some values are missing: extension
+	if (! metadata->ext) {
+		if ((metadata->ext = ngx_pcalloc(r->pool, strlen(DEFAULT_EXT) + 1)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(DEFAULT_EXT) + 1);
 			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
-		sprintf(metadata->file, "%016lx%016lx", hash[0], hash[1]);
+		strcpy(metadata->content_disposition, DEFAULT_EXT);
+	}
 
-		// Obtain file path
-		if (get_path(session, metadata, r) > 0)
-			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+	// For POST only: prepare file hash if we don't have a pack leader
+	if (r->method & (NGX_HTTP_POST)) {
+		if (metadata->pack) {
+			// We have a pack leader specified, so use it to set metadata->file instead of computing a hash and append the metadata->ext
+			if ((metadata->file = ngx_pcalloc(r->pool, strlen(metadata->pack) + 1 + strlen(metadata->ext) + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", strlen(metadata->pack) + 1 + strlen(metadata->ext) + 1);
+				return NGX_ERROR;
+			}
+			sprintf(metadata->file, "%s.%s", metadata->pack, metadata->ext);
+
+			get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file, metadata->path, len);
+		}
+		else {
+			// Create hash salt: number of seconds for today with ms precision, mulitplied by server id =< 49
+			struct timeval tv;
+			gettimeofday(&tv, NULL);
+			int sec = tv.tv_sec % 86400;
+			int msec = tv.tv_usec / 1000;
+			uint32_t salt = session->instance->fs->server_id * (1000 * sec + msec);
+
+			// Create file hash
+			murmur3_128((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
+
+			// Convert hash to hex string
+			if ((metadata->hash = ngx_pcalloc(r->pool, HASH_SIZE + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file ID.", HASH_SIZE + 1);
+				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+			}
+			sprintf(metadata->hash, "%016lx%016lx", hash[0], hash[1]);
+
+			// Create metadata->file and metadata->path from metadata->hash, metadata->ver and metadata->ext
+			if (get_path2(session, metadata, r) > 0)
+				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+		}
 	}
 
 	// Try to find an authorisation token
@@ -510,41 +563,29 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
-		if (upload->curl_filename)
-			metadata->filename = upload->curl_filename;
-		else {
-			if ((metadata->filename = ngx_pcalloc(r->pool, strlen(DEFAULT_FILE_NAME) + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(DEFAULT_FILE_NAME) + 1);
-				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
-			}
-			strcpy(metadata->filename, DEFAULT_FILE_NAME);
+		if ((metadata->filename = ngx_pcalloc(r->pool, strlen(DEFAULT_FILE_NAME) + 1)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(DEFAULT_FILE_NAME) + 1);
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
+		strcpy(metadata->filename, DEFAULT_FILE_NAME);
 	}
 
 	// Metadata: merge of defaults if some values are missing: content_type
 	if (! metadata->content_type) {
-		if (upload->curl_content_type)
-			metadata->content_type = upload->curl_content_type;
-		else {
-			if ((metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(DEFAULT_CONTENT_TYPE) + 1);
-				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
-			}
-			strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
+		if ((metadata->content_type = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_TYPE) + 1)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_type.", strlen(DEFAULT_CONTENT_TYPE) + 1);
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
+		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
 	}
 
 	// Metadata: merge of defaults if some values are missing: content_disposition
 	if (! metadata->content_disposition) {
-		if (upload->curl_content_disposition)
-			metadata->content_disposition = upload->curl_content_disposition;
-		else {
-			if ((metadata->content_disposition = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_DISPOSITION) + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(DEFAULT_CONTENT_DISPOSITION) + 1);
-				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
-			}
-			strcpy(metadata->content_disposition, DEFAULT_CONTENT_DISPOSITION);
+		if ((metadata->content_disposition = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_DISPOSITION) + 1)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(DEFAULT_CONTENT_DISPOSITION) + 1);
+			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
+		strcpy(metadata->content_disposition, DEFAULT_CONTENT_DISPOSITION);
 	}
 
 	// Metadata: set etag to the file ID
@@ -659,15 +700,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	// NB: We are going to serve the request if beyound this line
 
 	// Clean up CURL if it got used
-	if (upload->curl) {
-		if (upload->curl_filename)
-			curl_free(upload->curl_filename);
-		if (upload->curl_content_type)
-			curl_free(upload->curl_content_type);
-		if (upload->curl_content_disposition)
-			curl_free(upload->curl_content_disposition);
+	if (upload->curl)
 		curl_easy_cleanup(upload->curl);
-	}
 
 	// Save file to CDN
 	if ((file_fd = open(metadata->path, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP)) == -1) {
