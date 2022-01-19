@@ -148,9 +148,9 @@ ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t
 	int len;
 	char ver_len = malloc(12);
 
-	// We have the file hash and the extension, but do not know yet which ver to use
+	// We have the file hash, but do not know yet which ver to use
 
-	// The path prefix will always be the same, no matter what ver and ext are
+	// The path prefix will always be the same, no matter what ver is
 	char *prefix;
 	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->hash);
 	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->hash, prefix, len);
@@ -161,9 +161,9 @@ ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t
 		sprintf(ver_len, "%u", metadata->ver);
 
 		// Calculate length of the path and compose it
-		len = strlen(prefix) + 1 + strlen(ver_len) + 1 + strlen(metadata->ext) + 1;
+		len = strlen(prefix) + 1 + strlen(ver_len) + 1;
 		char *path = malloc(len);
-		sprintf(path, "%s.%u.%s", prefix, metadata->ver, metadata->ext);
+		sprintf(path, "%s.%u", prefix, metadata->ver);
 
 		// Stat the path: if not exists, break; else, repeat with ver++
 		struct stat statbuf;
@@ -196,12 +196,12 @@ ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 	// Save file
 	sprintf(ver_len, "%u", metadata->ver);
-	len = strlen(metadata->hash) + 1 + strlen(ver_len) + 1 + strlen(metadata->ext);
+	len = strlen(metadata->hash) + 1 + strlen(ver_len));
 	if ((metadata->file = ngx_pcalloc(r->pool, len + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", len +1);
 		return NGX_ERROR;
 	}
-	sprintf(metadata->file, "%s.%u.%s", metadata->hash, metadata->ver, metadata->ext);
+	sprintf(metadata->file, "%s.%u", metadata->hash, metadata->ver);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, metadata->path);
 

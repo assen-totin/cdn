@@ -496,13 +496,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
 	}
 
-	// Metadata: merge of defaults if some values are missing: extension
-	if (! metadata->ext) {
-		if ((metadata->ext = ngx_pcalloc(r->pool, strlen(DEFAULT_EXT) + 1)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata content_disposition.", strlen(DEFAULT_EXT) + 1);
-			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
-		}
-		strcpy(metadata->content_disposition, DEFAULT_EXT);
+	// Check: if we have an ext, but not a pack, log a message and ignore it
+	if ((! metadata->pack) && (metadata->ext)) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Extension %s provided, but pack missing - ignoring.", metadata->ext);
+		return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
 	}
 
 	// For POST only: prepare file hash if we don't have a pack leader
@@ -535,7 +532,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			}
 			sprintf(metadata->hash, "%016lx%016lx", hash[0], hash[1]);
 
-			// Create metadata->file and metadata->path from metadata->hash, metadata->ver and metadata->ext
+			// Create metadata->file and metadata->path from metadata->hash and metadata->ver
 			if (get_path2(session, metadata, r) > 0)
 				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
