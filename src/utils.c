@@ -96,12 +96,8 @@ ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r) {
 /**
  * Helper: Get the full path from a file name
  */
-ngx_int_t get_path0(char *fs_root, int fs_depth, char *filename, char *result, int len) {
+void get_path0(char *fs_root, int fs_depth, char *filename, char *result) {
 	int i, pos=0;
-
-	// Protect from accidental overflow below
-	if ((strlen(fs_root) + 1 + 2 * fs_depth + strlen(filename)) > len)
-		return ENAMETOOLONG;
 
 	memcpy(result, fs_root, strlen(fs_root));
 	pos += strlen(fs_root);
@@ -117,8 +113,6 @@ ngx_int_t get_path0(char *fs_root, int fs_depth, char *filename, char *result, i
 	}
 
 	memcpy(result + pos, filename, strlen(filename));
-
-	return NGX_OK;
 }
 
 
@@ -134,7 +128,7 @@ ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t 
 		return NGX_ERROR;
 	}
 
-	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file, metadata->path, len);
+	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file, metadata->path);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, metadata->path);
 
@@ -145,60 +139,53 @@ ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t 
  * Decide on full path from a file name - for POST
  */
 ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
-	int len;
-	char ver_len = malloc(12);
+	char ver_len[12], path[2048], prefix[1536];
 
 	// We have the file hash, but do not know yet which ver to use
 
 	// The path prefix will always be the same, no matter what ver is
-	char *prefix;
 	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->hash);
-	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->hash, prefix, len);
+	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->hash, &prefix[0]);
 
 	// Try all possible ver up to MAX_VER
 	while (metadata->ver < MAX_VER) {
 		// Get the length of current ver
-		sprintf(ver_len, "%u", metadata->ver);
+		sprintf(&ver_len[0], "%u", metadata->ver);
 
 		// Calculate length of the path and compose it
-		len = strlen(prefix) + 1 + strlen(ver_len) + 1;
-		char *path = malloc(len);
-		sprintf(path, "%s.%u", prefix, metadata->ver);
+		sprintf(&path[0], "%s.%u", &prefix[0], metadata->ver);
 
 		// Stat the path: if not exists, break; else, repeat with ver++
 		struct stat statbuf;
-		if ((stat(path, &statbuf)) < 0) {
+		if ((stat(&path[0], &statbuf)) < 0) {
 			if (errno == ENOENT)
 				break;
 			else
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s stat returned error for path %s: %s", metadata->hash, path, strerror(errno));
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s stat returned error for path %s: %s", metadata->hash, &path[0], strerror(errno));
 		}
 
 		metadata->ver ++;
-
-		// Cleanup
-		free(path);
 	}
 
+	errno = 0;
+
 	// If version too big, bail out
-	if (ver == MAX_VER) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s too many versions found on disk: %l", metadata->hash, ver);
+	if (metadata->ver == MAX_VER) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s too many versions found on disk: %l", metadata->hash, metadata->ver);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	// Save path
-	if ((metadata->path = ngx_pcalloc(r->pool, strlen(path) + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", strlen(path) +1);
+	if ((metadata->path = ngx_pcalloc(r->pool, strlen(&path[0]) + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", strlen(&path[0]) +1);
 		return NGX_ERROR;
 	}
-	strcpy(metadata->path, path);
-	free(path);
+	strcpy(metadata->path, &path[0]);
 
 	// Save file
-	sprintf(ver_len, "%u", metadata->ver);
-	len = strlen(metadata->hash) + 1 + strlen(ver_len));
-	if ((metadata->file = ngx_pcalloc(r->pool, len + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", len +1);
+	sprintf(&ver_len[0], "%u", metadata->ver);
+	if ((metadata->file = ngx_pcalloc(r->pool, strlen(metadata->hash) + 1 + strlen(&ver_len[0]) + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", strlen(metadata->hash) + 1 + strlen(&ver_len[0]) + 1);
 		return NGX_ERROR;
 	}
 	sprintf(metadata->file, "%s.%u", metadata->hash, metadata->ver);

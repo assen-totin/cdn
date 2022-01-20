@@ -12,7 +12,7 @@ ngx_int_t set_metadata_field (ngx_http_request_t *r, char **field, char *field_n
 ngx_int_t get_all_headers(session_t *session, ngx_http_request_t *r);
 ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r);
 ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r);
-ngx_int_t get_path0(char *fs_root, int fs_depth, char *filename, char *result, int len);
+void get_path0(char *fs_root, int fs_depth, char *filename, char *result);
 ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 int64_t get_trimmed_int(char *in);

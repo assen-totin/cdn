@@ -59,8 +59,7 @@ ngx_int_t index_open(session_t* session) {
 		// Compose new index name and path
 		snprintf(&filename[0], 256, "%s%02u%02u%02u%02u", index->prefix, index->year + 1900, index->month + 1, index->day, index->hour);
 		memset(&path[0], '\0', 256);
-		if ((ret = get_path0(fs->root, fs->depth, &filename[0], &path[0], 256)) > 0)
-			return ret;
+		get_path0(fs->root, fs->depth, &filename[0], &path[0]);
 
 		// Open new index file
 		if ((index->fd = open(&path[0], O_RDWR|O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP)) == -1)

@@ -466,19 +466,34 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	if ((ret = get_uri(session, metadata, r)) > 0)
 		return ret;
 
+	// Get path
+	if ((ret = get_path(session, metadata, r)) > 0)
+		return ret;
+
 	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
 	if ((ret = get_stat(metadata, r)) > 0) {
-		// For 404, check if we there is a pack leader we could try
+		// For 404, check if we there is a pack leader and try to use it
 		if (ret == NGX_HTTP_NOT_FOUND) {
-			// FIXME
+			if ((p1 = strstr(metadata->file, "."))) {
+				if ((p2 = strstr(p1 + 1, "."))) {
+					l1 = strlen(metadata->file) - strlen(p2);
+					memcpy(metadata->file + l1, "\0", 1);
+
+					if ((ret = get_path(session, metadata, r)) > 0)
+						return ret;
+
+					if ((ret = get_stat(metadata, r)) > 0)
+						return ret;
+	            }
+				else
+					return NGX_HTTP_NOT_FOUND;
+		    }
+			else
+				return NGX_HTTP_NOT_FOUND;
 		}
 		else
 			return ret;
 	}
-
-	// Get path
-	if ((ret = get_path(session, metadata, r)) > 0)
-		return ret;
 
 	// Process header If-Modified-Since
 	if (r->headers_in.if_modified_since) {

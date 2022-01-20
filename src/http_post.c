@@ -154,7 +154,7 @@ static char *axwfu_get_field(ngx_http_request_t *r, upload_t *upload, char *from
 		return NULL;
 	}
 
-	strncpy(ret, from, len);
+	strcpy(ret, from);
 
 	return ret;
 }
@@ -509,13 +509,20 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	if (r->method & (NGX_HTTP_POST)) {
 		if (metadata->pack) {
 			// We have a pack leader specified, so use it to set metadata->file instead of computing a hash and append the metadata->ext
-			if ((metadata->file = ngx_pcalloc(r->pool, strlen(metadata->pack) + 1 + strlen(metadata->ext) + 1)) == NULL) {
-				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", strlen(metadata->pack) + 1 + strlen(metadata->ext) + 1);
-				return NGX_ERROR;
+			len = strlen(metadata->pack) + 1 + strlen(metadata->ext);
+			if ((metadata->file = ngx_pcalloc(r->pool, len + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", len + 1);
+				return upload_cleanup(r, upload, NGX_ERROR);
 			}
 			sprintf(metadata->file, "%s.%s", metadata->pack, metadata->ext);
 
-			get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file, metadata->path, len);
+			len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file);
+			if ((metadata->path = ngx_pcalloc(r->pool, len + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len + 1);
+				return upload_cleanup(r, upload, NGX_ERROR);
+			}
+
+			get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file, metadata->path);
 		}
 		else {
 			// Create hash salt: number of seconds for today with ms precision, mulitplied by server id =< 49
