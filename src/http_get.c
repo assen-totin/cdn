@@ -466,6 +466,16 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	if ((ret = get_uri(session, metadata, r)) > 0)
 		return ret;
 
+	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
+	if ((ret = get_stat(metadata, r)) > 0) {
+		// For 404, check if we there is a pack leader we could try
+		if (ret == NGX_HTTP_NOT_FOUND) {
+			// FIXME
+		}
+		else
+			return ret;
+	}
+
 	// Get path
 	if ((ret = get_path(session, metadata, r)) > 0)
 		return ret;

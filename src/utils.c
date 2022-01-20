@@ -851,10 +851,6 @@ ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *
 	}
 	strcpy(metadata->file, s2);
 
-	// Get stat for the file (will return 404 if file was not found, or 500 on any other error)
-	if ((ret = get_stat(metadata, r)) > 0)
-		return ret;
-
 	return NGX_OK;
 }
 

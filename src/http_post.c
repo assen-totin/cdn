@@ -210,6 +210,9 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		if ((ret = get_uri(session, metadata, r)) > 0)
 			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
+		if ((ret = get_stat(metadata, r)) > 0)
+			return upload_cleanup(r, upload, ret);
+
 		if ((ret = get_path(session, metadata, r)) > 0)
 			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
