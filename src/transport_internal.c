@@ -17,12 +17,12 @@ char *get_ext(metadata_t *metadata, ngx_http_request_t *r) {
 
 	p = strstr(metadata->file16, ".");
 
-	if ((ext = malloc(strlen(p))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Internal transport: failed to allocate %l bytes for ext.", strlen(p));
+	if ((ext = malloc(strlen(p) + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Internal transport: failed to allocate %l bytes for ext.", strlen(p) + 1);
 		return NULL;
 	}
 
-	memcpy(ext, p, strlen(p));
+	strcpy(ext, p);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with ext: %s", metadata->file16, ext);
 

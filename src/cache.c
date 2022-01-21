@@ -42,14 +42,13 @@ cache_t *cache_init() {
 	if ((cache = malloc(sizeof(cache_t))) == NULL)
 		return NULL;
 
-	if ((cache->list = malloc(CACHE_KEY_LEN)) == NULL)
-		return NULL;
-
-	cache->list_cnt = 1;
-	cache->mem_used = sizeof(cache_t) + CACHE_KEY_LEN + CACHE_BTREE_DEPTH * CACHE_BTREE_DEPTH;
-	cache->mem_max = 0;
+	cache->list = NULL;
+	cache->list_cnt = 0;
 
 	cache->btree_mask = init_btree_mask();
+
+	cache->mem_used = sizeof(cache_t) + CACHE_BTREE_DEPTH * CACHE_BTREE_DEPTH;
+	cache->mem_max = 0;
 
 	if ((cache->root = btree_new_node(cache)) == NULL)
 		return NULL;
@@ -187,11 +186,14 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 		else {
 			// Create or expand the list and append the last value
 			pos = cache->list_cnt;
-			cache->list_cnt ++;
-			if (pos)
-				cache->list = realloc(cache->list, (cache->list_cnt) * CACHE_KEY_LEN);
+
+			if (cache->list)
+				cache->list = realloc(cache->list, (cache->list_cnt + 1) * CACHE_KEY_LEN);
 			else
 				cache->list = malloc(CACHE_KEY_LEN);
+
+			cache->list_cnt ++;
+
 			cache->mem_used += CACHE_KEY_LEN;
 		}
 
@@ -217,6 +219,7 @@ void cache_remove (cache_t *cache, void *key) {
 
 	// Shift the index to remove the key from it
 	memmove(cache->list + i * CACHE_KEY_LEN, cache->list + (i+1) * CACHE_KEY_LEN, (cache->list_cnt - i - 1) * CACHE_KEY_LEN);
+	cache->mem_used -= CACHE_KEY_LEN;
 
 	// Evict the key from the btree
 	btree_evict(cache, key, cache->root, 0);
