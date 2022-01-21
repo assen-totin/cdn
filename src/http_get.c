@@ -22,7 +22,7 @@ static void cleanup(metadata_t *metadata, ngx_http_request_t *r) {
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
 	
 	if (metadata->data && (munmap(metadata->data, metadata->length) < 0))
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file, strerror(errno));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file16, strerror(errno));
 }
 
 /**
@@ -51,22 +51,22 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			// Check if we got back a response
 			if (session->auth_response_count) {
 				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->auth_resp : session->instance->matrix_del->auth_resp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value +resp setting status %l.", metadata->file, metadata->status);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value +resp setting status %l.", metadata->file16, metadata->status);
 			}
 			else {
 				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->auth_noresp : session->instance->matrix_del->auth_noresp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value -resp setting status %l.", metadata->file, metadata->status);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value -resp setting status %l.", metadata->file16, metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
 				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->noauth_resp : session->instance->matrix_del->noauth_resp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value +resp setting status %l.", metadata->file, metadata->status);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value +resp setting status %l.", metadata->file16, metadata->status);
 			}
 			else {
 				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->noauth_noresp : session->instance->matrix_del->noauth_noresp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value -resp setting status %l.", metadata->file, metadata->status);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value -resp setting status %l.", metadata->file16, metadata->status);
 			}
 		}
 	}
@@ -84,7 +84,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		strcpy(metadata->etag, DEFAULT_ETAG);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file, DEFAULT_ETAG);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file16, DEFAULT_ETAG);
 	}
 
 	// Check on ranges (headers Range and If-Range)
@@ -113,7 +113,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 	}
 
 	// Check if we have the file name to serve and return error if we don't have it
-	if (! metadata->file) {
+	if (! metadata->file16) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Filename not received, aborting request.");
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
@@ -125,7 +125,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		strcpy(metadata->filename, metadata->file);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file, metadata->file);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file16, metadata->file);
 	}
 
 	// Check if we have the content type and use the default one if missing
@@ -135,12 +135,12 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file, DEFAULT_CONTENT_TYPE);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file16, DEFAULT_CONTENT_TYPE);
 	}
 
 	// Check if we have the content disposition and use the default one if missing
 	if (! metadata->content_disposition)
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file);
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file16);
 
 	// Return 304 in certain cases
 	if (! session->hdr_ranges_cnt) {
@@ -165,16 +165,16 @@ ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *
 
 	// Read the file: use mmap to map the physical file to memory
 	if ((fd = open(metadata->path, O_RDONLY)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %s", metadata->file, metadata->path, strerror(errno));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %s", metadata->file16, metadata->path, strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	if (r->method & (NGX_HTTP_GET)) {
 		// Map the physical file to memory
 		if ((metadata->data = mmap(NULL, metadata->length, PROT_READ, MAP_SHARED, fd, 0)) < 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %s", metadata->file, metadata->path, strerror(errno));
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s mmap() error %s", metadata->file16, metadata->path, strerror(errno));
 			if (close(fd) < 0)
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file16, metadata->path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 
@@ -189,7 +189,7 @@ ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *
 	}
 
 	if (close(fd) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file16, metadata->path, strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -277,15 +277,15 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 			encoded = curl_easy_escape(session->curl, metadata->filename, strlen(metadata->filename));
 			if (encoded) {
 				curl_encoded = true;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using URI-encoded filename %s", metadata->file, encoded);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using URI-encoded filename %s", metadata->file16, encoded);
 			}
 			else {
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to URI-encode filename %s", metadata->file, metadata->filename);
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to URI-encode filename %s", metadata->file16, metadata->filename);
 				encoded = metadata->filename;
 			}
 		}
 		else 
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to init curl for URI-encoding", metadata->file);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to init curl for URI-encoding", metadata->file16);
 
 		// Add Content-Disposition header
 		// headers['Content-Disposition'] = 'attachment; filename="' + encodeURIComponent(this.file.filename) + '";'
@@ -474,19 +474,14 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	if ((ret = get_stat(metadata, r)) > 0) {
 		// For 404, check if we there is a pack leader and try to use it
 		if (ret == NGX_HTTP_NOT_FOUND) {
-			if ((p1 = strstr(metadata->file, "."))) {
-				if ((p2 = strstr(p1 + 1, "."))) {
-					l1 = strlen(metadata->file) - strlen(p2);
-					memcpy(metadata->file + l1, "\0", 1);
+			if (metadata->ext) {
+				memset(metadata->file16 + strlen(metadata->file16) - strlen(metadata->ext16) -1, '\0', 1);
 
-					if ((ret = get_path(session, metadata, r)) > 0)
-						return ret;
+				if ((ret = get_path(session, metadata, r)) > 0)
+					return ret;
 
-					if ((ret = get_stat(metadata, r)) > 0)
-						return ret;
-	            }
-				else
-					return NGX_HTTP_NOT_FOUND;
+				if ((ret = get_stat(metadata, r)) > 0)
+					return ret;
 		    }
 			else
 				return NGX_HTTP_NOT_FOUND;
@@ -732,14 +727,14 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	else if (r->method & (NGX_HTTP_DELETE)) {
 		// Delete the file
 		if (unlink(metadata->path) < 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s unlink() error %s", metadata->file, metadata->path, strerror(errno));
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s unlink() error %s", metadata->file16, metadata->path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 
 		// Write to index (protect by mutex) - but only log errors
 		pthread_mutex_lock(&session->instance->index->lock);
-		if ((ret = index_write(session, INDEX_ACTION_DELETE, metadata->file)) > 0)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file, strerror(ret));
+		if ((ret = index_write(session, INDEX_ACTION_DELETE, metadata->file16)) > 0)
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file16, strerror(ret));
 		pthread_mutex_unlock(&session->instance->index->lock);
 
 		// Delete metadata (only for some transport types)

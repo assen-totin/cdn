@@ -133,6 +133,7 @@
 #define CONTENT_DISPOSITION_ATTACHMENT "attachment"
 #define ERROR_MESSAGE_LENGTH 1024
 
+#define MAX_EXT_SIZE 16
 #define MAX_SERVER_ID 48
 #define MAX_VER 9999
 
@@ -214,8 +215,10 @@ typedef struct {
 typedef struct {
 	char *hash;
 	char *ext;
+	char *ext16;
 	char *pack;
 	char *file;
+	char *file16;
 	char *filename;
 	char *path;
 	char *content_type;

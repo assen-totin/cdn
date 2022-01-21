@@ -64,6 +64,23 @@ char *from_ngx_str_malloc(ngx_pool_t *pool, ngx_str_t ngx_str) {
 	return ret;
 }
 
+/**
+ * Encode a string to base16 string
+ */
+void base16_encode(char *in, char *out) {
+	size_t  i;
+
+	if (in == NULL || strlen(in) == 0) {
+		out[0] = '\0';
+		return;
+	}
+
+	for (i=0; i < strlen(in); i++) {
+		out[i * 2]   = "0123456789abcdef"[in[i] >> 4];
+		out[i * 2 + 1] = "0123456789abcdef"[in[i] & 0x0F];
+	}
+	out[strlen(in) * 2] = '\0';
+}
 
 /**
  * Get stat of a file
@@ -74,7 +91,7 @@ ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r) {
 
 	// Open file
 	if ((fd = open(metadata->path, O_RDONLY)) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %s", metadata->file, metadata->path, strerror(errno));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s open() error %s", metadata->file16, metadata->path, strerror(errno));
 		if (errno == ENOENT)
 			return NGX_HTTP_NOT_FOUND;
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -85,7 +102,7 @@ ngx_int_t get_stat(metadata_t *metadata, ngx_http_request_t *r) {
 	metadata->upload_timestamp = statbuf.st_mtime;
 
 	if (close(fd) < 0) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file, metadata->path, strerror(errno));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s using path %s close() error %s", metadata->file16, metadata->path, strerror(errno));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
@@ -122,15 +139,15 @@ void get_path0(char *fs_root, int fs_depth, char *filename, char *result) {
 ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int len;
 
-	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file);
+	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file16);
 	if ((metadata->path = ngx_pcalloc(r->pool, len+1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
 		return NGX_ERROR;
 	}
 
-	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file, metadata->path);
+	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file16, metadata->path);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, metadata->path);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file16, metadata->path);
 
 	return NGX_OK;
 }
@@ -144,7 +161,6 @@ ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t
 	// We have the file hash, but do not know yet which ver to use
 
 	// The path prefix will always be the same, no matter what ver is
-	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->hash);
 	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->hash, &prefix[0]);
 
 	// Try all possible ver up to MAX_VER
@@ -184,13 +200,13 @@ ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 	// Save file
 	sprintf(&ver_len[0], "%u", metadata->ver);
-	if ((metadata->file = ngx_pcalloc(r->pool, strlen(metadata->hash) + 1 + strlen(&ver_len[0]) + 1)) == NULL) {
+	if ((metadata->file16 = ngx_pcalloc(r->pool, strlen(metadata->hash) + 1 + strlen(&ver_len[0]) + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", strlen(metadata->hash) + 1 + strlen(&ver_len[0]) + 1);
 		return NGX_ERROR;
 	}
-	sprintf(metadata->file, "%s.%u", metadata->hash, metadata->ver);
+	sprintf(metadata->file16, "%s.%u", metadata->hash, metadata->ver);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file, metadata->path);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file16, metadata->path);
 
 	return NGX_OK;
 }
@@ -725,7 +741,10 @@ metadata_t *init_metadata(ngx_http_request_t *r) {
 	metadata->hash = NULL;
 	metadata->ver = 0;
 	metadata->ext = NULL;
+	metadata->ext16 = NULL;
 	metadata->pack = NULL;
+	metadata->file = NULL;
+	metadata->file16 = NULL;
 	metadata->filename = NULL;
 	metadata->path = NULL;
 	metadata->content_type = NULL;
@@ -812,8 +831,8 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
  * Extract URI
  */
 ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
-	char *uri, *s0, *s1, *s2, *saveptr1;
-	ngx_int_t ret;
+	char *uri, *s0, *s1, *s2, *saveptr1, *p1, *p2;
+	int len;
 
 	// URI
 	uri = from_ngx_str(r->pool, r->uri);
@@ -831,12 +850,47 @@ ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *
 	while ((s1 = strtok_r(NULL, "/", &saveptr1)))
 		s2 = s1;
 
-	metadata->file = ngx_pnalloc(r->pool, strlen(s2) + 1);
-	if (metadata->file == NULL) {
+	if ((metadata->file = ngx_pcalloc(r->pool, strlen(s2) + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for URI pasring.", strlen(s2) + 1);
 		return NGX_ERROR;
 	}
 	strcpy(metadata->file, s2);
+
+	// If the file ID has an extension, get it and set properly the file16 field
+	if ((p1 = strstr(metadata->file, "."))) {
+		if ((p2 = strstr(p1 + 1, "."))) {
+			len = strlen(p2) - 1;
+
+			// Get ext
+			if ((metadata->ext = ngx_pcalloc(r->pool, len + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for ext.", len + 1);
+				return NGX_ERROR;
+			}
+			strcpy(metadata->ext, p2 + 1);
+
+			// Convert to ext16
+			if ((metadata->ext16 = ngx_pcalloc(r->pool, 2 * len + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for ext16.", len + 1);
+				return NGX_ERROR;
+			}
+			base16_encode(metadata->ext, metadata->ext16);
+
+			// Create file16
+			len = strlen(metadata->file) - strlen(p2 + 1) + strlen(metadata->ext16);
+			if ((metadata->file16 = ngx_pcalloc(r->pool, len + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file16.", len + 1);
+				return NGX_ERROR;
+			}
+			memset(metadata->file16 + len, '\0', 1);
+			len = strlen(metadata->file) - strlen(p2 + 1);
+			memcpy(metadata->file16, metadata->file, len);
+			memcpy(metadata->file16 + len, metadata->ext16, strlen(metadata->ext16));
+		}
+		else
+			metadata->file16 = metadata->file;
+	}
+	else
+		metadata->file16 = metadata->file;
 
 	return NGX_OK;
 }
@@ -907,5 +961,4 @@ char *trim_quotes(ngx_http_request_t *r, char *s) {
 
 	return ret;
 }
-
 

@@ -13,7 +13,6 @@
 #include "transport.h"
 #include "utils.h"
 
-
 /**
  * POST cleanup
  */
@@ -493,36 +492,58 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}	
 	}
 
-	// Check: if we have a pack, we must have an extension!
-	if ((metadata->pack) && (! metadata->ext)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Pack %s provided, but extenstion missing.", metadata->pack);
-		return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
-	}
+	// Checks for extensions and pack leader
+	if (metadata->ext) {
+		// Allowed size
+		if (strlen(metadata->ext) > MAX_EXT_SIZE) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Extension size %l exceeds allowed size %l.", strlen(metadata->ext), MAX_EXT_SIZE);
+			return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
+		}
 
-	// Check: if we have an ext, but not a pack, log a message and ignore it
-	if ((! metadata->pack) && (metadata->ext)) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Extension %s provided, but pack missing - ignoring.", metadata->ext);
-		return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
+		// Pack must also be present; if it is, convert extension to base16
+		if (! metadata->pack)
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Extension %s provided, but pack missing - ignoring.", metadata->ext);
+		else {
+			if ((metadata->ext16 = ngx_pcalloc(r->pool, 2 * strlen(metadata->ext) + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for base16.", strlen(metadata->ext) + 1);
+				return upload_cleanup(r, upload, NGX_ERROR);
+			}
+			base16_encode(metadata->ext, metadata->ext16);
+		}
+	}
+	else {
+		// A pack without an extension s not allowed
+		if (metadata->pack) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Pack %s provided, but extenstion missing.", metadata->pack);
+			return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
+		}
 	}
 
 	// For POST only: prepare file hash if we don't have a pack leader
 	if (r->method & (NGX_HTTP_POST)) {
 		if (metadata->pack) {
-			// We have a pack leader specified, so use it to set metadata->file instead of computing a hash and append the metadata->ext
+			// We have a pack leader specified, so use it to set file and file16 instead of computing a hash and appending the extenstion
 			len = strlen(metadata->pack) + 1 + strlen(metadata->ext);
 			if ((metadata->file = ngx_pcalloc(r->pool, len + 1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", len + 1);
 				return upload_cleanup(r, upload, NGX_ERROR);
 			}
-			sprintf(metadata->file, "%s.%s", metadata->pack, metadata->ext);
+			sprintf(metadata->file, "%s.%s", metadata->pack, metadata->ext16);
 
-			len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file);
+			len = strlen(metadata->pack) + 1 + strlen(metadata->ext16);
+			if ((metadata->file16 = ngx_pcalloc(r->pool, len + 1)) == NULL) {
+				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", len + 1);
+				return upload_cleanup(r, upload, NGX_ERROR);
+			}
+			sprintf(metadata->file16, "%s.%s", metadata->pack, metadata->ext16);
+
+			len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file16);
 			if ((metadata->path = ngx_pcalloc(r->pool, len + 1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len + 1);
 				return upload_cleanup(r, upload, NGX_ERROR);
 			}
 
-			get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file, metadata->path);
+			get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file16, metadata->path);
 		}
 		else {
 			// Create hash salt: number of seconds for today with ms precision, mulitplied by server id =< 49
@@ -542,9 +563,12 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			}
 			sprintf(metadata->hash, "%016lx%016lx", hash[0], hash[1]);
 
-			// Create metadata->file and metadata->path from metadata->hash and metadata->ver
+			// Create metadata->file16 and metadata->path from metadata->hash and metadata->ver
 			if (get_path2(session, metadata, r) > 0)
 				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+
+			// For a file without extention, file and file16 are the same
+			metadata->file = metadata->file16;
 		}
 	}
 
@@ -596,7 +620,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 
 	// Metadata: set etag to the file ID
-	metadata->etag = metadata->file;
+	metadata->etag = metadata->file16;
 
 	// Prepare metadata request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
@@ -743,12 +767,12 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	// Write to index (protect by mutex) - but only log errors
 	pthread_mutex_lock(&session->instance->index->lock);
 	if (r->method & (NGX_HTTP_POST))
-		ret = index_write(session, INDEX_ACTION_INSERT, metadata->file);
+		ret = index_write(session, INDEX_ACTION_INSERT, metadata->file16);
 	else if (r->method & (NGX_HTTP_PUT))
-		ret = index_write(session, INDEX_ACTION_UPDATE, metadata->file);
+		ret = index_write(session, INDEX_ACTION_UPDATE, metadata->file16);
 	pthread_mutex_unlock(&session->instance->index->lock);
 	if (ret)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file, strerror(ret));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file16, strerror(ret));
 
 	// Prepare output chain
 	out = ngx_alloc_chain_link(r->pool);
