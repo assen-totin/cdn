@@ -8,10 +8,31 @@
 #include "utils.h"
 #include "cache.h"
 
+
+/**
+ * Helper: get ext from metadata
+ */
+char *get_ext(metadata_t *metadata, ngx_http_request_t *r) {
+	char *ext, *p;
+
+	p = strstr(metadata->file16, ".");
+
+	if ((ext = malloc(strlen(p))) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Internal transport: failed to allocate %l bytes for ext.", strlen(p));
+		return NULL;
+	}
+
+	memcpy(ext, p, strlen(p));
+
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with ext: %s", metadata->file16, ext);
+
+	return ext;
+}
+
 /**
  * Helper: get key from metadata
  */
-char *get_key(metadata_t *metadata, ngx_http_request_t *r, char *path) {
+char *get_key(metadata_t *metadata, ngx_http_request_t *r) {
 	char *tmp, *key;
 	uint64_t h1, h2;
 
@@ -28,15 +49,14 @@ char *get_key(metadata_t *metadata, ngx_http_request_t *r, char *path) {
 	h2 = strtoul(tmp, NULL, 16);
 	free(tmp);
 
-	key = malloc(16);
-	if (! key) {
+	if ((key = malloc(CACHE_KEY_LEN)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Internal transport: failed to allocate %l bytes for key.", 16);
 		return NULL;
 	}
 
 	memcpy(key, &h1, 8);
 	memcpy(key + 8, &h2, 8);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with key: %016xL%016xL", path, *((uint64_t*)key), *((uint64_t*)(key+8)));
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with key: %016xL%016xL", metadata->file16, *((uint64_t*)key), *((uint64_t*)(key+8)));
 
 	return key;
 }
@@ -45,7 +65,7 @@ char *get_key(metadata_t *metadata, ngx_http_request_t *r, char *path) {
  * File metadata from internal
  */
 ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode) {
-	char *path, *key;
+	char *path, *key = NULL, *ext = NULL;
 	int file_fd, error;
 	struct stat statbuf;
 	btree_t *node = NULL;
@@ -77,7 +97,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		// Purge the record from the cache if found there
 		if ((mode == METADATA_UPDATE) && (session->instance->cache)) {
 			// Get the key
-			if ((key = get_key(metadata, r, path)) == NULL)
+			if ((key = get_key(metadata, r)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
 			pthread_mutex_lock(&session->instance->cache->lock);
@@ -87,6 +107,10 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	}
 
 	else if (mode == METADATA_DELETE) {
+		pthread_mutex_lock(&session->instance->cache->lock);
+		cache_remove (session->instance->cache, key);
+		pthread_mutex_unlock(&session->instance->cache->lock);
+
 		// Delete metadata file
 		if (unlink(path) < 0) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Metadata file %s unlink() error %s", path, strerror(errno));
@@ -97,12 +121,15 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	else {
 		// Read metadata - first check memory cache if it is enabled for current session
 		if (session->instance->cache) {
-			if ((key = get_key(metadata, r, path)) == NULL)
+			if ((key = get_key(metadata, r)) == NULL)
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+
+			if ((ext = get_ext(metadata, r)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
 			// Seek the key (mutex-protected operation)
-			// If key was found, res->left will have the value (NULL-terminated string); cast it to char*
-			// If key was not found, it was added; store the value by passing the same res and the value (NULL-terminated char*) to cache_put()
+			// If key was found, node->left will have the payload
+			// If key was not found, it was added; store the value by passing the same node, key, ext and the value (NULL-terminated char*) to cache_put()
 			pthread_mutex_lock(&session->instance->cache->lock);
 			node = cache_seek(session->instance->cache, key, &error);
 			pthread_mutex_unlock(&session->instance->cache->lock);
@@ -115,9 +142,10 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			}
 
 			if (node->left) {
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: found key in cache", path);
-				session->auth_response = (char *)node->left;
-				return NGX_OK;
+				if ((session->auth_response = cache_get(session->instance->cache, node, ext)) != NULL) {
+					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: found key in cache", path);
+					return NGX_OK;
+				}
 			}
 		}
 		
@@ -148,7 +176,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		// Save the data to the cache if it is enabled
 		if (session->instance->cache) {
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: saving metadata in cache", path);
-			cache_put(session->instance->cache, node, strdup(session->auth_response));
+			cache_put(session->instance->cache, node, ext, strdup(session->auth_response));
 		}
 
 		close(file_fd);

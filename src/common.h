@@ -284,6 +284,18 @@ typedef struct {
 	pthread_mutex_t lock;
 } cache_t;
 
+// Cache payload element structure
+typedef struct {
+	char *ext;
+	char *data;
+} cache_payload_el_t ;
+
+// Cache payload structure
+typedef struct {
+	int count;
+	cache_payload_el_t *elements;
+} cache_payload_t;
+
 // Index structure
 typedef struct {
 	int fd;

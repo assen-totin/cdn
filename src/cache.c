@@ -60,6 +60,23 @@ cache_t *cache_init() {
 	return cache;
 }
 
+// Drop a payload
+static int cache_payload_free(cache_payload_t *payload) {
+	int i;
+	int bytes = payload->count * sizeof(cache_payload_el_t) + sizeof(cache_payload_t);
+
+	for (i=0; i < payload->count; i++) {
+		bytes += strlen(payload->elements[i].ext);
+		free(payload->elements[i].ext);
+
+		bytes += strlen(payload->elements[i].data);
+		free(payload->elements[i].data);
+	}
+	free(payload);
+
+	return bytes;
+}
+
 // Check if a key btree_matches the mask
 static int btree_match(cache_t *cache, void *key, int level) {
 	if (level >= CACHE_BTREE_DEPTH/2) {
@@ -80,13 +97,14 @@ static int btree_match(cache_t *cache, void *key, int level) {
 // NB: This function is invoked recursively!
 static void btree_evict(cache_t *cache, void *key, btree_t *node, int level) {
 	btree_t *next;
+	int bytes;
 
 	// At last level, free payload
 	if (level == CACHE_BTREE_DEPTH) {
 		if (node->left) {
-			cache->mem_used -= strlen((char *)node->left);
-			free(node->left);
+			bytes = cache_payload_free((cache_payload_t *)node->left);
 			node->left = NULL;
+			cache->mem_used -= bytes;
 		}
 		return;
 	}
@@ -115,6 +133,7 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 	uint64_t pos;
 	btree_t *node = cache->root;
 	char *old_key;
+	cache_payload_t *payload;
 
 	*error = 0;
 
@@ -142,6 +161,13 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 	// Check the LEFT leaf of the last level;
 	// It will be either NULL (if key was not found and just created), or pointer to the cached value
 	if (! node->left) {
+		// Create the payload
+		node->left = malloc(sizeof(cache_payload_t));
+		cache->mem_used += sizeof(cache_payload_t);
+		payload = (cache_payload_t *) node->left;
+		payload->count = 0;
+		payload->elements = NULL;
+
 		// If the key was not found, add it to the list - but we may need to evict an older key if over memory
 		if (cache->mem_used > cache->mem_max) {
 			// Slot number for the new key
@@ -196,9 +222,42 @@ void cache_remove (cache_t *cache, void *key) {
 	btree_evict(cache, key, cache->root, 0);
 }
 
+// Get a value from node that was returned by cache_seek()
+char *cache_get (cache_t *cache, btree_t *node, char *ext) {
+	cache_payload_t *payload;
+	int i;
+
+	if (! node->left)
+		return NULL;
+
+	payload = (cache_payload_t *) node->left;
+
+	for (i=0; i < payload->count; i++) {
+		if (! strcmp(payload->elements[i].ext, ext))
+			return payload->elements[i].data;
+	}
+
+	return NULL;
+}
+
 // Save a value at the top of the tree
-void cache_put (cache_t *cache, btree_t *node, char *value) {
-	node->left = (void *)value;
+void cache_put (cache_t *cache, btree_t *node, char *ext, char *value) {
+	cache_payload_t *payload = (cache_payload_t *) node->left;
+
+	if (payload->count) {
+		payload->elements = realloc(payload->elements, (payload->count + 1) * sizeof(cache_payload_el_t));
+	}
+	else {
+		payload->elements = malloc(sizeof(cache_payload_el_t));
+	}
+
+	payload->elements[payload->count].ext = ext;
+	payload->elements[payload->count].data = value;
+
+	payload->count ++;
+
+	cache->mem_used += sizeof(cache_payload_el_t);
+	cache->mem_used += strlen(ext);
 	cache->mem_used += strlen(value);
 }
 
@@ -207,7 +266,7 @@ void cache_put (cache_t *cache, btree_t *node, char *value) {
 static void btree_purge(btree_t *node, int level) {
 	// At last level, free payload
 	if (level == CACHE_BTREE_DEPTH) {
-		free(node->left);
+		cache_payload_free((cache_payload_t *) node->left);
 		return;
 	}
 
