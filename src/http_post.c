@@ -501,8 +501,9 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 
 		// Pack must also be present; if it is, convert extension to base16
-		if (! metadata->pack)
+		if (! metadata->pack) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Extension %s provided, but pack missing - ignoring.", metadata->ext);
+		}
 		else {
 			if ((metadata->ext16 = ngx_pcalloc(r->pool, 2 * strlen(metadata->ext) + 1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for base16.", strlen(metadata->ext) + 1);
@@ -528,7 +529,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file.", len + 1);
 				return upload_cleanup(r, upload, NGX_ERROR);
 			}
-			sprintf(metadata->file, "%s.%s", metadata->pack, metadata->ext16);
+			sprintf(metadata->file, "%s.%s", metadata->pack, metadata->ext);
 
 			len = strlen(metadata->pack) + 1 + strlen(metadata->ext16);
 			if ((metadata->file16 = ngx_pcalloc(r->pool, len + 1)) == NULL) {
@@ -728,7 +729,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, upload, metadata->status);
 	}
 
-	// NB: We are going to serve the request if beyound this line
+	// NB: We are going to serve the request beyound this line
 
 	// Clean up CURL if it got used
 	if (upload->curl)

@@ -14,7 +14,7 @@ The business logic for authorisation consists of three main elements:
 
 # Initialise
 
-To create a blank filesystem storage, use `tools/mkcdn.sh`.
+To create a blank filesystem storage, use `bin/mkcdn.sh`.
 
 # Nginx configuration
 
@@ -541,11 +541,31 @@ The following form field names are recognised:
 - `n`: original filename; mandatory for `application/x-www-form-urlencoded`; for `multipart/form-data` overrides the value, provided in the file part of the form itself.
 - `ct`: content type of the file; mandatory for `application/x-www-form-urlencoded`; for `multipart/form-data` overrides the value, provided in the file part of the form itself.
 - `cd`: content disposition to use for this file. If set to `attachment`, the file will be served as attachment; for any other value (or if missing) the file will be served inline.
+- `pl`: the file ID of the pack leader, which must exist in the CDN. Only when using file packs (see below).
+- `ext`: the extension to file ID of the pack leader for this specific file. Only when using file packs (see below). Limited to 16 bytes, alpha-numeric only.
 
 The metadata can be created in two ways:
 
 - For SQL or MongoDB, you need to provide `auth_value` to be set in the database table or collection, e.g. via JWT.
 - For JSON or XML, a request will be send using the chosen transport (Unix, TCP, HTTP) with the file metadata (as in the response when asking to download or delete a file); the response will be ignored.
+
+## Concurrent versions
+
+Although the CDN uses large hashing depth (128 bit) and an algorithm with sigh sensitivity and dispersion, as with every hashing method conflicts are inevitable. To adapt, the CDN will append a dot and a counter value to the hash when creating the file ID. This way, different files with the same may still co-exist on the CDN.
+
+## File packs
+
+Normally, every uploaded file will get its own ID, computed by the CDN. Sometimes it may be necessary to use an existing ID instead, followed by an extension. An example would be storing multiple copies of the same image, but with different resolution; in this case, the base file ID (called here "pack leader") will be provided to the client application and, based on its needs, it will request this file ID, amended by a resolution-specific extension.
+
+To upload the pack leader, just do a regular upload and save the provided ID.
+
+To upload any subsequent file to the pack, add the `pl` and the `ext` parameters to the upload; the first must be the file ID of the pack leader, the second the custom extension for this specific file. The CDN will return the file ID of the newly uploaded file, which will be the ID of the pack leader, followed by a dot and the provided extension. 
+
+To retrieve a file from the pack, just use its full ID as returned by the CDN.
+
+When getting a file, if the file ID contains an extension, but the file is not found, the CDN will attempt to serve the pack leader instead.
+
+Note that the extensions will be converted to base16 before being written to the filesystem; this is to protect from directory traversal attempts. The file ID of a pack member will contain the extension in its original form.
 
 ## Manual uploads
 
@@ -556,7 +576,8 @@ Here is the workflow to upload yourself a file to the CDN:
 - Use a lightweight hashing algorithm. 
 - We recommend strongly 128-bit murmur3: very fast, very sensitive, very good distribution, open source.
 - Ensure input is unique: use the file name, the current timestamp (with at least ms precision), the ID (or session ID) of the user and an ID of the app instance (e.g., IP address).
-- Convert the ID to lowercase hex string.
+- Convert the ID to lowercase hex string. Append a dot and a counter value (start at zero, increment by one for each existing file with the same hash).
+- If uploading packs, select an extension and convert it to base16. Append to the file ID after a dot.
 - Do not use random data: low entropy on virtualised systems will slow you down.
 
 ### Write the file ID and its metadata
@@ -708,8 +729,11 @@ systemctl restart nginx
 mkdir /opt/cdn
 mkcdn.sh --root /opt/cdn --depth 4 --user nginx --group nginx
 
-# Upload a file from command-line
+# Upload a file (or a pack leader) from command-line
 curl -X POST -F n=test.jpg -F ct='image/jpeg' -F d=@test.jpg  http://cdn.example.com
+
+# Upload a pack member from command-line
+curl -X POST -F n=test-800x600.jpg -F ct='image/jpeg' -F pl=0123456789abcdef.0 -F ext=800x600 -F d=@test-800x600.jpg  http://cdn.example.com
 
 # Get an uploaded file
 curl -o test-dnld.jpg http://cdn.example.com/438fcf2c4d4eec4d92acc96dcaaa7940

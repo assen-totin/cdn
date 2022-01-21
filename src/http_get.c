@@ -475,7 +475,10 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		// For 404, check if we there is a pack leader and try to use it
 		if (ret == NGX_HTTP_NOT_FOUND) {
 			if (metadata->ext) {
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s not found, but extensions exists: %s", metadata->file16, metadata->ext16);
 				memset(metadata->file16 + strlen(metadata->file16) - strlen(metadata->ext16) -1, '\0', 1);
+				memset(metadata->file + strlen(metadata->file) - strlen(metadata->ext) -1, '\0', 1);
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Trying instead leader %s (for %s)", metadata->file16, metadata->file);
 
 				if ((ret = get_path(session, metadata, r)) > 0)
 					return ret;
