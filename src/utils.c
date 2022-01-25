@@ -56,7 +56,7 @@ char *from_ngx_str_malloc(ngx_pool_t *pool, ngx_str_t ngx_str) {
 	if (! ngx_str.len)
 		return NULL;
 
-	if ((ret = malloc(ngx_str.len + 1, 1)) == NULL) {
+	if ((ret = malloc(ngx_str.len + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
 		return NULL;
 	}
