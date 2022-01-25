@@ -41,6 +41,7 @@ char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 		return NULL;
 	}
 
+	bzero(ret, ngx_str.len + 1);
 	memcpy(ret, ngx_str.data, ngx_str.len);
 	return ret;
 }
@@ -55,11 +56,12 @@ char *from_ngx_str_malloc(ngx_pool_t *pool, ngx_str_t ngx_str) {
 	if (! ngx_str.len)
 		return NULL;
 
-	if ((ret = calloc(ngx_str.len + 1, 1)) == NULL) {
+	if ((ret = malloc(ngx_str.len + 1, 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
 		return NULL;
 	}
 
+	bzero(ret, ngx_str.len + 1);
 	memcpy(ret, ngx_str.data, ngx_str.len);
 	return ret;
 }
@@ -130,6 +132,8 @@ void get_path0(char *fs_root, int fs_depth, char *filename, char *result) {
 	}
 
 	memcpy(result + pos, filename, strlen(filename));
+	pos += strlen(filename);
+	memset(result + pos, '\0', 1);
 }
 
 
@@ -252,8 +256,7 @@ static inline ngx_int_t store_header(session_t *session, ngx_http_request_t *r, 
 	//TODO: Maybe allocate bigger blocks to avoid doing a realloc on each new header?
 
 	// Always allocate memory
-	headers = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * (session->headers_count + 1));
-	if (headers == NULL) {
+	if ((headers = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * (session->headers_count + 1))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l headers KVP.", sizeof(cdn_kvp_t) * (session->headers_count + 1), session->headers_count + 1);
 		return NGX_ERROR;
 	}
@@ -882,7 +885,8 @@ ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for file16.", len + 1);
 				return NGX_ERROR;
 			}
-			memset(metadata->file16 + len, '\0', 1);
+			bzero(metadata->file16, len);
+
 			len = strlen(metadata->file) - strlen(p2 + 1);
 			memcpy(metadata->file16, metadata->file, len);
 			memcpy(metadata->file16 + len, metadata->ext16, strlen(metadata->ext16));

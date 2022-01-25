@@ -87,7 +87,8 @@ ngx_int_t transport_socket(session_t *session, ngx_http_request_t *r, int socket
 
 		// Blocking read till we get a response
 		if ((bytes_in = read(sock, &msg_in[0], sizeof(msg_in)-1)) == -1) {
-			free(session->auth_response);
+			if (session->auth_response)
+				free(session->auth_response);
 
 			if (socket_type == SOCKET_TYPE_UNUX) {
 				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to read from Unix socket %s: %s", session->unix_socket, strerror(errno));
@@ -107,7 +108,7 @@ ngx_int_t transport_socket(session_t *session, ngx_http_request_t *r, int socket
 						ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_response.", SOCKET_BUFFER_CHUNK);
 						return NGX_HTTP_INTERNAL_SERVER_ERROR;
 					}
-					memset(session->auth_response, '\0', SOCKET_BUFFER_CHUNK);
+					bzero(session->auth_response, SOCKET_BUFFER_CHUNK);
 					auth_response_len = SOCKET_BUFFER_CHUNK;
 				}
 

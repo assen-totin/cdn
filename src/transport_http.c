@@ -37,7 +37,7 @@ static uint http_cb(char *msg_in, uint size, uint bytes_in, session_t *session) 
 
 	memcpy(session->auth_response + session->auth_response_pos, msg_in, bytes_in);
 	session->auth_response_pos += bytes_in;
-	session->auth_response[session->auth_response_pos + 1] = '\0';
+	session->auth_response[session->auth_response_pos] = '\0';
 
 	return bytes_in;
 }
