@@ -543,7 +543,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len + 1);
 				return upload_cleanup(r, upload, NGX_ERROR);
 			}
-
+			bzero(metadata->path, len + 1);
 			get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file16, metadata->path);
 		}
 		else {

@@ -140,11 +140,11 @@ ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t 
 	int len;
 
 	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file16);
-	if ((metadata->path = ngx_pcalloc(r->pool, len+1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len);
+	if ((metadata->path = ngx_pcalloc(r->pool, len + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len + 1);
 		return NGX_ERROR;
 	}
-
+	bzero(metadata->path, len + 1);
 	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file16, metadata->path);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file16, metadata->path);
@@ -161,6 +161,7 @@ ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t
 	// We have the file hash, but do not know yet which ver to use
 
 	// The path prefix will always be the same, no matter what ver is
+	bzero(&prefix[0], 1536);
 	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->hash, &prefix[0]);
 
 	// Try all possible ver up to MAX_VER
