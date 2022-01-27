@@ -107,9 +107,14 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	}
 
 	else if (mode == METADATA_DELETE) {
-		pthread_mutex_lock(&session->instance->cache->lock);
-		cache_remove (session->instance->cache, key);
-		pthread_mutex_unlock(&session->instance->cache->lock);
+		if (session->instance->cache) {
+			if ((key = get_key(metadata, r)) == NULL)
+				return NGX_HTTP_INTERNAL_SERVER_ERROR;
+
+			pthread_mutex_lock(&session->instance->cache->lock);
+			cache_remove (session->instance->cache, key);
+			pthread_mutex_unlock(&session->instance->cache->lock);
+		}
 
 		// Delete metadata file
 		if (unlink(path) < 0) {

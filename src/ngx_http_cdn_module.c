@@ -142,8 +142,10 @@ void* ngx_http_cdn_create_loc_conf(ngx_conf_t* cf) {
 char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_child) {
 	ngx_http_cdn_loc_conf_t *parent = void_parent;
 	ngx_http_cdn_loc_conf_t *child = void_child;
+	int len;
 
 	ngx_conf_merge_str_value(child->server_id, parent->server_id, DEFAULT_SERVER_ID);
+	ngx_conf_merge_str_value(child->vhost_id, parent->vhost_id, DEFAULT_VHOST_ID);
 	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, DEFAULT_FS_ROOT);
 	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
 	ngx_conf_merge_str_value(child->index_prefix, parent->index_prefix, DEFAULT_INDEX_PREFIX);
@@ -176,8 +178,13 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->matrix_del, parent->matrix_del, DEFAULT_MATRIX_DEL);
 
 	// Calculate and save instance ID hash only if working on real location
+	// Use a custom vhost ID if defined, else compute something out of FS root
 	if (child->fs_root.len != strlen(DEFAULT_FS_ROOT)) {
-		murmur3_32((void *)child->fs_root.data, child->fs_root.len, 42, (void *) &child->instance_id);
+		len = (child->vhost_id.len < strlen(DEFAULT_VHOST_ID)) ? child->vhost_id.len : strlen(DEFAULT_VHOST_ID);
+		if (memcmp((void *)child->vhost_id.data, DEFAULT_VHOST_ID, len))
+			murmur3_32((void *)child->vhost_id.data, child->vhost_id.len, 42, (void *) &child->instance_id);
+		else
+			murmur3_32((void *)child->fs_root.data, child->fs_root.len, 42, (void *) &child->instance_id);
 		ngx_log_error(NGX_LOG_INFO, cf->log, 0, "Setting instance ID to %uD", child->instance_id);
 	}
 

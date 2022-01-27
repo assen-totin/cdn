@@ -26,6 +26,7 @@ All below Nginx parameters should be configured for the chosen `location`:
 - `cdn_fs_root /opt/cdn`: Root directory of the CDN filesystem (mandatory)
 - `cdn_fs_depth 4`: depth of the CDN tree (mandatory)
 - `cdn_server_id 1`: the ID of the server instance, integer between 1 and 48 (optional, default 1)
+- `cdn_vhost_id 2725a35b-fb7c-4aad-923d-cadf00fa292d`: the ID of the server instance, any string (optional, default "00000000")
 - `cdn_cors_origin host.example.com`: Allowed CORS origin (optional, default *)
 - `cdn_read_only no`: Read-only mode prohibits uploads and deletions; set to `yes` to enable (optional, default "no")
 
@@ -71,7 +72,11 @@ The CDN URL for a file will be similar to `http://cdn.example.com/some-file-id`
 
 ### Server ID
 
-Configuration parameter `cdn_server_id` denotes the ID of the server when multiple CND servers write to the same filesystem tree. It is used to guarantee the uniqueness of the uploaded file. Only used when uploading files via CDN. Default is 1.
+Configuration parameter `cdn_server_id` defines the ID of the server when multiple CDN servers write to the same filesystem tree. It is used to guarantee the uniqueness of the uploaded file. Only used when uploading files via CDN. Default is 1.
+
+### Vhost ID
+
+Configuration parameter `cdn_vhost_id` defines the ID of the virtual host when multiple CDN virtual hosts share the same filesystem tree (e.g., one virtual host is used for writing to the CDN and another to reading from it). It is used to guarantee the uniqueness of the configuration. Default is "00000000", but it will be ignored and instead of it, the filesystem tree path will be used.
 
 ### CORS
 

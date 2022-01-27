@@ -31,6 +31,14 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
+		ngx_string("cdn_vhost_id"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, vhost_id),
+		NULL
+	},
+	{
 		ngx_string("cdn_fs_root"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,

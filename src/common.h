@@ -111,6 +111,7 @@
 #define DEFAULT_TCP_PORT "12345"
 #define DEFAULT_TRANSPORT_TYPE "none"
 #define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
+#define DEFAULT_VHOST_ID "00000000"
 
 #define CACHE_BTREE_DEPTH 128
 #define CACHE_KEY_LEN 16
@@ -178,6 +179,7 @@ typedef struct {
 // Local config
 typedef struct {
 	ngx_str_t server_id;
+	ngx_str_t vhost_id;
 	uint32_t instance_id;
 	ngx_str_t fs_root;
 	ngx_str_t fs_depth;
