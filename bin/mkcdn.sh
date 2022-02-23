@@ -66,6 +66,9 @@ echo "Building CDN tree in $ARG_ROOT with depth of $ARG_DEPTH. Please, wait - th
 
 make_dirs 0
 
+# Prepare the log dir with the default prefix '______'
+mkdir -p _/_/_/_/_/_
+
 popd
 
 chown -R $ARG_USER:$ARG_GROUP $ARG_ROOT

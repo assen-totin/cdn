@@ -7,7 +7,7 @@ FS_ROOT="/opt/cdn"
 FS_DEPTH=4
 
 # The index prefix
-INDEX_PREFIX="aaaaaa"
+INDEX_PREFIX="______"
 
 # How many days to keep (index files are rotated hourly)
 KEEP=7

@@ -614,7 +614,7 @@ NB: The metadata for the file will be deleted when using internal authorisation,
 
 # Replication
 
-You can mirror the CDN in any way desired (e.g., rsync). As an alternative, to only transfer files that were changed and to avoid the need to compare both sides file by file, the CDN keeps a change log of all changes. The log file is written as plain text file inside the CDN and is rotated on the top of every hour. The file name is `<prefix>YYYYMMDDHH` where the date is always in UTC and the prefix can be set in the `index_prefix` configuration options (the default is `aaaaaa`). 
+You can mirror the CDN in any way desired (e.g., rsync). As an alternative, to only transfer files that were changed and to avoid the need to compare both sides file by file, the CDN keeps a change log of all changes. The log file is written as plain text file inside the CDN and is rotated on the top of every hour. The file name is `<prefix>YYYYMMDDHH` where the date is always in UTC and the prefix can be set in the `cdn_index_prefix` configuration options (the default is `______`). 
 
 The file is tab-delimited with two fields: single letter for the operation (I - file inserted, U - file updated, D - file deleted) and the ID of the file. 
 

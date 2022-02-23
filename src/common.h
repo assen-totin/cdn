@@ -90,7 +90,7 @@
 #define DEFAULT_FS_DEPTH "4"
 #define DEFAULT_FS_ROOT "/opt/cdn"
 #define DEFAULT_HTTP_URL "http://example.com"
-#define DEFAULT_INDEX_PREFIX "aaaaaa"
+#define DEFAULT_INDEX_PREFIX "______"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
 #define DEFAULT_MATRIX_ALLOW "allow"

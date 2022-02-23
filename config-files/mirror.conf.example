@@ -13,7 +13,7 @@ FS_DEPTH=4
 URL="https://cdn.example.com"
 
 # The index prefix
-INDEX_PREFIX="aaaaaa"
+INDEX_PREFIX="______"
 
 # Path to status file from last sync
 STATUS_FILE="/var/lib/cdn/${INSTANCE_NAME}"
