@@ -56,7 +56,7 @@ done
 
 [ x$ARG_DEPTH == 'x' ] && ARG_DEPTH=$DEFAULT_DEPTH
 [ x$ARG_ROOT == 'x' ] && ARG_ROOT=$DEFAULT_ROOT
-[ x$ARG_USER == 'x' ] && ARG_USER=$DEFAULT_ROOT
+[ x$ARG_USER == 'x' ] && ARG_USER=$DEFAULT_USER
 [ x$ARG_GROUP == 'x' ] && ARG_GROUP=$DEFAULT_GROUP
 
 mkdir -p $ARG_ROOT
@@ -66,8 +66,11 @@ echo "Building CDN tree in $ARG_ROOT with depth of $ARG_DEPTH. Please, wait - th
 
 make_dirs 0
 
-# Prepare the log dir with the default prefix '______'
-mkdir -p _/_/_/_/_/_
+# Prepare the log dir
+for INDEX in $(seq 1 $ARG_DEPTH) ; do
+        LOG_DIR="${LOG_DIR}/_"
+done
+mkdir -p ${ARG_ROOT}${LOG_DIR}
 
 popd
 
