@@ -283,7 +283,6 @@ typedef struct {
 	uint64_t mem_used;
 	uint64_t mem_max;
 	uint64_t *btree_mask;
-	pthread_mutex_t lock;
 } cache_t;
 
 // Cache payload element structure
@@ -306,7 +305,6 @@ typedef struct {
 	int month;
 	int day;
 	int hour;
-	pthread_mutex_t lock;
 } index_t;
 
 // Range header
@@ -406,7 +404,9 @@ typedef struct {
 typedef struct {
 	instance_t *instances;
 	int instances_cnt;
-	pthread_mutex_t lock;
+	pthread_mutex_t lock_instance;
+	pthread_mutex_t lock_index;
+	pthread_mutex_t lock_cache;
 } globals_t;
 
 //// ENUMERATORS

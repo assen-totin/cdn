@@ -53,9 +53,6 @@ cache_t *cache_init() {
 	if ((cache->root = btree_new_node(cache)) == NULL)
 		return NULL;
 
-	if (pthread_mutex_init(&cache->lock, NULL) != 0)
-		return NULL;
-
 	return cache;
 }
 
@@ -136,6 +133,8 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 
 	*error = 0;
 
+	pthread_mutex_lock(&globals->lock_cache);
+
 	for (i=0; i < CACHE_BTREE_DEPTH; i++) {
 		if (btree_match(cache, key, i)) {
 			// Bit is 1, we need to go right
@@ -152,6 +151,7 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 
 		// Ensure node allocation was successful
 		if (! node) {
+			pthread_mutex_lock(&globals->lock_cache);
 			*error = 1;
 			return NULL;
 		}
@@ -200,6 +200,8 @@ void *cache_seek (cache_t *cache, void *key, int *error) {
 		memcpy(cache->list + (pos * CACHE_KEY_LEN), key, CACHE_KEY_LEN);
 	}
 
+	pthread_mutex_unlock(&globals->lock_cache);
+
 	return node;
 }
 
@@ -218,11 +220,13 @@ void cache_remove (cache_t *cache, void *key) {
 		return;
 
 	// Shift the index to remove the key from it
+	pthread_mutex_lock(&globals->lock_cache);
 	memmove(cache->list + i * CACHE_KEY_LEN, cache->list + (i+1) * CACHE_KEY_LEN, (cache->list_cnt - i - 1) * CACHE_KEY_LEN);
 	cache->mem_used -= CACHE_KEY_LEN;
 
 	// Evict the key from the btree
 	btree_evict(cache, key, cache->root, 0);
+	pthread_mutex_unlock(&globals->lock_cache);
 }
 
 // Get a value from node that was returned by cache_seek()

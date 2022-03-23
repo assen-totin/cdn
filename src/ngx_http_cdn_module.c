@@ -51,16 +51,30 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for globals.", sizeof(globals_t));
 		return NGX_ERROR;
 	}
+
 	if ((globals->instances = malloc(sizeof(instance_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for first instance.", sizeof(instance_t));
 		return NGX_ERROR;
 	}
-	if (pthread_mutex_init(&globals->lock, NULL) != 0) {
-		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init globals mutex.");
+
+	if (pthread_mutex_init(&globals->lock_instance, NULL) != 0) {
+		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init globals mutex for instances.");
 		return NGX_ERROR;
 	}
+
 	globals->instances[0].id = 0;
 	globals->instances_cnt = 1;
+
+	// Init other mutexes
+	if (pthread_mutex_init(&globals->lock_cache, NULL) != 0) {
+		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init globals mutex for cache.");
+		return NGX_ERROR;
+	}
+
+	if (pthread_mutex_init(&globals->lock_index, NULL) != 0) {
+		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init globals mutex for index.");
+		return NGX_ERROR;
+	}
 
 	return NGX_OK;
 }

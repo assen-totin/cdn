@@ -209,11 +209,11 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		if ((ret = get_uri(session, metadata, r)) > 0)
 			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 
-		if ((ret = get_stat(metadata, r)) > 0)
-			return upload_cleanup(r, upload, ret);
-
 		if ((ret = get_path(session, metadata, r)) > 0)
 			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+
+		if ((ret = get_stat(metadata, r)) > 0)
+			return upload_cleanup(r, upload, ret);
 	}
 
 	// Extract content type from header
@@ -746,7 +746,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		if (errno) {
 			if ((errno == EAGAIN) && (eagain_count < EAGAIN_MAX_COUNT)) {
 				eagain_count ++;
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: written so far %l bytes from %l to file %s, got EGAIN, count is %l: %s", written_total + written_last, metadata->length, metadata->path, eagain_count);
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request: written so far %l bytes from %l to file %s, got EAGAIN, count is %l", written_total + written_last, metadata->length, metadata->path, eagain_count);
 				sleep(EAGAIN_SLEEP);
 
 			}
@@ -766,12 +766,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	close(file_fd);
 
 	// Write to index (protect by mutex) - but only log errors
-	pthread_mutex_lock(&session->instance->index->lock);
 	if (r->method & (NGX_HTTP_POST))
 		ret = index_write(session, INDEX_ACTION_INSERT, metadata->file16);
 	else if (r->method & (NGX_HTTP_PUT))
 		ret = index_write(session, INDEX_ACTION_UPDATE, metadata->file16);
-	pthread_mutex_unlock(&session->instance->index->lock);
 	if (ret)
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %s", metadata->file16, strerror(ret));
 

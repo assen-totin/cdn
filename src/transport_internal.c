@@ -100,9 +100,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			if ((key = get_key(metadata, r)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
-			pthread_mutex_lock(&session->instance->cache->lock);
 			cache_remove (session->instance->cache, key);
-			pthread_mutex_unlock(&session->instance->cache->lock);
 		}			
 	}
 
@@ -111,9 +109,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			if ((key = get_key(metadata, r)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
-			pthread_mutex_lock(&session->instance->cache->lock);
 			cache_remove (session->instance->cache, key);
-			pthread_mutex_unlock(&session->instance->cache->lock);
 		}
 
 		// Delete metadata file
@@ -135,9 +131,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			// Seek the key (mutex-protected operation)
 			// If key was found, node->left will have the payload
 			// If key was not found, it was added; store the value by passing the same node, key, ext and the value (NULL-terminated char*) to cache_put()
-			pthread_mutex_lock(&session->instance->cache->lock);
 			node = cache_seek(session->instance->cache, key, &error);
-			pthread_mutex_unlock(&session->instance->cache->lock);
 
 			free(key);
 

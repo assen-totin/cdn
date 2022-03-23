@@ -22,9 +22,6 @@ index_t *index_init() {
 	index->day = 0;
 	index->hour = 0;
 
-	if (pthread_mutex_init(&index->lock, NULL) != 0)
-		return NULL;
-
 	return index;
 }
 
@@ -32,7 +29,6 @@ index_t *index_init() {
 ngx_int_t index_open(session_t* session) {
 	struct tm t;
 	char filename[256], path[256];
-	ngx_int_t ret;
 	time_t lt;
 	index_t *index;
 	fs_t *fs;
@@ -90,15 +86,27 @@ ngx_int_t index_write(session_t *session, int action, char* filename) {
 			break;
 	}
 
+	// Lock the file for us only
+	pthread_mutex_lock(&globals->lock_index);
+
 	// Check if we need to open a new index file
-	if ((ret = index_open(session)) > 0)
+	if ((ret = index_open(session)) > 0) {
+		pthread_mutex_unlock(&globals->lock_index);
 		return ret;
+	}
 
-	if (write(index->fd, &line[0], strlen(&line[0])) < strlen(&line[0]))
+	// Seek EOF
+	if (lseek(index->fd, 0, SEEK_END) == -1) {
+		pthread_mutex_unlock(&globals->lock_index);
 		return errno;
+	}
 
-	if (lseek(index->fd, 0, SEEK_END) == -1) 
+	// Write
+	if (write(index->fd, &line[0], strlen(&line[0])) < strlen(&line[0])) {
+		pthread_mutex_unlock(&globals->lock_index);
 		return errno;
+	}
+	pthread_mutex_unlock(&globals->lock_index);
 
 	return NGX_OK;
 }

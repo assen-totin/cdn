@@ -451,16 +451,16 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
 	// Create a new instance in the global array
-	pthread_mutex_lock(&globals->lock);
+	pthread_mutex_lock(&globals->lock_instance);
 	if ((instance_tmp = realloc(globals->instances, (globals->instances_cnt + 1) * sizeof(instance_t))) == NULL) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to realloc global instances");
-		pthread_mutex_unlock(&globals->lock);
+		pthread_mutex_unlock(&globals->lock_instance);
 		return NULL;
 	}
 	globals->instances = instance_tmp;
 	instance = &globals->instances[globals->instances_cnt];
 	globals->instances_cnt ++;
-	pthread_mutex_unlock(&globals->lock);
+	pthread_mutex_unlock(&globals->lock_instance);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Created global space for new instance, count is now %l", globals->instances_cnt);
 
 	instance->id = cdn_loc_conf->instance_id;

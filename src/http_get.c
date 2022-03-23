@@ -735,10 +735,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		}
 
 		// Write to index (protect by mutex) - but only log errors
-		pthread_mutex_lock(&session->instance->index->lock);
 		if ((ret = index_write(session, INDEX_ACTION_DELETE, metadata->file16)) > 0)
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %u", metadata->file16, strerror(ret));
-		pthread_mutex_unlock(&session->instance->index->lock);
 
 		// Delete metadata (only for some transport types)
 		// FIXME: No DELETE for HTTP transport?
