@@ -12,6 +12,8 @@ The business logic for authorisation consists of three main elements:
 - Request type: specifies the format of the request that will be sent to the external authorisation body; we support SQL, JSON, XML and Mongo.
 - Transport type: specifies how to connect to the external authorisation body; we support MySQL, PostgreSQL, Oracle, Mongo, Redis, HTTP, TCP and Unix domain socket plus an extra one called Internal.
 
+The CDN may also serve static content without authorisation. Authorisation is turned on or off at virtual host level.
+
 # Authorisation method
 
 Authorisation token may be supplied in:
@@ -22,7 +24,7 @@ Authorisation token may be supplied in:
 
 The authorisation method determines how this authentication token will be processed to extract the actual authorisation token, which is then passed to the authorisation backend. 
 
-You may also use tarnsparent authorisation when we pass all incoming headers and cookies to the authorisation body without working on them.
+You may also use transparent authorisation when we pass all incoming headers and cookies to the authorisation body without working on them.
 
 ## Authorisation by JWT
 

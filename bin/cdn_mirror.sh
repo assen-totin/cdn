@@ -97,8 +97,8 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 					[[ $DAY -lt 10 ]] && MY_DAY="0$DAY" ||  MY_DAY="$DAY"
 					[[ $HOUR -lt 10 ]] && MY_HOUR="0$HOUR" ||  MY_HOUR="$HOUR"
 					INDEX_NAME="$INDEX_PREFIX$YEAR$MY_MONTH$MY_DAY$MY_HOUR"
-					curl -s -o /tmp/$INDEX_NAME $URL/$INDEX_NAME
-					cat /tmp/$INDEX_NAME >> /tmp/$INSTANCE_NAME
+					curl -f -s -o /tmp/$INDEX_NAME $URL/$INDEX_NAME
+					[ -f /tmp/$INDEX_NAME ] && cat /tmp/$INDEX_NAME >> /tmp/$INSTANCE_NAME
 					rm -f /tmp/$INDEX_NAME
 				done
 			done
@@ -111,13 +111,13 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	# Process the log file: inserts
 	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
 		get_file_path
-		curl -o $FILE_PATH/$FILE_NAME $URL/$FILE_NAME
+		curl -f -s -o $FILE_PATH/$FILE_NAME $URL/$FILE_NAME
 	done
 
 	# Process the log file: updates
 	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
 		get_file_path
-		curl -o $FILE_PATH/$FILE_NAME $URL/$FILE_NAME
+		curl -f -s -o $FILE_PATH/$FILE_NAME $URL/$FILE_NAME
 	done
 
 	# Process the log file: deletes
