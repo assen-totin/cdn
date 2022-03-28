@@ -5,7 +5,7 @@
 CONFIG_ROOT="/etc/cdn/index.d"
 
 # Go over config files (one per CDN instance)
-CONFIG_FILES=$(ls $CONFIG_ROOT/*.conf)
+CONFIG_FILES=$(ls $CONFIG_ROOT/*.conf 2>/dev/null)
 for CONFIG_FILE in $CONFIG_FILES ; do
 	# Souce the config file for the CDN instance; it will give us the instance's index settings
 	source $CONFIG_FILE
