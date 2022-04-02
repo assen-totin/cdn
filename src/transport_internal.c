@@ -5,9 +5,9 @@
  */
 
 #include "common.h"
-#include "utils.h"
 #include "cache.h"
-
+#include "index.h"
+#include "utils.h"
 
 /**
  * Helper: get ext from metadata
@@ -69,6 +69,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 	int file_fd, error;
 	struct stat statbuf;
 	btree_t *node = NULL;
+	ngx_int_t ret;
 
 	// Set path to metadata file: original file name + ".meta"
 	if ((path = ngx_pcalloc(r->pool, strlen(metadata->path) + 6)) == NULL) {
@@ -93,6 +94,18 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		}
 
 		close(file_fd);
+
+
+
+		// Write to index (protect by mutex) - but only log errors
+		if (mode == METADATA_INSERT)
+			ret = index_write(session, INDEX_ACTION_INSERT, path);
+		else if (mode == METADATA_UPDATE)
+			ret = index_write(session, INDEX_ACTION_UPDATE, path);
+		if (ret)
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write meta file %s to index: %s", path, strerror(ret));
+
+
 
 		// Purge the record from the cache if found there
 		if ((mode == METADATA_UPDATE) && (session->instance->cache)) {

@@ -771,7 +771,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	else if (r->method & (NGX_HTTP_PUT))
 		ret = index_write(session, INDEX_ACTION_UPDATE, metadata->file16);
 	if (ret)
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file ID %s to index: %s", metadata->file16, strerror(ret));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write file %s to index: %s", metadata->file16, strerror(ret));
 
 	// Prepare output chain
 	out = ngx_alloc_chain_link(r->pool);
