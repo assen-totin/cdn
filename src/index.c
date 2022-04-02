@@ -106,6 +106,10 @@ ngx_int_t index_write(session_t *session, int action, char* filename) {
 		pthread_mutex_unlock(&globals->lock_index);
 		return errno;
 	}
+
+	// Flush
+	fsync(index->fd);
+
 	pthread_mutex_unlock(&globals->lock_index);
 
 	return NGX_OK;

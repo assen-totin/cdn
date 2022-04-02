@@ -65,7 +65,7 @@ char *get_key(metadata_t *metadata, ngx_http_request_t *r) {
  * File metadata from internal
  */
 ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_request_t *r, int mode) {
-	char *path, *key = NULL, *ext = NULL;
+	char *path, *file16, *key = NULL, *ext = NULL;
 	int file_fd, error;
 	struct stat statbuf;
 	btree_t *node = NULL;
@@ -76,8 +76,14 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata filename.", strlen(metadata->path) + 6);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
-
 	sprintf(path, "%s.meta", metadata->path);
+
+	// Set filename for metadata file for index
+	if ((file16 = ngx_pcalloc(r->pool, strlen(metadata->file16) + 6)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata for index.", strlen(metadata->file16) + 6);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+	sprintf(file16, "%s.meta", metadata->file16);
 
 	// Save, delete or read metadata
 	if ((mode == METADATA_INSERT) || (mode == METADATA_UPDATE)) {
@@ -97,11 +103,11 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 		// Write to index (protect by mutex) - but only log errors
 		if (mode == METADATA_INSERT)
-			ret = index_write(session, INDEX_ACTION_INSERT, path);
+			ret = index_write(session, INDEX_ACTION_INSERT, file16);
 		else if (mode == METADATA_UPDATE)
-			ret = index_write(session, INDEX_ACTION_UPDATE, path);
+			ret = index_write(session, INDEX_ACTION_UPDATE, file16);
 		if (ret)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write meta file %s to index: %s", path, strerror(ret));
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write meta file %s to index: %s", file16, strerror(ret));
 
 		// Purge the record from the cache if found there
 		if ((mode == METADATA_UPDATE) && (session->instance->cache)) {
@@ -128,9 +134,9 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		}
 
 		// Write to index - but only log errors
-		ret = index_write(session, INDEX_ACTION_DELETE, path);
+		ret = index_write(session, INDEX_ACTION_DELETE, file16);
 		if (ret)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write meta file %s to index: %s", path, strerror(ret));
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write meta file %s to index: %s", file16, strerror(ret));
 	}
 
 	else {
