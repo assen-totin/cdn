@@ -765,7 +765,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 	close(file_fd);
 
-	// Write to index (protect by mutex) - but only log errors
+	// Write to index - but only log errors
 	if (r->method & (NGX_HTTP_POST))
 		ret = index_write(session, INDEX_ACTION_INSERT, metadata->file16);
 	else if (r->method & (NGX_HTTP_PUT))

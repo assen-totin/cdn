@@ -95,8 +95,6 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 		close(file_fd);
 
-
-
 		// Write to index (protect by mutex) - but only log errors
 		if (mode == METADATA_INSERT)
 			ret = index_write(session, INDEX_ACTION_INSERT, path);
@@ -104,8 +102,6 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			ret = index_write(session, INDEX_ACTION_UPDATE, path);
 		if (ret)
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write meta file %s to index: %s", path, strerror(ret));
-
-
 
 		// Purge the record from the cache if found there
 		if ((mode == METADATA_UPDATE) && (session->instance->cache)) {
@@ -130,6 +126,11 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Metadata file %s unlink() error %s", path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
+
+		// Write to index - but only log errors
+		ret = index_write(session, INDEX_ACTION_DELETE, path);
+		if (ret)
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write meta file %s to index: %s", path, strerror(ret));
 	}
 
 	else {
