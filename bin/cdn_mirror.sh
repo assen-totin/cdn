@@ -37,10 +37,19 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	source $SAVED_ROOT/$INSTANCE_NAME
 
 	# Compare our save point to the current time and build indices to read
-	SAVED_YEAR=$(echo $SAVEPOINT | cut -c 1-4)
-	SAVED_MONTH=$(echo $SAVEPOINT | cut -c 5-6)
-	SAVED_DAY=$(echo $SAVEPOINT | cut -c 7-8)
-	SAVED_HOUR=$(echo $SAVEPOINT | cut -c 9-10)
+	if [ -e $SAVED_ROOT/$INSTANCE_NAME ] ; then
+		source $SAVED_ROOT/$INSTANCE_NAME
+
+		SAVED_YEAR=$(echo $SAVEPOINT | cut -c 1-4)
+		SAVED_MONTH=$(echo $SAVEPOINT | cut -c 5-6)
+		SAVED_DAY=$(echo $SAVEPOINT | cut -c 7-8)
+		SAVED_HOUR=$(echo $SAVEPOINT | cut -c 9-10)
+	else
+		SAVED_YEAR=$CURR_YEAR
+		SAVED_MONTH=$CURR_MONTH
+		SAVED_DAY=$CURR_DAY
+		SAVED_HOUR=$CURR_HOUR
+	fi
 
 	# Loop for years
 	for YEAR in $(seq $SAVED_YEAR $CURR_YEAR) ; do

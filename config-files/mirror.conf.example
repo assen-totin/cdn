@@ -4,7 +4,7 @@
 INSTANCE_NAME="some_instance"
 
 # The root of the CDN instance
-FS_ROOT="/opt/cdn"
+FS_ROOT="/opt/cdn/${INSTANCE_NAME}"
 
 # The depht of the CDN instance
 FS_DEPTH=4
