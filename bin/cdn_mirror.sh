@@ -14,6 +14,24 @@ get_file_path() {
 	done
 }
 
+# Function to check for HTTP errors
+check_curl_error() {
+	if [ $RES -gt 0 ] ; then
+		# Curl exit code 22 is HTTP error 400+
+		if [ $RES -ne 22 ] ; then
+			_ERR=1
+		elif [ $HTTP_CODE -ne 404 ] ; then
+			_ERR=1
+		fi
+
+		if [ x$_ERR != 'x' ] ; then
+			echo "Replication failed for $CURL_URL curl code $RES HTTP code $HTTP_CODE"
+			rm -f /tmp/$INSTANCE_NAME
+			exit 1
+		fi
+	fi
+}
+
 # Get the UTC down to an hour as it was an hour ago
 UNIX_TIMESTAMP=$(date +%s)
 ((UNIX_TIMESTAMP=UNIX_TIMESTAMP-3600))
@@ -32,10 +50,6 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	# Souce the config file for the CDN instance; it will give us the instance's index settings
 	source $CONFIG_FILE
 
-	# Check our save point (if any), else skip
-	[ ! -e $SAVED_ROOT/$INSTANCE_NAME ] && continue
-	source $SAVED_ROOT/$INSTANCE_NAME
-
 	# Compare our save point to the current time and build indices to read
 	if [ -e $SAVED_ROOT/$INSTANCE_NAME ] ; then
 		source $SAVED_ROOT/$INSTANCE_NAME
@@ -44,6 +58,9 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		SAVED_MONTH=$(echo $SAVEPOINT | cut -c 5-6)
 		SAVED_DAY=$(echo $SAVEPOINT | cut -c 7-8)
 		SAVED_HOUR=$(echo $SAVEPOINT | cut -c 9-10)
+
+		# Check if we've been here before
+		[ $SAVED_YEAR -eq $CURR_YEAR ] && [ $SAVED_MONTH -eq $CURR_MONTH ] && [ $SAVED_DAY -eq $CURR_DAY ] && [ $SAVED_HOUR -eq $CURR_HOUR ] && continue
 	else
 		SAVED_YEAR=$CURR_YEAR
 		SAVED_MONTH=$CURR_MONTH
@@ -106,7 +123,10 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 					[[ $DAY -lt 10 ]] && MY_DAY="0$DAY" ||  MY_DAY="$DAY"
 					[[ $HOUR -lt 10 ]] && MY_HOUR="0$HOUR" ||  MY_HOUR="$HOUR"
 					INDEX_NAME="$INDEX_PREFIX$YEAR$MY_MONTH$MY_DAY$MY_HOUR"
-					curl -f -s -o /tmp/$INDEX_NAME $URL/$INDEX_NAME
+					CURL_URL="$URL/$INDEX_NAME"
+					HTTP_CODE=$(curl -w %{http_code} -f -s -o /tmp/$INDEX_NAME $CURL_URL)
+					RES=$?
+					check_curl_error
 					[ -f /tmp/$INDEX_NAME ] && cat /tmp/$INDEX_NAME >> /tmp/$INSTANCE_NAME
 					rm -f /tmp/$INDEX_NAME
 				done
@@ -114,26 +134,36 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		done
 	done
 
+	if [ -f /tmp/$INSTANCE_NAME ] ; then
+		# Process the log file: inserts
+		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
+			get_file_path
+			CURL_URL="$URL/$FILE_NAME"
+			HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
+			RES=$?
+			check_curl_error
+		done
+
+		# Process the log file: updates
+		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
+			get_file_path
+			CURL_URL="$URL/$FILE_NAME"
+			HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
+			RES=$?
+			check_curl_error
+		done
+
+		# Process the log file: deletes
+		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
+			get_file_path
+			rm -f $FILE_PATH/$FILE_NAME
+		done
+
+		rm -f /tmp/$INSTANCE_NAME
+	fi
+
 	# Save our save point
 	echo "SAVEPOINT=$CURR_YEAR$CURR_MONTH$CURR_DAY$CURR_HOUR" > $SAVED_ROOT/$INSTANCE_NAME
-
-	# Process the log file: inserts
-	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
-		get_file_path
-		curl -f -s -o $FILE_PATH/$FILE_NAME $URL/$FILE_NAME
-	done
-
-	# Process the log file: updates
-	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
-		get_file_path
-		curl -f -s -o $FILE_PATH/$FILE_NAME $URL/$FILE_NAME
-	done
-
-	# Process the log file: deletes
-	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
-		get_file_path
-		rm -f $FILE_PATH/$FILE_NAME
-	done
 done
 
 ## Check parallelism
