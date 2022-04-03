@@ -614,15 +614,19 @@ NB: The metadata for the file will be deleted when using internal authorisation,
 
 # Replication
 
-You can mirror the CDN in any way desired (e.g., rsync). As an alternative, to only transfer files that were changed and to avoid the need to compare both sides file by file, the CDN keeps a change log of all changes. The log file is written as plain text file inside the CDN and is rotated on the top of every hour. The file name is `<prefix>YYYYMMDDHH` where the date is always in UTC and the prefix can be set in the `cdn_index_prefix` configuration options (the default is `______`). 
+You can mirror the CDN in any way desired (e.g., rsync). 
+
+To only transfer files that were changed and to avoid the need to compare both sides file by file, the CDN keeps a replication log with all changes. The log file is written as plain text file inside the CDN and is rotated on the top of every hour. The file name is `<prefix>YYYYMMDDHH` where the date is always in UTC and the prefix can be set in the `cdn_index_prefix` configuration options (the default is `______`). 
 
 The file is tab-delimited with two fields: single letter for the operation (I - file inserted, U - file updated, D - file deleted) and the ID of the file. 
 
-To clean up the change log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/index.d/XYZ.conf`.
+To automatically purge old replication log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/index.d/XYZ.conf` (there is an example provided).
 
-The remote side may retrieve the list from the previous hour and the fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf`. You also need to create an initial savepoint file in `/var/lib/cdn/mirror.d/XYZ.conf` with the following line, containing the date and hour (in UTC) from which to start the replication:
+The remote side may retrieve the list from the previous hour and then fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf` (there is an example provided). On its first run, the script will create the initial savepoint file in `/var/lib/cdn/mirror.d/XYZ.conf` with the following line, containing the date and hour (in UTC) from which to start the replication:
 
 `SAVEPOINT=YYYYMMDDHH`
+
+To use the mirroring script you need to create a separate virtual host in Nginx on the master instance. It should not have the CDN module loaded, but instead it should just provide direct access to the whole file tree for the CDN instance (i.e. the web root of the virtual host should be set to the filesystem root of the CDN instance). As this provides unauthenticated access to all CDN files without any authorisation imposed, make sure you only allow access to this virtual host from the IP addresses of the replica CDN instances.
 
 # Compliance
 

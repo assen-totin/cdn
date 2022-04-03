@@ -14,6 +14,16 @@ get_file_path() {
 	done
 }
 
+# Function to get the web path for an index file
+get_web_path() {
+        WEB_PATH=""
+        for i in $(seq 1 $FS_DEPTH) ; do
+                POS=$(echo $1 | cut -c $i)
+                WEB_PATH="$WEB_PATH/$POS"
+        done
+        WEB_PATH="$WEB_PATH/$1"
+}
+
 # Function to check for HTTP errors
 check_curl_error() {
 	if [ $RES -gt 0 ] ; then
@@ -78,7 +88,8 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		CURR_HOUR=$(echo $CURR_DATE | awk '{print $4}')
 
 		INDEX_NAME="$INDEX_PREFIX$CURR_YEAR$CURR_MONTH$CURR_DAY$CURR_HOUR"
-		CURL_URL="$URL/$INDEX_NAME"
+		get_web_path $INDEX_NAME
+		CURL_URL="$URL$WEB_PATH"
 		HTTP_CODE=$(curl -w %{http_code} -f -s -o /tmp/$INDEX_NAME $CURL_URL)
 		RES=$?
 		check_curl_error
@@ -90,7 +101,8 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		# Process the log file: inserts
 		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
 			get_file_path
-			CURL_URL="$URL/$FILE_NAME"
+			get_web_path $FILE_NAME
+			CURL_URL="$URL$WEB_PATH"
 			HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
 			RES=$?
 			check_curl_error
@@ -99,7 +111,8 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		# Process the log file: updates
 		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
 			get_file_path
-			CURL_URL="$URL/$FILE_NAME"
+			get_web_path $FILE_NAME
+			CURL_URL="$URL$WEB_PATH"
 			HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
 			RES=$?
 			check_curl_error
