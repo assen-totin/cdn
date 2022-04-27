@@ -25,18 +25,11 @@ ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_r
 	if (session->auth_value)
 		len += strlen(session->auth_value);
 
-/*
 	if ((session->mongo_filter = ngx_pcalloc(r->pool, len + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for query.", len + 1);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
-*/
-
-	char *a;
-	if ((a = ngx_pcalloc(r->pool, len + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for query.", len + 1);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
+	memset(session->mongo_filter, '\0', len+1);
 
 	// Replace placehodlers in query
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "LEN %l", len);
@@ -45,18 +38,10 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "QUERY %s", query);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "FILE %s", metadata->file);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AUTH VALUE %s", session->auth_value);
 
-/*
 	if (session->auth_value)
 		sprintf(session->mongo_filter, query, metadata->file, session->auth_value);
 	else
 		sprintf(session->mongo_filter, query, metadata->file, "");
-*/
-	if (session->auth_value)
-		sprintf(a, query, metadata->file, session->auth_value);
-	else
-		sprintf(a, query, metadata->file, "");
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MONGO FILTER %s", a);
-session->mongo_filter = a;
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MONGO FILTER %s", session->mongo_filter);
 
 	// Prepare filter from query
