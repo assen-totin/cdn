@@ -36,6 +36,13 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MONGO FILTER %s", session->mo
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "QUERY %s", query);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "FILE %s", metadata->file);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AUTH VALUE %s", session->auth_value);
+
+char *a = malloc(100);
+sprintf(a, query, metadata->file, session->auth_value);
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "A %s", a);
+free(a);
+
+
 	if (session->auth_value)
 		sprintf(session->mongo_filter, query, metadata->file, session->auth_value);
 	else
