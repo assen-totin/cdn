@@ -42,11 +42,13 @@ sprintf(a, query, metadata->file, session->auth_value);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "A %s", a);
 free(a);
 
-
+/*
 	if (session->auth_value)
 		sprintf(session->mongo_filter, query, metadata->file, session->auth_value);
 	else
 		sprintf(session->mongo_filter, query, metadata->file, "");
+*/
+sprintf(session->mongo_filter, query, metadata->file, session->auth_value);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MONGO FILTER %s", session->mongo_filter);
 
 	// Prepare filter from query
