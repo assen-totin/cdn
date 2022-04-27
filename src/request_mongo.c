@@ -17,21 +17,21 @@ ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_r
 	char *query;
 
 	// session->mongo_filter now contains the filter template, but we want if to have the expanded filter, so swap it to a local variable
-	query = strdup(session->mongo_filter);
+	query = session->mongo_filter;
 
 	// Calculate length for query template + data (this will leave some small overhead from placeholders)
-	len = strlen(session->mongo_filter);
+	len = strlen(query);
 	len += strlen(metadata->file);
 	if (session->auth_value)
 		len += strlen(session->auth_value);
 
 	if ((session->mongo_filter = ngx_pcalloc(r->pool, len + 1)) == NULL) {
-		free(query);
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for query.", len + 1);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	// Replace placehodlers in query
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "LEN %l", len);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MONGO FILTER %s", session->mongo_filter);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "QUERY %s", query);
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "FILE %s", metadata->file);
@@ -41,8 +41,6 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AUTH VALUE %s", session->auth
 	else
 		sprintf(session->mongo_filter, query, metadata->file, "");
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MONGO FILTER %s", session->mongo_filter);
-
-	free(query);
 
 	// Prepare filter from query
 	bson_init (&filter);
