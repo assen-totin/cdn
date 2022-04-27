@@ -39,7 +39,8 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AUTH VALUE %s", session->auth
 
 	if (session->auth_value)
 		//sprintf(session->mongo_filter, query, metadata->file, session->auth_value);
-		sprintf(session->mongo_filter, query, metadata->file);
+		//sprintf(session->mongo_filter, query, metadata->file);
+		sprintf(session->mongo_filter, query, session->auth_value);
 //	else
 //		sprintf(session->mongo_filter, query, metadata->file, "");
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MONGO FILTER %s", session->mongo_filter);
