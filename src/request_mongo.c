@@ -16,9 +16,6 @@ ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_r
 	int len;
 	char *query;
 
-	// session->mongo_filter now contains the filter template, but we want if to have the expanded filter, so swap it to a local variable
-	query = session->mongo_filter;
-
 	// Calculate length for query template + data (this will leave some small overhead from placeholders)
 	len = strlen(session->mongo_filter);
 	len += strlen(metadata->file);
@@ -30,11 +27,16 @@ ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_r
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
-	// Replace placehodlers in query 
+	// session->mongo_filter now contains the filter template, but we want if to have the expanded filter, so swap it to a local variable
+	query = strdup(session->mongo_filter);
+
+	// Replace placehodlers in query
 	if (session->auth_value)
 		sprintf(session->mongo_filter, query, metadata->file, session->auth_value);
 	else
 		sprintf(session->mongo_filter, query, metadata->file, "");
+
+	free(query);
 
 	// Prepare filter from query
 	bson_init (&filter);
