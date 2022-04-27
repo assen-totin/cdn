@@ -21,6 +21,8 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AUTH_TOKEN: %s", session->auth_token);
+
 	// Validate and extract the token
 	if ((ret = jwt_decode(&session->jwt, session->auth_token, (unsigned char*)session->instance->jwt_key, strlen(session->instance->jwt_key)))) {
 		jwt_free(session->jwt);
@@ -53,12 +55,14 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	// Extract the value from payload that we'll use in authentication
 	auth_value = jwt_get_grant(session->jwt, session->jwt_field);
 	if (auth_value) {
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AUTH_VALUE: %s", auth_value);
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim %s %s", session->auth_token, session->jwt_field, auth_value);
-		if ((session->auth_value = ngx_pcalloc(r->pool, strlen(auth_value))) == NULL) {
+		if ((session->auth_value = ngx_pcalloc(r->pool, strlen(auth_value) + 1 )) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for for auth_value.", strlen(auth_value));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		strcpy(session->auth_value, auth_value);
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "AUTH_VALUE IN SESSION: %s", session->auth_value);
 	}
 	else {
 		jwt_free(session->jwt);
