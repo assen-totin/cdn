@@ -62,21 +62,14 @@ ngx_int_t filter_auth_value(session_t *session, ngx_http_request_t *r) {
 	// Extract filter name using our own tokeniser: first of comma-separated list
 	filter_name = filter_token(r, session->auth_filter, ",", 1);
 
-ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "AUTH_ VALUE BEFORE FILTER: %s", session->auth_value);
-
 	// Apply filter token
 	if (! strcmp(filter_name, "filter_token")) {
 		// Extract the delimiter and position
 		char *delimiter = filter_token(r, session->auth_filter, ",", 2);
 		int position = atoi(filter_token(r, session->auth_filter, ",", 3));
 
-ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "FILTER DELIMITER: %s", delimiter);
-ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "FILTER POSIITON: %l", position);
-
 		// Apply filter
 		session->auth_value = filter_token(r, session->auth_value, delimiter, position);
-
-ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "AUTH_ VALUE AFTER FILTER: %s", session->auth_value);
 	}
 	else {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unknown filter specified: %s", filter_name);
