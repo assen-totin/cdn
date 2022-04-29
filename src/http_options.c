@@ -11,6 +11,7 @@
  * OPTIONS request handler
  */
 ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
+	acah *char;
 	ngx_table_elt_t *h;
 	session_t *session;
 
@@ -36,14 +37,23 @@ ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
 	ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_METHODS);
 	ngx_str_set(&h->value, DEFAULT_ACCESS_CONTROL_ALLOW_METHODS);
 
-	// Add Access-Control-Allow-Headers header
+	// Add Access-Control-Allow-Headers header + the custom value, if any
+	if ((acah = ngx_pcalloc(r->pool, strlen(DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS) + 2 + strlen() + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(DEFAULT_ETAG) + 1);
+		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	}
+	if (strcmp(session->auth_header, DEFAULT_AUTH_HEADER))
+		sprintf(acah, "%s, %s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
+	else
+		sprintf(acah, "%s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
+
 	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_HEADERS);
 		return NGX_ERROR;
 	}
 	h->hash = 1;
 	ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_HEADERS);
-	ngx_str_set(&h->value, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
+	ngx_str_set(&h->value, acah);
 
 	// There will be no body
 	r->header_only = 1;
