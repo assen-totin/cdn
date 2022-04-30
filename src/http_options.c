@@ -27,9 +27,12 @@ ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONT
 	}
 	h->hash = 1;
 	ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
-	ngx_str_set(&h->value, session->cors_origin);
+//	ngx_str_set(&h->value, session->cors_origin);
+	h->value.len = strlen(session->cors_origin);
+	h->value.data = session->cors_origin;
 
 	// Add Access-Control-Allow-Methods header
+ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONTROL_ALLOW_METHODS, DEFAULT_ACCESS_CONTROL_ALLOW_METHODS);
 	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_METHODS);
 		return NGX_ERROR;
@@ -39,14 +42,18 @@ ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONT
 	ngx_str_set(&h->value, DEFAULT_ACCESS_CONTROL_ALLOW_METHODS);
 
 	// Add Access-Control-Allow-Headers header + the custom value, if any
-	if ((acah = ngx_pcalloc(r->pool, strlen(DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS) + 2 + strlen() + 1)) == NULL) {
+	if ((acah = ngx_pcalloc(r->pool, strlen(DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS) + 2 + strlen(session->auth_header) + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for metadata etag.", strlen(DEFAULT_ETAG) + 1);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
-	if (strcmp(session->auth_header, DEFAULT_AUTH_HEADER))
+	if (strcmp(session->auth_header, DEFAULT_AUTH_HEADER)) {
+ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s, %s", HEADER_ACCESS_CONTROL_ALLOW_HEADERS, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
 		sprintf(acah, "%s, %s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
-	else
+	}
+	else {
+ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONTROL_ALLOW_HEADERS, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
 		sprintf(acah, "%s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
+	}
 
 	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_HEADERS);
@@ -54,7 +61,9 @@ ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONT
 	}
 	h->hash = 1;
 	ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_HEADERS);
-	ngx_str_set(&h->value, acah);
+//	ngx_str_set(&h->value, acah);
+	h->value.len = strlen(acah);
+	h->value.data = acah;
 
 	// There will be no body
 	r->header_only = 1;
