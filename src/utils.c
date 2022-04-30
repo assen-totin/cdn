@@ -656,18 +656,16 @@ session_t *init_session(ngx_http_request_t *r) {
 			return NULL;
 	}
 
-	// Set options for OPTIONS
-	if (r->method & (NGX_HTTP_OPTIONS)) {
-		session->cors_origin = from_ngx_str(r->pool, cdn_loc_conf->cors_origin);
-		session->auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
+	// Set options for all HTTP methods
+	session->auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
+	session->cors_origin = from_ngx_str(r->pool, cdn_loc_conf->cors_origin);
+
+	// For OPTIONS we don't need anything else
+	if (r->method & (NGX_HTTP_OPTIONS))
 		return session;
-	}
 
 	// Set common options (for GET|HEAD|DELETE, POST and PUT)
-	session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
-	session->transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
 	session->auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
-	session->auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
 	session->auth_request = NULL;
 	session->auth_response = NULL;
 	session->auth_response_count = 0;
@@ -675,17 +673,18 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->auth_type = from_ngx_str(r->pool, cdn_loc_conf->auth_type);
 	session->auth_value = NULL;
 	session->auth_filter = from_ngx_str(r->pool, cdn_loc_conf->auth_filter);
-	session->cors_origin = from_ngx_str(r->pool, cdn_loc_conf->cors_origin);
-	session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
-	session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
-	session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
-	session->tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
-	session->http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
 	session->curl = NULL;
+	session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
+	session->http_method = ngx_pcalloc(r->pool, 8);
+	session->http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
 	session->jwt_field = from_ngx_str(r->pool, cdn_loc_conf->jwt_field);
 	session->jwt_json = NULL;
-	session->http_method = ngx_pcalloc(r->pool, 8);
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
+	session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
+	session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
+	session->tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
+	session->transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
+	session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
 
 #ifdef CDN_ENABLE_MONGO
 	session->mongo_db = from_ngx_str(r->pool, cdn_loc_conf->mongo_db);
@@ -693,7 +692,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->mongo_filter = from_ngx_str(r->pool, cdn_loc_conf->mongo_filter);
 #endif
 
-	// Set options for GET, HEAD and DELETE
+	// Set further options for GET, HEAD and DELETE
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {
 		session->all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
 		session->all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
