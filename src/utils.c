@@ -659,6 +659,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	// Set options for OPTIONS
 	if (r->method & (NGX_HTTP_OPTIONS)) {
 		session->cors_origin = from_ngx_str(r->pool, cdn_loc_conf->cors_origin);
+		session->auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);
 		return session;
 	}
 
