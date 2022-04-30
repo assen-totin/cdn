@@ -346,6 +346,16 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 		}
 	}
 
+	// Add Access-Control-Allow-Origin header
+	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
+		return NGX_ERROR;
+	}
+	h->hash = 1;
+	ngx_str_set(&h->key, HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
+	h->value.len = strlen(session->cors_origin);
+	h->value.data = (u_char*)session->cors_origin;
+
 	// Send headers
 	ret = ngx_http_send_header(r);
 	if (ret == NGX_ERROR || ret > NGX_OK)
