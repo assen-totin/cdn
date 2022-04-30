@@ -11,7 +11,7 @@
  * OPTIONS request handler
  */
 ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
-	acah *char;
+	char *acah;
 	ngx_table_elt_t *h;
 	session_t *session;
 
@@ -20,6 +20,7 @@ ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
 		return NGX_ERROR;
 
 	// Add Access-Control-Allow-Origin header
+ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, session->cors_origin);
 	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
 		return NGX_ERROR;
