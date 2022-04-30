@@ -56,8 +56,8 @@ ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "ACAH ALLOCATED");
 //	h->value.len = strlen(acah);
 //	h->value.data = (u_char*)acah;
 
-	if ((h->value.data = ngx_pcalloc(r->pool, strlen(DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS) + 2 + strlen(session->auth_header) + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for Access-Control-Allow-Headers.", strlen(DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS) + 2 + strlen(session->auth_header) + 1);
+	if ((h->value.data = ngx_pcalloc(r->pool, sizeof(DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS) + 2 + strlen(session->auth_header) + 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for Access-Control-Allow-Headers.", sizeof(DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS) + 2 + strlen(session->auth_header) + 1);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
