@@ -7,6 +7,7 @@
 #include "common.h"
 #include "filter.h"
 #include "fs.h"
+#include "globals.h"
 #include "index.h"
 #include "cache.h"
 

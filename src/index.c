@@ -5,6 +5,7 @@
  */
 
 #include "common.h"
+#include "globals.h"
 #include "utils.h"
 
 // Init index

@@ -9,6 +9,7 @@
 #include "cache.h"
 #include "index.h"
 #include "fs.h"
+#include "globals.h"
 #include "http.h"
 #include "utils.h"
 #include "murmur3_32.h"

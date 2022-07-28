@@ -5,6 +5,7 @@
  */
 
 #include "common.h"
+#include "globals.h"
 
 // Init BTree mask
 static uint64_t *init_btree_mask() {
