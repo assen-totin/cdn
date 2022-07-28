@@ -13,7 +13,7 @@
 #include "utils.h"
 
 // We need this here as a declaration only; it is defined in main header file which will resolve it at runtime.
-ngx_module_t ngx_http_cdn_module;
+extern ngx_module_t ngx_http_cdn_module;
 
 /**
  * Cleanup (unmap mapped file after serving)
