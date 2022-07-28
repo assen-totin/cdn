@@ -433,5 +433,5 @@ enum {
 };
 
 //// GLOBALS
-globals_t *globals;
+//globals_t *globals;
 
