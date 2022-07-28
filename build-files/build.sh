@@ -102,6 +102,10 @@ if [ x$ARG_CDN_ENABLE_REDIS != 'x' ] ; then
 	sed -i 's|^.*CDN_ENABLE_REDIS.*$|#define CDN_ENABLE_REDIS|' src/modules.h
 fi
 
+# Chose Nginx version if not provided
+[ x$EL_VERSION == 'xel8' ] && ARG_NGINX_VERSION="1.14.1";
+[ x$EL_VERSION == 'xel9' ] && ARG_NGINX_VERSION="1.20.1";
+
 # Download the Nginx source
 wget http://nginx.org/download/nginx-$ARG_NGINX_VERSION.tar.gz
 gunzip nginx-$ARG_NGINX_VERSION.tar.gz
@@ -119,6 +123,10 @@ fi
 if [ x$EL_VERSION == 'xel8' ] ; then
 	patch -p1 < ../patches/0001*
 	CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/run/nginx.pid --lock-path=/run/lock/subsys/nginx --user=nginx --group=nginx --with-file-aio --with-ipv6 --with-http_ssl_module --with-http_v2_module --with-http_realip_module --with-http_addition_module --with-http_xslt_module=dynamic --with-http_image_filter_module=dynamic --with-http_sub_module --with-http_dav_module --with-http_flv_module --with-http_mp4_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_random_index_module --with-http_secure_link_module --with-http_degradation_module --with-http_slice_module --with-http_stub_status_module --with-http_perl_module=dynamic --with-http_auth_request_module --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-debug --with-cc-opt="-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection $EXTRA_INCLUDES" --with-ld-opt="-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E $EXTRA_LIBS"
+fi
+
+if [ x$EL_VERSION == 'xel9' ] ; then
+	CFLAGS=-Wno-error ./configure --add-dynamic-module=../src --prefix=/usr/share/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log --http-log-path=/var/log/nginx/access.log --http-client-body-temp-path=/var/lib/nginx/tmp/client_body --http-proxy-temp-path=/var/lib/nginx/tmp/proxy --http-fastcgi-temp-path=/var/lib/nginx/tmp/fastcgi --http-uwsgi-temp-path=/var/lib/nginx/tmp/uwsgi --http-scgi-temp-path=/var/lib/nginx/tmp/scgi --pid-path=/run/nginx.pid --lock-path=/run/lock/subsys/nginx --user=nginx --group=nginx --with-compat --with-debug --with-file-aio --with-http_addition_module --with-http_auth_request_module --with-http_dav_module --with-http_degradation_module --with-http_flv_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_image_filter_module=dynamic --with-http_mp4_module --with-http_perl_module=dynamic --with-http_random_index_module --with-http_realip_module --with-http_secure_link_module --with-http_slice_module --with-http_ssl_module --with-http_stub_status_module --with-http_sub_module --with-http_v2_module --with-http_xslt_module=dynamic --with-mail=dynamic --with-mail_ssl_module --with-pcre --with-pcre-jit --with-stream=dynamic --with-stream_ssl_module --with-stream_ssl_preread_module --with-threads --with-cc-opt="-O2 -flto=auto -ffat-lto-objects -fexceptions -g -grecord-gcc-switches -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fstack-protector-strong -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -march=x86-64-v2 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection $EXTRA_INCLUDES" --with-ld-opt="-Wl,-z,relro -Wl,--as-needed  -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1  -Wl,-E $EXTRA_LIBS"
 fi
 
 [ $? -gt 0 ] && print_error "Configure command failed."
@@ -152,9 +160,9 @@ if [ x$ARG_CDN_ENABLE_MYSQL != 'x' ] ; then
 		sed -i 's|^.*mariadb-devel.*$|BuildRequires: mariadb-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 		sed -i 's|^.*mariadb-libs.*$|Requires: mariadb-libs|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 	fi
-	if [ x$EL_VERSION == 'xel8' ] ; then
+	if [ x$EL_VERSION == 'xel8' ] || [ x$EL_VERSION == 'xel9' ] ; then
 		sed -i 's|^.*BuildRequires: mariadb-connector-c-devel.*$|BuildRequires: mariadb-connector-c-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
-		sed -i 's|^.*Requires: mariadb-connector-c-devel.*$|Requires: mariadb-connector-c-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+		sed -i 's|^.*Requires: mariadb-connector-c.*$|Requires: mariadb-connector-c|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 	fi
 fi
 if [ x$ARG_CDN_ENABLE_POSTGRESQL != 'x' ] ; then
