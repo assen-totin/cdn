@@ -61,12 +61,17 @@
 	#define RHEL7
 #elif __GLIBC_MINOR__ == 28
 	#define RHEL8
+#elif __GLIBC_MINOR__ == 34
+	#define RHEL9
 #endif
 
 #ifdef RHEL7
 	#include <bson.h>
 #endif
 #ifdef RHEL8
+	#include <bson/bson.h>
+#endif
+#ifdef RHEL9
 	#include <bson/bson.h>
 #endif
 

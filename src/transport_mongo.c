@@ -32,7 +32,7 @@ ngx_int_t transport_mongo(session_t *session, metadata_t *metadata, ngx_http_req
 	bson_error_t error;
 	mongoc_client_t *conn;
 	mongoc_collection_t *collection = NULL;
-	mongoc_cursor_t *cursor;
+	mongoc_cursor_t *cursor = NULL;
 	char *filter_json;
 
 	// Prepare the query
@@ -60,6 +60,9 @@ ngx_int_t transport_mongo(session_t *session, metadata_t *metadata, ngx_http_req
 		cursor = mongoc_collection_find (collection, MONGOC_QUERY_NONE, 0, 1, 1, query, NULL, NULL);
 #endif
 #ifdef RHEL8
+		cursor = mongoc_collection_find_with_opts (collection, query, NULL, NULL);
+#endif
+#ifdef RHEL9
 		cursor = mongoc_collection_find_with_opts (collection, query, NULL, NULL);
 #endif
 
