@@ -31,7 +31,7 @@ ngx_int_t response_get_none(session_t *session, metadata_t *metadata, ngx_http_r
 /**
  * Process None response POST
  */
-ngx_int_t response_post_json(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
+ngx_int_t response_post_none(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	return NGX_OK;
 }
 
