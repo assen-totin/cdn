@@ -644,6 +644,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = request_get_mongo(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
 		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_NONE))
+		ret = request_get_none(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
@@ -663,6 +665,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = transport_mongo(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(session, r, METADATA_SELECT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_NONE))
+		ret = transport_none(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_oracle(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL))
@@ -705,6 +709,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	}
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
 		ret = response_get_mysql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_NONE))
+		ret = response_get_none(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = response_get_oracle(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
@@ -712,9 +718,9 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_get_xml(session, metadata, r);
 
-	// Clean up auth reponse unless using transport Internal or Redis
+	// Clean up auth reponse unless using transport Internal, None or Redis
 	if (session->auth_response) {
-		if ((strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) && (strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)))
+		if ((strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) && (strcmp(session->transport_type, TRANSPORT_TYPE_NONE)) && (strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)))
 			free(session->auth_response);
 	}
 
@@ -766,6 +772,10 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			session->sql_query = session->sql_query2;
 			ret = request_get_sql(session, metadata, r, METADATA_DELETE);
 			ret = transport_mysql(session, r, METADATA_DELETE);
+		}
+		if (! strcmp(session->transport_type, TRANSPORT_TYPE_NONE)) {
+			// This is a NOOP
+			ret = transport_none(session, metadata, r, METADATA_DELETE);
 		}
 		else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE)) {
 			// Switch query to DELETE one and rebuild it

@@ -513,7 +513,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 	}
 	else {
-		// A pack without an extension s not allowed
+		// A pack without an extension is not allowed
 		if (metadata->pack) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Pack %s provided, but extenstion missing.", metadata->pack);
 			return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
@@ -630,6 +630,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = request_post_mongo(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
 		ret = request_post_sql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_NONE))
+		ret = request_post_none(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = request_post_sql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
@@ -651,6 +653,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = transport_mongo(session, metadata, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_MYSQL))
 		ret = transport_mysql(session, r, mode);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_NONE))
+		ret = transport_none(session, metadata, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_oracle(session, r, mode);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL))
@@ -680,6 +684,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		ret = NGX_OK;
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
 		ret = response_post_mysql(session, metadata, r);
+	else if (! strcmp(session->request_type, REQUEST_TYPE_NONE))
+		ret = response_post_mysql(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = response_post_oracle(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
@@ -687,9 +693,9 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_post_xml(session, metadata, r);
 
-	// Clean up auth reponse unless using transport Internal or Redis
+	// Clean up auth reponse unless using transport Internal, None or Redis
 	if (session->auth_response) {
-		if ((strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) && (strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)))
+		if ((strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) && (strcmp(session->transport_type, TRANSPORT_TYPE_NONE)) && (strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)))
 			free(session->auth_response);
 	}
 
