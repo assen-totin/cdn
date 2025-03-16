@@ -8,7 +8,7 @@ Each file request must be authorised before served. Authorisation is handled by 
 
 The business logic for authorisation consists of three main elements:
 
-- Authorisation method: we support JWT, session ID  and transparent (completely offloaded ro external app/service)
+- Authorisation method: we support JWT, session ID  and transparent (completely offloaded to external app/service)
 - Request type: specifies the format of the request that will be sent to the external authorisation body; we support SQL, JSON, XML and Mongo.
 - Transport type: specifies how to connect to the external authorisation body; we support MySQL, PostgreSQL, Oracle, Mongo, Redis, HTTP, TCP and Unix domain socket plus an extra one called Internal.
 
@@ -22,7 +22,7 @@ Authorisation token may be supplied in:
 - In custom header: set its name in CDN configuration
 - In a cookie: set its name in CDN configuration
 
-The authorisation method determines how this authentication token will be processed to extract the actual authorisation token, which is then passed to the authorisation backend. 
+The authorisation method determines how the input will be processed to extract the actual authorisation token, which is then passed to the authorisation backend. 
 
 You may also use transparent authorisation when we pass all incoming headers and cookies to the authorisation body without working on them.
 
@@ -49,7 +49,7 @@ This method allows you to send some extra info to the authorisation body. This e
 
 This method will automatically include in the request the authorisation value.
 
-This method may be used with some complex request types like `json` or `xml`. It is not applicable for SQL or Mongo request type.
+This method may be used with some complex request types like `json` or `xml`. It is not applicable to SQL or Mongo request type.
 
 ## Authorisation value filters
 

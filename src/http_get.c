@@ -95,7 +95,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			if (strcmp(session->hdr_if_range_etag, metadata->etag))
 				session->hdr_ranges_cnt = 0;
 		}
-		else if (session->hdr_if_range_time) {
+		else if (session->hdr_if_range_time > 0) {
 			// If header contains a timestamp, check if our file has the same; if not, serve complete file by resetting ranges
 			if (session->hdr_if_range_time < metadata->upload_timestamp)
 				session->hdr_ranges_cnt = 0;
