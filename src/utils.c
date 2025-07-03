@@ -308,27 +308,32 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 	char *s0, *s1, *s2;
 	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
 	char *cookie_delim = " ", *cookie_subdelim = "=";
-	ngx_table_elt_t **elts;
+	ngx_table_elt_t elt;
 	cdn_kvp_t *cookies;
 
-	if (! r->headers_in.cookie.nelts) {
+	if (! r->headers_in.cookie) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No cookies found");
 		return NGX_OK;
 	}
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookie.nelts);
-	elts = r->headers_in.cookie.elts;
-	session->cookies_count = r->headers_in.cookie.nelts;
+	// Count cookies in the ELT
+	elt = r->headers_in.cookie;
+	while (elt) {
+		session->cookies_count ++;
+		elt = elt->next;
+	}
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", session->cookies_count);
 
-	// Allocate initial memory: we have at least r->headers_in.cookie.nelts, but may be more
-	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * r->headers_in.cookie.nelts);
+	// Allocate initial memory
+	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * session->cookies_count);
 	if (session->cookies == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * r->headers_in.cookie.nelts, r->headers_in.cookie.nelts);
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * session->cookies_count, session->cookies_count);
 		return NGX_ERROR;
 	}
 
-	for (i=0; i<r->headers_in.cookie.nelts; i++) {
-		s0 = from_ngx_str(r->pool, elts[i]->value);
+	elt = r->headers_in.cookie;
+	while (elt) {
+		s0 = from_ngx_str(r->pool, elt->value);
 		for (str1 = s0; ; str1 = NULL) {
 			token = strtok_r(str1, cookie_delim, &saveptr1);
 			if (token == NULL)
@@ -389,6 +394,8 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", session->cookies[cookie_index].name, session->cookies[cookie_index].value);
 			}
 		}
+
+		elt = elt->next;
 	}
 
 	return NGX_OK;
