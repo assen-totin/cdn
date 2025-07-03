@@ -19,6 +19,7 @@ ngx_int_t response_get_mysql(session_t *session, metadata_t *metadata, ngx_http_
 ngx_int_t response_post_mysql(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 
 // None
+ngx_int_t request_get_none(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 ngx_int_t response_get_none(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 ngx_int_t response_post_none(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 
