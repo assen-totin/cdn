@@ -308,7 +308,7 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 	char *s0, *s1, *s2;
 	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
 	char *cookie_delim = " ", *cookie_subdelim = "=";
-	ngx_table_elt_t elt;
+	ngx_table_elt_t *elt;
 	cdn_kvp_t *cookies;
 
 	if (! r->headers_in.cookie) {
