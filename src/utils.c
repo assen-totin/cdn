@@ -311,23 +311,23 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 	ngx_table_elt_t **elts;
 	cdn_kvp_t *cookies;
 
-	if (! r->headers_in.cookies.nelts) {
+	if (! r->headers_in.cookie.nelts) {
 		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "No cookies found");
 		return NGX_OK;
 	}
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookies.nelts);
-	elts = r->headers_in.cookies.elts;
-	session->cookies_count = r->headers_in.cookies.nelts;
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", r->headers_in.cookie.nelts);
+	elts = r->headers_in.cookie.elts;
+	session->cookies_count = r->headers_in.cookie.nelts;
 
-	// Allocate initial memory we have at least r->headers_in.cookies.nelts, but may be more)
-	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * r->headers_in.cookies.nelts);
+	// Allocate initial memory: we have at least r->headers_in.cookie.nelts, but may be more
+	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * r->headers_in.cookie.nelts);
 	if (session->cookies == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * r->headers_in.cookies.nelts, r->headers_in.cookies.nelts);
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * r->headers_in.cookie.nelts, r->headers_in.cookie.nelts);
 		return NGX_ERROR;
 	}
 
-	for (i=0; i<r->headers_in.cookies.nelts; i++) {
+	for (i=0; i<r->headers_in.cookie.nelts; i++) {
 		s0 = from_ngx_str(r->pool, elts[i]->value);
 		for (str1 = s0; ; str1 = NULL) {
 			token = strtok_r(str1, cookie_delim, &saveptr1);
@@ -820,7 +820,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 		cookie_name.len = strlen(session->auth_cookie);
 		cookie_name.data = (u_char *) session->auth_cookie;
 
-		ret = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, &cookie_value);
+		ret = ngx_http_parse_multi_header_lines(&r->headers_in.cookie, &cookie_name, &cookie_value);
 		if (ret == NGX_DECLINED) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Cookie %s for auth token not found", session->auth_cookie);
 		}
