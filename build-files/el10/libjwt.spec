@@ -1,0 +1,62 @@
+Name: libjwt
+Version: %{_libjwt_version}
+Release: %{_libjwt_release}
+Summary:	JSON Web Tokens C library
+Group:		Development/Libraries
+License:	MPLv2
+URL:		https://github.com/benmcollins/libjwt
+Source0:	%{name}-%{version}.tar.gz
+BuildRequires:  autoconf, automake, libtool
+BuildRequires:  jansson-devel
+BuildRequires:  openssl-devel
+BuildRequires:  check-devel
+#BuildRequires:  rpmlint
+Requires:       jansson
+Requires:       openssl
+
+%description
+JSON Web Tokens C library (see jwt.io)
+
+%package devel
+Summary:        Header files and libraries for JSON Web Tokens C library
+Requires: 	libjwt
+
+%description devel
+Header files and libraries needed to develop programs that use the
+JSON Web Tokens C library.
+
+%prep
+%setup -q
+
+%build
+mkdir build
+cd build
+cmake -DCMAKE_INSTALL_PREFIX=/usr ..
+make
+
+./configure --prefix=%{_prefix} --libdir=%{_libdir}
+
+%check
+make check
+
+%install
+make DESTDIR=%{buildroot} install
+rm -f %{buildroot}/usr/lib/cmake
+rm -f %{buildroot}/usr/share
+
+%files
+%defattr(-,root,root)
+%doc LICENSE README.md
+%{_libdir}/*.so.*
+%{_libdir}/*.so
+
+%files devel
+%defattr(-,root,root)
+%{_includedir}/*h
+%{_libdir}/*.a
+%{_libdir}/pkgconfig/*
+
+%changelog
+* Wed Sep 19 2018 Gavin Carr <gavin@openfusion.com.au> - 1.9.0-1
+- Initial package.
+

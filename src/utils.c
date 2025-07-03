@@ -679,7 +679,6 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->http_method = ngx_pcalloc(r->pool, 8);
 	session->http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
 	session->jwt_field = from_ngx_str(r->pool, cdn_loc_conf->jwt_field);
-	session->jwt_json = NULL;
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
 	session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
 	session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);

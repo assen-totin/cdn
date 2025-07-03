@@ -151,6 +151,14 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 		NULL
 	},
 	{
+		ngx_string("cdn_jwt_alg"),
+		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot,
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_cdn_loc_conf_t, jwt_alg),
+		NULL
+	},
+	{
 		ngx_string("cdn_jwt_field"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot,

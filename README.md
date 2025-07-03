@@ -39,7 +39,7 @@ All below Nginx parameters should be configured for the chosen `location`:
 - `cdn_auth_cookie my_cookie`: Name of the cookie where to find the authorisation token (optional)
 - `cdn_auth_header X-Custom-Auth`; Name of the HTTP header where to find the authorisation token (optional)
 - `cdn_auth_filter filter_token,-,1`: Name of the filter and its parameters to apply to authorisation value (optional)
-- `cdn_jwt_key 0123456789ABCDEF`: Only for authorisation `jwt` - either the JWT key or absolute path to a file with the key
+- `cdn_jwt_key JSON/path`: Only for authorisation `jwt` - either the JWT key in JWKS format (JSON) or absolute path to a file with the key in JWKS format (the key must contain an `alg` property that defines the singature method to use, e.g., `HS256`)
 - `cdn_jwt_field user_id`: Only for authorisation `jwt`: Name of the JWT payload field which contains the authorisation value
 - `cdn_request_type json`: Type of authorisation request to perform, one of `json`, `xml`, `mysql`, `postgresql`, `oracle`, `mongo`
 - `cdn_all_cookies yes`: Only for request type `json` or `xml`: include all cookies in request to authorisation service

@@ -96,6 +96,7 @@
 #define DEFAULT_FS_ROOT "/opt/cdn"
 #define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_INDEX_PREFIX "______"
+#define DEFAULT_JWT_ALG "none"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
 #define DEFAULT_MATRIX_ALLOW "allow"
@@ -361,7 +362,6 @@ typedef struct {
 	int auth_response_len;
 	int auth_response_pos;
 	int auth_response_count;
-	char *jwt_json;
 	char *jwt_field;
 	char *sql_query;
 	char *sql_query2;
@@ -399,6 +399,12 @@ typedef struct {
 	PGresult *postgresql_result;
 #endif
 } session_t;
+
+// LibJWT context
+typedef struct {
+	session_t *session;
+	ngx_http_request_t *r;
+} jwt_ctx_t;
 
 // Upload
 typedef struct {
