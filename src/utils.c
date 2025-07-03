@@ -304,7 +304,7 @@ ngx_int_t get_all_headers(session_t *session, ngx_http_request_t *r) {
  * Extract all cookies from headers
  */
 ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
-	int i, j, cookie_index = -1;
+	int j, cookie_index = -1;
 	char *s0, *s1, *s2;
 	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
 	char *cookie_delim = " ", *cookie_subdelim = "=";
@@ -827,7 +827,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 		cookie_name.len = strlen(session->auth_cookie);
 		cookie_name.data = (u_char *) session->auth_cookie;
 
-		ret = ngx_http_parse_multi_header_lines(&r->headers_in.cookie, &cookie_name, &cookie_value);
+		ret = ngx_http_parse_multi_header_lines(r, r->headers_in.cookie, &cookie_name, &cookie_value);
 		if (ret == NGX_DECLINED) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Cookie %s for auth token not found", session->auth_cookie);
 		}
