@@ -31,30 +31,24 @@ JSON Web Tokens C library.
 %build
 mkdir build
 cd build
-cmake -DCMAKE_INSTALL_PREFIX=/usr ..
+CFLAGS=-Wno-error cmake -DCMAKE_INSTALL_PREFIX=/usr ..
 make
-
-./configure --prefix=%{_prefix} --libdir=%{_libdir}
-
-%check
-make check
-
-%install
 make DESTDIR=%{buildroot} install
-rm -f %{buildroot}/usr/lib/cmake
-rm -f %{buildroot}/usr/share
+rm -rf %{buildroot}/usr/lib/cmake
+rm -rf %{buildroot}/usr/share
 
 %files
 %defattr(-,root,root)
 %doc LICENSE README.md
-%{_libdir}/*.so.*
-%{_libdir}/*.so
+/usr/bin/*
+/usr/lib/*.so.*
+/usr/lib/*.so
 
 %files devel
 %defattr(-,root,root)
-%{_includedir}/*h
-%{_libdir}/*.a
-%{_libdir}/pkgconfig/*
+/usr/include/*h
+/usr/lib/*.a
+/usr/lib/pkgconfig/*
 
 %changelog
 * Wed Sep 19 2018 Gavin Carr <gavin@openfusion.com.au> - 1.9.0-1

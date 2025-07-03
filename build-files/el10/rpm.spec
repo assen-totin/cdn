@@ -62,7 +62,7 @@ cp -r ${RPM_SOURCE_DIR}/bin/* $RPM_BUILD_ROOT/usr/bin
 mkdir -p $RPM_BUILD_ROOT/var/lib/cdn/mirror.d
 
 %clean
-rm -rf $RPM_BUILD_ROOT $RPM_BUILD_DIR
+rm -rf $RPM_BUILD_ROOT
 
 %files
 
