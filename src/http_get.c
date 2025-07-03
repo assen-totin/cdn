@@ -645,7 +645,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	else if (! strcmp(session->request_type, REQUEST_TYPE_MYSQL))
 		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_NONE))
-		ret = request_get_none(session, metadata, r, METADATA_SELECT);
+		ret = request_get_none(session, metadata, r);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_ORACLE))
 		ret = request_get_sql(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->request_type, REQUEST_TYPE_POSTGRESQL))
