@@ -28,7 +28,7 @@ pushd $CHECKOUT_DIR
 # Get latest tag
 LIBJWT_VERSION=$(curl --silent https://api.github.com/repos/benmcollins/libjwt/tags | jq '.[].name' | sed 's/"//g' | sed 's/^v//' | sort -rV | head -1)
 LIBJWT_RELEASE="1.$EL_VERSION"
-SPUTNIK_REPO_NAME="curaden-repack-$EL_VERSION"
+SPUTNIK_REPO_NAME="curaden-$EL_VERSION-repack"
 
 # Check which is the latest version we aleady have
 find_package $SPUTNIK_REPO_NAME $RPM_PACKAGE $LIBJWT_VERSION $LIBJWT_RELEASE
