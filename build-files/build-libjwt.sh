@@ -7,13 +7,9 @@
 RPM_PACKAGE="libjwt"
 
 # Find build-common.sh and source it
-PROJECT_DIR=`pwd`
-PROJECT_PARENT=`dirname $PROJECT_DIR`
-PROJECT_PP=`dirname $PROJECT_PARENT`
-if [ -e $PROJECT_PP/build-server/build-common.sh ] ; then
-	BUILD_SERVER_DIR=$PROJECT_PP
-	source $PROJECT_PP/build-server/build-common.sh
-elif [ -e /usr/libexec/curaden/build-server/build-server/build-common.sh ] ; then
+CURR_DIR=`pwd`
+PROJECT_DIR=`dirname $CURR_DIR`
+if [ -e /usr/libexec/curaden/build-server ] ; then
 	BUILD_SERVER_DIR=/usr/libexec/curaden/build-server
 	source $BUILD_SERVER_DIR/build-server/build-common.sh
 else
