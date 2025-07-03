@@ -6,7 +6,7 @@ Group:		Development/Libraries
 License:	MPLv2
 URL:		https://github.com/benmcollins/libjwt
 Source0:	%{name}-%{version}.tar.gz
-BuildRequires:  autoconf, automake, libtool
+BuildRequires:  cmake
 BuildRequires:  jansson-devel
 BuildRequires:  openssl-devel
 BuildRequires:  check-devel
