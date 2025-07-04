@@ -84,6 +84,8 @@ For cross-origin resource sharing (CORS) you configure one allowed host in the `
 
 # Build configuration
 
+## Features
+
 To enable/disable some of the features (mostly such that require external libraries to be compiled and run), edit src/modules.h and uncomment the respective line:
 
 - JWT support
@@ -92,6 +94,13 @@ To enable/disable some of the features (mostly such that require external librar
 - Oracle support
 - PostgreSQL support
 - Redis support
+
+## Platforms
+
+The following tags are known to build on the below plaforms:
+
+- 0.16.x: RHEL-9 (nginx-1.20, libjwt-1.x, libxml2-2.9)
+- 0.17.x: RHEL-10 (nginx-1.26, libjwt-3.x, libxml2-2.12)
 
 # Authorisation
 
