@@ -779,7 +779,6 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 	bool match = false;
 	int i, j;
 	ngx_int_t ret;
-	ngx_str_t cookie_name, cookie_value;
 	ngx_table_elt_t *h;
 	ngx_list_part_t *part;
 
@@ -795,6 +794,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 
 			strncpy(session->auth_token, hdr_authorization + 7, strlen(hdr_authorization) - 7);
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in Authorization header: %s", session->auth_token);
+			return NGX_OK;
 		}
 	}
 
@@ -808,7 +808,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 					session->auth_token = from_ngx_str(r->pool, h[j].value);
 					match = true;
 					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in header %s: %s", session->auth_header, session->auth_token);
-					break;
+					return NGX_OK;
 				}
 			}
 
@@ -824,17 +824,16 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 
 	// If cookie name given in config, try to find the cookie and to extract auth token from it
 	if (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE)) {
-		cookie_name.len = strlen(session->auth_cookie);
-		cookie_name.data = (u_char *) session->auth_cookie;
-
-		ret = ngx_http_parse_multi_header_lines(r, r->headers_in.cookie, &cookie_name, &cookie_value);
-		if (ret == NGX_DECLINED) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Cookie %s for auth token not found", session->auth_cookie);
-		}
-		else {
-			session->auth_token = from_ngx_str(r->pool, cookie_value);
+		for (i=0; i < session->cookies_count; i++) {
+			if (! strcmp(session->cookies[i].name, session->auth_cookie)) {
+				session->auth_token = session->cookies[i].value;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in cookie %s: %s", session->auth_cookie, session->auth_token);
+				return NGX_OK;
+			}
 		}
 	}
+
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth token not found");
 
 	return NGX_OK;
 }

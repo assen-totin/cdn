@@ -573,6 +573,12 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 	}
 
+	// Extract all cookies if requested
+	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
+		if ((ret = get_all_cookies(session, r)) > 0)
+			return ret;
+	}
+
 	// Try to find an authorisation token
 	if ((ret = get_auth_token(session, r)) > 0)
 		return upload_cleanup(r, upload, ret);

@@ -612,7 +612,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	}
 
 	// Extract all cookies if requested
-	if (! strcmp(session->all_cookies, "yes")) {
+	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
 		if ((ret = get_all_cookies(session, r)) > 0)
 			return ret;
 	}
