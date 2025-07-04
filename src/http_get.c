@@ -201,7 +201,7 @@ ngx_int_t read_fs(session_t *session, metadata_t *metadata, ngx_http_request_t *
  */
 ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int b1_len, b2_len, i;
-	int64_t hdr_content_range_start, hdr_content_range_end;
+	int64_t hdr_content_range_start = 0, hdr_content_range_end = metadata->length;
 	char *encoded = NULL;
 	bool curl_encoded = false;
 	ngx_buf_t *b, *b1, *b2;

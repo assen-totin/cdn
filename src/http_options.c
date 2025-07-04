@@ -52,14 +52,14 @@ ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
 
 	if (strcmp(session->auth_header, DEFAULT_AUTH_HEADER)) {
 ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s, %s", HEADER_ACCESS_CONTROL_ALLOW_HEADERS, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
-		sprintf(h->value.data, "%s, %s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
+		sprintf((char *) h->value.data, "%s, %s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
 	}
 	else {
 ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONTROL_ALLOW_HEADERS, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
-		sprintf(h->value.data, "%s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
+		sprintf((char *)h->value.data, "%s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
 	}
 
-	h->value.len = strlen(h->value.data);
+	h->value.len = strlen((char *)h->value.data);
 
 	// There will be no body
 	r->header_only = 1;
