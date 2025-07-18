@@ -334,7 +334,7 @@ cdn_debug("get_all_headers: %s", "done");
  * Extract all cookies from headers
  */
 ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
-	int j, cookie_index = -1;
+	int j, cookies_count = 0, cookie_index = -1;
 	char *s0, *s1, *s2;
 	char *str1, *str2, *token, *subtoken, *saveptr1, *saveptr2;
 	char *cookie_delim = " ", *cookie_subdelim = "=";
@@ -349,15 +349,15 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 	// Count cookies in the ELT
 	elt = r->headers_in.cookie;
 	while (elt) {
-		session->cookies_count ++;
+		cookies_count ++;
 		elt = elt->next;
 	}
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", session->cookies_count);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", cookies_count);
 
 	// Allocate initial memory
-	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * session->cookies_count);
+	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * cookies_count);
 	if (session->cookies == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * session->cookies_count, session->cookies_count);
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for %l cookies KVP.", sizeof(cdn_kvp_t) * cookies_count, cookies_count);
 		return NGX_ERROR;
 	}
 
