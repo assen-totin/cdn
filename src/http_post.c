@@ -584,10 +584,21 @@ if (session->auth_cookie)
 else
 	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie: %s", "undefined");
 
-if (session->auth_cookie)
+if (session->auth_type)
 	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_type: %s", session->auth_type);
 else
 	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_type: %s", "undefined");
+
+if (session->request_type)
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", session->request_type);
+else
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", "undefined");
+
+if (! session->transport_type)
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type: %s", session->transport_type);
+else
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type: %s", "undefined");
+
 
 
 	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
@@ -657,11 +668,6 @@ else
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file16;
 
-if (session->request_type)
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", session->request_type);
-else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type IS NOT DEFINED");
-
 	// Prepare metadata request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
 		ret = request_post_json(session, metadata, r);
@@ -683,11 +689,6 @@ else
 
 	// Query for metadata based on transport
 	mode = (r->method & (NGX_HTTP_POST)) ? METADATA_INSERT : METADATA_UPDATE;
-
-if (! session->request_type)
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type: %s", session->transport_type);
-else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type IS NOT DEFINED");
 
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(session, metadata, r, mode);
