@@ -289,7 +289,11 @@ static inline ngx_int_t store_header(session_t *session, ngx_http_request_t *r, 
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header %s: %s", session->headers[session->headers_count].name, session->headers[session->headers_count].value);
 
+cdn_debug("store_header: %s: %s", session->headers[session->headers_count].name, session->headers[session->headers_count].value);
+
 	session->headers_count ++;
+
+cdn_debug("session->headers_count: %i", session->headers_count);
 
 	return NGX_OK;
 }
@@ -305,6 +309,7 @@ ngx_int_t get_all_headers(session_t *session, ngx_http_request_t *r) {
 	part = &r->headers_in.headers.part;
 	for (i=0; i < r->headers_in.headers.nalloc; i++) {
 cdn_debug("get_all_headers: i: %i", i);
+cdn_debug("get_all_headers: part->nelts: %i", part->nelts);
 		h = part->elts;
 		for (j=0; j < part->nelts; j++) {
 cdn_debug("get_all_headers: j: %i", j);
@@ -313,6 +318,8 @@ cdn_debug("get_all_headers: j: %i", j);
 
 		part = part->next;
 	}
+
+cdn_debug("get_all_headers: %s", "done");
 
 	return NGX_OK;
 }
