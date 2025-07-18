@@ -615,7 +615,7 @@ for (i=0; i < session->headers_count; i++)
 	cdn_debug("%s: %s", session->headers[i].name, session->headers[i].value);
 
 cdn_debug("BEFORE get_all_cookies");
-get_all_headers(session, r);
+get_all_cookies(session, r);
 cdn_debug("session->cookies_count: %i", session->cookies_count);
 for (i=0; i < session->cookies_count; i++)
 	cdn_debug("%s: %s", session->cookies[i].name, session->cookies[i].value);
