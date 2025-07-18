@@ -687,6 +687,8 @@ session_t *init_session(ngx_http_request_t *r) {
 		return session;
 
 	// Set common options (for GET|HEAD|DELETE, POST and PUT)
+	session->all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
+	session->all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
 	session->auth_cookie = from_ngx_str(r->pool, cdn_loc_conf->auth_cookie);
 	session->auth_request = NULL;
 	session->auth_response = NULL;
@@ -695,8 +697,19 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->auth_type = from_ngx_str(r->pool, cdn_loc_conf->auth_type);
 	session->auth_value = NULL;
 	session->auth_filter = from_ngx_str(r->pool, cdn_loc_conf->auth_filter);
+	session->cookies = NULL;
+	session->cookies_count = 0;
 	session->curl = NULL;
 	session->db_dsn = from_ngx_str(r->pool, cdn_loc_conf->db_dsn);
+	session->headers = NULL;
+	session->headers_count = 0;
+	session->hdr_if_none_match = NULL;
+	session->hdr_if_modified_since = -1;
+	session->hdr_range = NULL;
+	session->hdr_ranges = NULL;
+	session->hdr_ranges_cnt = 0;
+	session->hdr_if_range_etag = NULL;
+	session->hdr_if_range_time = -1;
 	session->http_method = ngx_pcalloc(r->pool, 8);
 	session->http_url = from_ngx_str(r->pool, cdn_loc_conf->http_url);
 	session->jwt_field = from_ngx_str(r->pool, cdn_loc_conf->jwt_field);
@@ -715,20 +728,6 @@ session_t *init_session(ngx_http_request_t *r) {
 
 	// Set further options for GET, HEAD and DELETE
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE)) {
-		session->all_headers = from_ngx_str(r->pool, cdn_loc_conf->all_headers);
-		session->all_cookies = from_ngx_str(r->pool, cdn_loc_conf->all_cookies);
-		session->headers = NULL;
-		session->headers_count = 0;
-		session->cookies = NULL;
-		session->cookies_count = 0;
-		session->hdr_if_none_match = NULL;
-		session->hdr_if_modified_since = -1;
-		session->hdr_range = NULL;
-		session->hdr_ranges = NULL;
-		session->hdr_ranges_cnt = 0;
-		session->hdr_if_range_etag = NULL;
-		session->hdr_if_range_time = -1;
-
 		// Method-specific init
 		if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) {
 			sprintf(session->http_method, "GET");
