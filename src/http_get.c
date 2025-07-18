@@ -605,8 +605,24 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		} while(str1);
 	}
 
+//FIXME - TEST
+int i;
+
+cdn_debug("BEFORE get_all_headers");
+get_all_headers(session, r);
+cdn_debug("session->headers_count: %i", session->headers_count);
+for (i=0; i < session->headers_count; i++)
+	cdn_debug("%s: %s", session->headers[i].name, session->headers[i].value);
+
+cdn_debug("BEFORE get_all_cookies");
+get_all_headers(session, r);
+cdn_debug("session->cookies_count: %i", session->cookies_count);
+for (i=0; i < session->cookies_count; i++)
+	cdn_debug("%s: %s", session->cookies[i].name, session->cookies[i].value);
+// END TEST
+
 	// Extract all headers if requested
-	if (! strcmp(session->all_headers, "yes")) {
+	if ((! strcmp(session->all_headers, "yes")) || (strcmp(session->auth_header, DEFAULT_AUTH_HEADER))) {
 		if ((ret = get_all_headers(session, r)) > 0)
 			return ret;
 	}

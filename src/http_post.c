@@ -573,6 +573,12 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 	}
 
+	// Extract all headers if requested
+	if ((! strcmp(session->all_headers, "yes")) || (strcmp(session->auth_header, DEFAULT_AUTH_HEADER))) {
+		if ((ret = get_all_headers(session, r)) > 0)
+			return ret;
+	}
+
 	// Extract all cookies if requested
 	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
 		if ((ret = get_all_cookies(session, r)) > 0)

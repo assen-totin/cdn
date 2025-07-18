@@ -799,7 +799,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 	if (r->headers_in.authorization) {
 		hdr_authorization = from_ngx_str(r->pool, r->headers_in.authorization->value);
 
-		if (strstr(hdr_authorization, "Bearer")) {
+		if (strcasestr(hdr_authorization, "Bearer")) {
 			if ((session->auth_token = ngx_pcalloc(r->pool, strlen(hdr_authorization) + 1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for Authorization header.", strlen(hdr_authorization) + 1);
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -811,27 +811,14 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 		}
 	}
 
-	// Next try a custom header, if defined
-	if (strcmp(session->auth_header, DEFAULT_AUTH_HEADER)) {
-		part = &r->headers_in.headers.part;
-		for (i=0; i < r->headers_in.headers.nalloc; i++) {
-			h = part->elts;
-			for (j=0; j < part->nelts; j++) {
-				if (! ngx_strncasecmp( h[j].key.data, (u_char *) session->auth_header, h[j].key.len)) {
-					session->auth_token = from_ngx_str(r->pool, h[j].value);
-					match = true;
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in header %s: %s", session->auth_header, session->auth_token);
-					return NGX_OK;
-				}
+	// If custom header name given in config, try to find it and to extract auth token from it
+	if (strcasecmp(session->auth_header, DEFAULT_AUTH_HEADER)) {
+		for (i=0; i < session->headers_count; i++) {
+			if (! strcasecmp(session->headers[i].name, session->auth_header)) {
+				session->auth_token = session->headers[i].value;
+				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in header %s: %s", session->auth_header, session->auth_token);
+				return NGX_OK;
 			}
-
-			if (match)
-				break;
-
-			if (part->next)
-				part = part->next;
-			else
-				break;
 		}
 	}
 
