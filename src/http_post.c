@@ -574,9 +574,15 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 
 	// Extract all cookies if requested
-//ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Extension size %l exceeds allowed size %l.", strlen(metadata->ext), MAX_EXT_SIZE);
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies: %s", session->all_cookies);
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie: %s", session->auth_cookie);
+if (session->all_cookies)
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies: %s", session->all_cookies);
+else
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies IS UNDEFINED");
+if (session->auth_cookie)
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie: %s", session->auth_cookie);
+else
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie IS UNDEFINED");
+
 	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting all cookies");
 		if ((ret = get_all_cookies(session, r)) > 0)
@@ -610,7 +616,9 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Applying auth value filter if
 
 ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "About to process metadata");
 if (metadata->filename)
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "metadata->filename: %s", metadata->filename);
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "metadata->filename: %s", metadata->filename);
+else
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "metadata->filename IS UNDEFINED");
 
 	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
@@ -642,9 +650,10 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "metadata->filename: %s", meta
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file16;
 
-if (! session->request_type)
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type IS NOT DEFINED");
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", session->request_type);
+if (session->request_type)
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", session->request_type);
+else
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type IS NOT DEFINED");
 
 	// Prepare metadata request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
@@ -669,8 +678,9 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", s
 	mode = (r->method & (NGX_HTTP_POST)) ? METADATA_INSERT : METADATA_UPDATE;
 
 if (! session->request_type)
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type IS NOT DEFINED");
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type: %s", session->transport_type);
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type: %s", session->transport_type);
+else
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type IS NOT DEFINED");
 
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(session, metadata, r, mode);
