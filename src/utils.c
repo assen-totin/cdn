@@ -304,9 +304,12 @@ ngx_int_t get_all_headers(session_t *session, ngx_http_request_t *r) {
 
 	part = &r->headers_in.headers.part;
 	for (i=0; i < r->headers_in.headers.nalloc; i++) {
+cdn_debug("get_all_headers: i: %i", i);
 		h = part->elts;
-		for (j=0; j < part->nelts; j++)
+		for (j=0; j < part->nelts; j++) {
+cdn_debug("get_all_headers: j: %i", j);
 			store_header(session, r, h[j].key, h[j].value);
+		}
 
 		part = part->next;
 	}
