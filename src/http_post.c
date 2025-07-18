@@ -574,52 +574,14 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 
 	// Extract all cookies if requested
-if (session->all_cookies)
-	cdn_debug("session->all_cookies: %s", session->all_cookies);
-else
-	cdn_debug("session->all_cookies: %s", "undefined");
-
-if (session->auth_cookie)
-	cdn_debug("session->auth_cookie: %s", session->auth_cookie);
-else
-	cdn_debug("session->auth_cookie: %s", "undefined");
-
-if (session->auth_type)
-	cdn_debug("session->auth_type: %s", session->auth_type);
-else
-	cdn_debug("session->auth_type: %s", "undefined");
-
-if (session->request_type)
-	cdn_debug("session->request_type: %s", session->request_type);
-else
-	cdn_debug("session->request_type: %s", "undefined");
-
-if (session->transport_type)
-	cdn_debug("session->transport_type: %s", session->transport_type);
-else
-	cdn_debug("session->transport_type: %s", "undefined");
-
-if (metadata->filename)
-	cdn_debug("metadata->filename: %s", metadata->filename);
-else
-	cdn_debug("metadata->filename: %s", "undefined");
-
-
-
 	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
-cdn_debug("Getting cookies: %s", "all");
 		if ((ret = get_all_cookies(session, r)) > 0)
 			return upload_cleanup(r, upload, ret);
 	}
 
-cdn_debug("Break point: %s", "a");
-
 	// Try to find an authorisation token
-cdn_debug("Getting auth token: %s", "now");
 	if ((ret = get_auth_token(session, r)) > 0)
 		return upload_cleanup(r, upload, ret);
-
-cdn_debug("Break point: %s", "b");
 
 	if (session->auth_token) {
 		// Extract authentication token to value
@@ -637,8 +599,6 @@ cdn_debug("Break point: %s", "b");
 			return upload_cleanup(r, upload, ret);
 	}
 
-cdn_debug("Break point: %s", "c");
-
 	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
 		if ((metadata->filename = ngx_pcalloc(r->pool, strlen(DEFAULT_FILE_NAME) + 1)) == NULL) {
@@ -647,8 +607,6 @@ cdn_debug("Break point: %s", "c");
 		}
 		strcpy(metadata->filename, DEFAULT_FILE_NAME);
 	}
-
-cdn_debug("Break point: %s", "d");
 
 	// Metadata: merge of defaults if some values are missing: content_type
 	if (! metadata->content_type) {
@@ -659,8 +617,6 @@ cdn_debug("Break point: %s", "d");
 		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
 	}
 
-cdn_debug("Break point: %s", "e");
-
 	// Metadata: merge of defaults if some values are missing: content_disposition
 	if (! metadata->content_disposition) {
 		if ((metadata->content_disposition = ngx_pcalloc(r->pool, strlen(DEFAULT_CONTENT_DISPOSITION) + 1)) == NULL) {
@@ -669,8 +625,6 @@ cdn_debug("Break point: %s", "e");
 		}
 		strcpy(metadata->content_disposition, DEFAULT_CONTENT_DISPOSITION);
 	}
-
-cdn_debug("Break point: %s", "f");
 
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file16;
@@ -691,15 +645,11 @@ cdn_debug("Break point: %s", "f");
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = request_post_xml(session, metadata, r);
 
-cdn_debug("Break point: %s", "g");
-
 	if (ret)
 		return upload_cleanup(r, upload, ret);
 
 	// Query for metadata based on transport
 	mode = (r->method & (NGX_HTTP_POST)) ? METADATA_INSERT : METADATA_UPDATE;
-
-cdn_debug("Break point: %s", "h");
 
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(session, metadata, r, mode);
@@ -722,8 +672,6 @@ cdn_debug("Break point: %s", "h");
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
 		ret = transport_socket(session, r, SOCKET_TYPE_UNUX);
 
-cdn_debug("Break point: %s", "i");
-
 	if (session->auth_request) {
 		if ((! strcmp(session->request_type, REQUEST_TYPE_JSON)) || (! strcmp(session->request_type, REQUEST_TYPE_MONGO))) {
 			bson_free(session->auth_request);
@@ -731,12 +679,8 @@ cdn_debug("Break point: %s", "i");
 		}
 	}
 
-cdn_debug("Break point: %s", "j");
-
 	if (ret)
 		return upload_cleanup(r, upload, ret);
-
-cdn_debug("Break point: %s", "k");
 
 	// Process metadata response (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
@@ -755,20 +699,14 @@ cdn_debug("Break point: %s", "k");
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_post_xml(session, metadata, r);
 
-cdn_debug("Break point: %s", "l");
-
 	// Clean up auth reponse unless using transport Internal, None or Redis
 	if (session->auth_response) {
 		if ((strcmp(session->transport_type, TRANSPORT_TYPE_INTERNAL)) && (strcmp(session->transport_type, TRANSPORT_TYPE_NONE)) && (strcmp(session->transport_type, TRANSPORT_TYPE_REDIS)))
 			free(session->auth_response);
 	}
 
-cdn_debug("Break point: %s", "m");
-
 	if (ret)
 		return upload_cleanup(r, upload, ret);
-
-cdn_debug("Break point: %s", "n");
 
 	// If we did not get status code, use the configured one
 	if (metadata->status < 0) {
