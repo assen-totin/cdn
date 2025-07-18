@@ -575,73 +575,69 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// Extract all cookies if requested
 if (session->all_cookies)
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies: %s", session->all_cookies);
+	cdn_debug("session->all_cookies: %s", session->all_cookies);
 else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies: %s", "undefined");
+	cdn_debug("session->all_cookies: %s", "undefined");
 
 if (session->auth_cookie)
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie: %s", session->auth_cookie);
+	cdn_debug("session->auth_cookie: %s", session->auth_cookie);
 else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie: %s", "undefined");
+	cdn_debug("session->auth_cookie: %s", "undefined");
 
 if (session->auth_type)
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_type: %s", session->auth_type);
+	cdn_debug("session->auth_type: %s", session->auth_type);
 else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_type: %s", "undefined");
+	cdn_debug("session->auth_type: %s", "undefined");
 
 if (session->request_type)
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", session->request_type);
+	cdn_debug("session->request_type: %s", session->request_type);
 else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", "undefined");
+	cdn_debug("session->request_type: %s", "undefined");
 
-if (! session->transport_type)
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type: %s", session->transport_type);
+if (session->transport_type)
+	cdn_debug("session->transport_type: %s", session->transport_type);
 else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type: %s", "undefined");
+	cdn_debug("session->transport_type: %s", "undefined");
 
 if (metadata->filename)
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "metadata->filename: %s", metadata->filename);
+	cdn_debug("metadata->filename: %s", metadata->filename);
 else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "metadata->filename IS UNDEFINED");
+	cdn_debug("metadata->filename: %s", "undefined");
 
 
 
 	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting cookies: %s", "all");
+cdn_debug("Getting cookies: %s", "all");
 		if ((ret = get_all_cookies(session, r)) > 0)
 			return upload_cleanup(r, upload, ret);
 	}
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "a");
+cdn_debug("Break point: %s", "a");
 
 	// Try to find an authorisation token
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting auth token: %s", "now");
+cdn_debug("Getting auth token: %s", "now");
 	if ((ret = get_auth_token(session, r)) > 0)
 		return upload_cleanup(r, upload, ret);
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "b");
+cdn_debug("Break point: %s", "b");
 
 	if (session->auth_token) {
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Found auth token: %s", "now");
 		// Extract authentication token to value
 		if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "auth type is: %s", "JWT");
 			if ((ret = auth_jwt(session, r)) > 0)
 				return upload_cleanup(r, upload, ret);
 		}
 		else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "auth type is: %s", "session");
 			if ((ret = auth_session(session, r)) > 0)
 				return upload_cleanup(r, upload, ret);
 		}
 
 		// Apply filter to auth_value, if any
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Applying auth value filter if defined");
 		if ((ret = filter_auth_value(session, r)) > 0)
 			return upload_cleanup(r, upload, ret);
 	}
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "c");
+cdn_debug("Break point: %s", "c");
 
 	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
@@ -652,7 +648,7 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "c");
 		strcpy(metadata->filename, DEFAULT_FILE_NAME);
 	}
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "d");
+cdn_debug("Break point: %s", "d");
 
 	// Metadata: merge of defaults if some values are missing: content_type
 	if (! metadata->content_type) {
@@ -663,7 +659,7 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "d");
 		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
 	}
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "e");
+cdn_debug("Break point: %s", "e");
 
 	// Metadata: merge of defaults if some values are missing: content_disposition
 	if (! metadata->content_disposition) {
@@ -674,7 +670,7 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "e");
 		strcpy(metadata->content_disposition, DEFAULT_CONTENT_DISPOSITION);
 	}
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "f");
+cdn_debug("Break point: %s", "f");
 
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file16;
@@ -695,7 +691,7 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "f");
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = request_post_xml(session, metadata, r);
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "g");
+cdn_debug("Break point: %s", "g");
 
 	if (ret)
 		return upload_cleanup(r, upload, ret);
@@ -703,7 +699,7 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "g");
 	// Query for metadata based on transport
 	mode = (r->method & (NGX_HTTP_POST)) ? METADATA_INSERT : METADATA_UPDATE;
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "h");
+cdn_debug("Break point: %s", "h");
 
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(session, metadata, r, mode);
@@ -726,7 +722,7 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "h");
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_UNIX))
 		ret = transport_socket(session, r, SOCKET_TYPE_UNUX);
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "i");
+cdn_debug("Break point: %s", "i");
 
 	if (session->auth_request) {
 		if ((! strcmp(session->request_type, REQUEST_TYPE_JSON)) || (! strcmp(session->request_type, REQUEST_TYPE_MONGO))) {
@@ -735,12 +731,12 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "i");
 		}
 	}
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "j");
+cdn_debug("Break point: %s", "j");
 
 	if (ret)
 		return upload_cleanup(r, upload, ret);
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "k");
+cdn_debug("Break point: %s", "k");
 
 	// Process metadata response (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
@@ -759,7 +755,7 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "k");
 	else if (! strcmp(session->request_type, REQUEST_TYPE_XML))
 		ret = response_post_xml(session, metadata, r);
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "l");
+cdn_debug("Break point: %s", "l");
 
 	// Clean up auth reponse unless using transport Internal, None or Redis
 	if (session->auth_response) {
@@ -767,12 +763,12 @@ ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "l");
 			free(session->auth_response);
 	}
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "m");
+cdn_debug("Break point: %s", "m");
 
 	if (ret)
 		return upload_cleanup(r, upload, ret);
 
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Break point: %s", "n");
+cdn_debug("Break point: %s", "n");
 
 	// If we did not get status code, use the configured one
 	if (metadata->status < 0) {

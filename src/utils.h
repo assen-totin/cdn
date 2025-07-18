@@ -5,6 +5,7 @@
  */
 
 // Prototypes
+void cdn_debug(char *format, ...);
 char *memstr(char *haystack, char *needle, int64_t size);
 char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str);
 char *from_ngx_str_malloc(ngx_pool_t *pool, ngx_str_t ngx_str);

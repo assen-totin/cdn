@@ -15,6 +15,20 @@
 extern ngx_module_t ngx_http_cdn_module;
 
 /**
+ * Debug to file with flish
+ */
+void cdn_debug(char *format, ...) {
+	FILE *f = fopen("/tmp/debug", "a");
+
+	va_list arglist;
+	va_start(arglist, format);
+	vfprintf(f, format, arglist);
+	va_end(arglist);
+	fprintf(f, "\n");
+	fclose(f);
+}
+
+/**
  * Polyfill for memstr()
  */
 char *memstr(char *haystack, char *needle, int64_t size) {
