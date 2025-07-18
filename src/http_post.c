@@ -577,33 +577,40 @@ void cdn_handler_post (ngx_http_request_t *r) {
 if (session->all_cookies)
 	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies: %s", session->all_cookies);
 else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies IS UNDEFINED");
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies: %s", "undefined");
+
 if (session->auth_cookie)
 	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie: %s", session->auth_cookie);
 else
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie IS UNDEFINED");
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie: %s", "undefined");
+
+if (session->auth_cookie)
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_type: %s", session->auth_type);
+else
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_type: %s", "undefined");
+
 
 	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting all cookies");
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting cookies: %s", "all");
 		if ((ret = get_all_cookies(session, r)) > 0)
 			return upload_cleanup(r, upload, ret);
 	}
 
 	// Try to find an authorisation token
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting auth token");
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting auth token: %s", "now");
 	if ((ret = get_auth_token(session, r)) > 0)
 		return upload_cleanup(r, upload, ret);
 
 	if (session->auth_token) {
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Found auth token");
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Found auth token: %s", "now");
 		// Extract authentication token to value
 		if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "auth type is JWT");
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "auth type is: %s", "JWT");
 			if ((ret = auth_jwt(session, r)) > 0)
 				return upload_cleanup(r, upload, ret);
 		}
 		else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
-ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "auth type is session");
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "auth type is: %s", "session");
 			if ((ret = auth_session(session, r)) > 0)
 				return upload_cleanup(r, upload, ret);
 		}
