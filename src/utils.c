@@ -301,6 +301,7 @@ cdn_debug("session->headers_count: %i", session->headers_count);
 /**
  * Extract all headers
  */
+/*
 ngx_int_t get_all_headers(session_t *session, ngx_http_request_t *r) {
 	int i, j;
 	ngx_table_elt_t *h;
@@ -317,6 +318,35 @@ cdn_debug("get_all_headers: j: %i", j);
 		}
 
 		part = part->next;
+	}
+
+cdn_debug("get_all_headers: %s", "done");
+
+	return NGX_OK;
+}
+*/
+
+ngx_int_t get_all_headers(session_t *session, ngx_http_request_t *r) {
+	int i, j;
+	ngx_table_elt_t *h;
+	ngx_list_part_t part;
+
+cdn_debug("get_all_headers: nalloc: %i", r->headers_in.headers.nalloc);
+
+	part = r->headers_in.headers.part;
+	for (i=0; i < r->headers_in.headers.nalloc; i++) {
+cdn_debug("get_all_headers: i: %i", i);
+cdn_debug("get_all_headers: part.nelts: %i", part.nelts);
+		h = part.elts;
+		for (j=0; j < part.nelts; j++) {
+cdn_debug("get_all_headers: j: %i", j);
+			store_header(session, r, h[j].key, h[j].value);
+		}
+
+		if (part.next)
+			part = part.next;
+		else
+			break;
 	}
 
 cdn_debug("get_all_headers: %s", "done");
