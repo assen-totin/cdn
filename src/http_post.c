@@ -574,30 +574,43 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 
 	// Extract all cookies if requested
+//ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Extension size %l exceeds allowed size %l.", strlen(metadata->ext), MAX_EXT_SIZE);
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->all_cookies: %s", session->all_cookies);
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->auth_cookie: %s", session->auth_cookie);
 	if ((! strcmp(session->all_cookies, "yes")) || (strcmp(session->auth_cookie, DEFAULT_AUTH_COOKIE))) {
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting all cookies");
 		if ((ret = get_all_cookies(session, r)) > 0)
 			return upload_cleanup(r, upload, ret);
 	}
 
 	// Try to find an authorisation token
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Getting auth token");
 	if ((ret = get_auth_token(session, r)) > 0)
 		return upload_cleanup(r, upload, ret);
 
 	if (session->auth_token) {
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Found auth token");
 		// Extract authentication token to value
 		if (! strcmp(session->auth_type, AUTH_TYPE_JWT)) {
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "auth type is JWT");
 			if ((ret = auth_jwt(session, r)) > 0)
 				return upload_cleanup(r, upload, ret);
 		}
 		else if (! strcmp(session->auth_type, AUTH_TYPE_SESSION)) {
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "auth type is session");
 			if ((ret = auth_session(session, r)) > 0)
 				return upload_cleanup(r, upload, ret);
 		}
 
 		// Apply filter to auth_value, if any
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Applying auth value filter if defined");
 		if ((ret = filter_auth_value(session, r)) > 0)
 			return upload_cleanup(r, upload, ret);
 	}
+
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "About to process metadata");
+if (metadata->filename)
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "metadata->filename: %s", metadata->filename);
 
 	// Metadata: merge of defaults if some values are missing: filename
 	if (! metadata->filename) {
@@ -629,6 +642,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	// Metadata: set etag to the file ID
 	metadata->etag = metadata->file16;
 
+if (! session->request_type)
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type IS NOT DEFINED");
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->request_type: %s", session->request_type);
+
 	// Prepare metadata request (as per the configured request type)
 	if (! strcmp(session->request_type, REQUEST_TYPE_JSON))
 		ret = request_post_json(session, metadata, r);
@@ -650,6 +667,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// Query for metadata based on transport
 	mode = (r->method & (NGX_HTTP_POST)) ? METADATA_INSERT : METADATA_UPDATE;
+
+if (! session->request_type)
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type IS NOT DEFINED");
+ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "session->transport_type: %s", session->transport_type);
 
 	if (! strcmp(session->transport_type, TRANSPORT_TYPE_HTTP))
 		ret = transport_http(session, metadata, r, mode);
