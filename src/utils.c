@@ -18,7 +18,7 @@ extern ngx_module_t ngx_http_cdn_module;
  * Debug to file with flish
  */
 void cdn_debug(char *format, ...) {
-	FILE *f = fopen("/tmp/debug", "a");
+	FILE *f = fopen("/mnt/cdn/tmp/debug", "a");
 
 	va_list arglist;
 	va_start(arglist, format);
