@@ -49,7 +49,8 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	// Init cURL
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
-	// Init the globals and create a slot that will never be used, but which will save on conditional jump on every request
+	// Init the globals and create a slot that will never be used, but which will save one conditional jump on every request
+cdn_debug("ngx_http_cdn_module_init: %s", "init");
 	if ((globals = malloc(sizeof(globals_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for globals.", sizeof(globals_t));
 		return NGX_ERROR;
