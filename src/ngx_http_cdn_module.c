@@ -97,7 +97,9 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 #endif
 
 	// Clean all instances
-	for (i=0; i < globals->instances_cnt; i++) {
+cdn_debug("globals->instances_cnt: %i", globals->instances_cnt);
+//	for (i=0; i < globals->instances_cnt; i++) {
+	for (i=1; i < globals->instances_cnt; i++) {
 		instance = &globals->instances[i];
 
 		cache_destroy(instance->cache);
