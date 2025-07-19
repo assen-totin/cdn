@@ -299,21 +299,17 @@ static inline ngx_int_t store_header(session_t *session, ngx_http_request_t *r, 
  */
 
 ngx_int_t get_all_headers(session_t *session, ngx_http_request_t *r) {
-	int i, j;
+	int i;
 	ngx_table_elt_t *h;
 	ngx_list_part_t *part;
 
 	part = &r->headers_in.headers.part;
-	for (i=0; i < r->headers_in.headers.nalloc; i++) {
+	while (part) {
 		h = part->elts;
-		for (j=0; j < part->nelts; j++) {
-			store_header(session, r, h[j].key, h[j].value);
-		}
+		for (i=0; i < part->nelts; i++)
+			store_header(session, r, h[i].key, h[i].value);
 
-		if (part->next)
-			part = part->next;
-		else
-			break;
+		part = part->next;
 	}
 
 	return NGX_OK;
