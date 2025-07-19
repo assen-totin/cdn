@@ -294,22 +294,20 @@ static void btree_purge(btree_t *node, int level) {
 }
 
 void cache_destroy(cache_t *cache) {
-cdn_debug("Breakpoint: %s", "a");
 	if (! cache)
 		return;
-cdn_debug("Breakpoint: %s", "b");
+
 	if (cache->root) {
 		btree_purge(cache->root, 0);
 		free(cache->root);
 	}
-cdn_debug("Breakpoint: %s", "c");
+
 	if (cache->btree_mask)
 		free(cache->btree_mask);
-cdn_debug("Breakpoint: %s", "d");
+
 	if (cache->list)
 		free(cache->list);
-cdn_debug("Breakpoint: %s", "e");
+
 	free(cache);
-cdn_debug("Breakpoint: %s", "f");
 }
 

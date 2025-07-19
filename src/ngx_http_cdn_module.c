@@ -14,6 +14,7 @@
 #include "murmur3_32.h"
 
 //// GLOBALS
+// NB: In Nginx, globals are per-thread
 globals_t *globals;
 
 /**
@@ -50,7 +51,6 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
 	// Init the globals and create a slot that will never be used, but which will save one conditional jump on every request
-cdn_debug("ngx_http_cdn_module_init: %s", "init");
 	if ((globals = malloc(sizeof(globals_t))) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for globals.", sizeof(globals_t));
 		return NGX_ERROR;
@@ -98,8 +98,7 @@ void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
 #endif
 
 	// Clean all instances
-cdn_debug("globals->instances_cnt: %i", globals->instances_cnt);
-//	for (i=0; i < globals->instances_cnt; i++) {
+	// NB: Skip the first instance at i=0, it is always uninitialised
 	for (i=1; i < globals->instances_cnt; i++) {
 		instance = &globals->instances[i];
 
