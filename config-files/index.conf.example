@@ -1,15 +1,24 @@
-# Config file for CDN index clean up
+# Config file for CDN instance
 
 # The root of the CDN instance
 FS_ROOT="/opt/cdn"
 
-# The depht of the CDN instance
+# The depth of the CDN instance
 FS_DEPTH=4
 
-# The index prefix
+# File ownership user, group and permissions
+# NB: these are only used when replicating remote master to this instance;
+# file uploads into the instance will inherit the user, group and umask of the Nginx process
+FS_USER="nginx"
+FS_GROUP="nginx"
+FS_MODE="644"
+
+# The transaction logs prefix
 INDEX_PREFIX="______"
 
-# How many days to keep (index files are rotated hourly)
+# How many days to keep transaction logs (index files are rotated hourly)
 KEEP=7
 
+# If this local instance is updated from a remote master, save the retrieved transaction logs for chained slaves
+INTERMEDIATE_MASTER=0
 

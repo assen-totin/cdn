@@ -1,22 +1,18 @@
-# Config file for a CDN instance mirror
+# Config file for a CDN instance mirror (slave)
 
-# Instance name (alpha-numeric)
+# Name of the local instance that will receive the updates from this master (alpha-numeric)
 INSTANCE_NAME="some_instance"
-
-# The root of the CDN instance
-FS_ROOT="/opt/cdn/${INSTANCE_NAME}"
-
-# The depht of the CDN instance
-FS_DEPTH=4
 
 # URL of the remote (master) instance
 URL="https://cdn.example.com"
 
-# The index prefix
-INDEX_PREFIX="______"
+# The depth of the remote (master) instance
+MASTER_FS_DEPTH=4
 
-# Path to status file from last sync
-STATUS_FILE="/var/lib/cdn/${INSTANCE_NAME}"
+# The index prefix on the remote (master) instance
+MASTER_INDEX_PREFIX="______"
 
+# Append-only: skip the DELETE operation from transactions logs from this master
+APPEND_ONLY=0
 
 

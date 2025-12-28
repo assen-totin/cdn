@@ -2,14 +2,15 @@
 
 # Mirroring job for CDN
 
-CONFIG_ROOT="/etc/cdn/mirror.d"
+MASTER_ROOT="/etc/cdn/mirror.d"
+LOCAL_ROOT="/etc/cdn/index.d"
 SAVED_ROOT="/var/lib/cdn/mirror.d"
 
 # Function to get the path of a file from its name
 get_file_path() {
 	FILE_PATH=$FS_ROOT
 	for i in $(seq 1 $FS_DEPTH) ; do
-		POS=$(echo $FILE_NAME | cut -c $i)
+		POS=$(echo $1 | cut -c $i)
 		FILE_PATH="$FILE_PATH/$POS"
 	done
 }
@@ -17,7 +18,7 @@ get_file_path() {
 # Function to get the web path for an index file
 get_web_path() {
         WEB_PATH=""
-        for i in $(seq 1 $FS_DEPTH) ; do
+        for i in $(seq 1 $MASTER_FS_DEPTH) ; do
                 POS=$(echo $1 | cut -c $i)
                 WEB_PATH="$WEB_PATH/$POS"
         done
@@ -42,27 +43,50 @@ check_curl_error() {
 	fi
 }
 
-# Get the UTC down to an hour as it was an hour ago
-NOW_TS=$(date +%s)
-((NOW_TS=NOW_TS-3600))
+# Function to set file attributes
+set_file_attributes() {
+	chown $FS_USER:$FS_GROUP $1
+	chmod $FS_MODE $1
+}
 
-END_DATE=$(date -u -d @$NOW_TS +"%Y %m %d %H")
+# Current timestamp and the name of the local transaction log for the current hour
+NOW_TS=$(date +%s)
+NOW_DATE=$(date -u -d @$NOW_TS +"%Y %m %d %H")
+NOW_YEAR=$(echo $NOW_DATE | awk '{print $1}')
+NOW_MONTH=$(echo $NOW_DATE | awk '{print $2}')
+NOW_DAY=$(echo $NOW_DATE | awk '{print $3}')
+NOW_HOUR=$(echo $NOW_DATE | awk '{print $4}')
+BASE_LOG_NAME="$NOW_YEAR$NOW_MONTH$NOW_DAY$NOW_HOUR"
+
+# Get the UTC down to an hour as it was an hour ago
+((LAST_TS=NOW_TS-3600))
+END_DATE=$(date -u -d @$LAST_TS +"%Y %m %d %H")
 END_YEAR=$(echo $END_DATE | awk '{print $1}')
 END_MONTH=$(echo $END_DATE | awk '{print $2}')
 END_DAY=$(echo $END_DATE | awk '{print $3}')
 END_HOUR=$(echo $END_DATE | awk '{print $4}')
-
 END_TS=$(date -u -d "$END_YEAR-$END_MONTH-$END_DAY $END_HOUR:00:00" +%s)
 
 # Go over config files (one per CDN instance)
-CONFIG_FILES=$(ls $CONFIG_ROOT/*.conf)
-for CONFIG_FILE in $CONFIG_FILES ; do
-	# Souce the config file for the CDN instance; it will give us the instance's index settings
-	source $CONFIG_FILE
+MASTER_CONFIGS=$(ls $MASTER_ROOT/*.conf)
+for MASTER_CONFIG in $MASTER_CONFIGS ; do
+	# Souce the config file for the remote master CDN instance
+	source $MASTER_CONFIG
+	MASTER_INSTANCE_NAME=$(echo $MASTER_CONFIG | awk -F '/' '{print $NF}' |  awk -F '.' '{print $1}')
+
+	# Source the local config file that receives the updates from this master
+	LOCAL_CONFIG="$LOCAL_ROOT/$INSTANCE_NAME.conf"
+	[ ! -e $LOCAL_CONFIG ] && continue
+	source $LOCAL_CONFIG
+
+	# Transaction log path and name
+	LOG_NAME="$INDEX_PREFIX$BASE_LOG_NAME"
+	get_file_path $LOG_NAME
+	TRANSACTION_LOG="$FILE_PATH/$LOG_NAME"
 
 	# Compare our save point to the current time and build indices to read
-	if [ -e $SAVED_ROOT/$INSTANCE_NAME ] ; then
-		source $SAVED_ROOT/$INSTANCE_NAME
+	if [ -e $SAVED_ROOT/$MASTER_INSTANCE_NAME ] ; then
+		source $SAVED_ROOT/$MASTER_INSTANCE_NAME
 
 		BEGIN_YEAR=$(echo $SAVEPOINT | cut -c 1-4)
 		BEGIN_MONTH=$(echo $SAVEPOINT | cut -c 5-6)
@@ -75,7 +99,7 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		# Check if we've been here before
 		[ $BEGIN_TS -gt $END_TS ] && continue
 	else
-		echo "SAVEPOINT=$END_YEAR$END_MONTH$END_DAY$END_HOUR" > $SAVED_ROOT/$INSTANCE_NAME
+		echo "SAVEPOINT=$END_YEAR$END_MONTH$END_DAY$END_HOUR" > $SAVED_ROOT/$MASTER_INSTANCE_NAME
 		continue
 	fi
 
@@ -87,7 +111,7 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		CURR_DAY=$(echo $CURR_DATE | awk '{print $3}')
 		CURR_HOUR=$(echo $CURR_DATE | awk '{print $4}')
 
-		INDEX_NAME="$INDEX_PREFIX$CURR_YEAR$CURR_MONTH$CURR_DAY$CURR_HOUR"
+		INDEX_NAME="$MASTER_INDEX_PREFIX$CURR_YEAR$CURR_MONTH$CURR_DAY$CURR_HOUR"
 		get_web_path $INDEX_NAME
 		CURL_URL="$URL$WEB_PATH"
 		HTTP_CODE=$(curl -w %{http_code} -f -s -o /tmp/$INDEX_NAME $CURL_URL)
@@ -97,38 +121,45 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 		rm -f /tmp/$INDEX_NAME
 	done
 
-	if [ -f /tmp/$INSTANCE_NAME ] ; then
-		# Process the log file: inserts
-		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
-			get_file_path
-			get_web_path $FILE_NAME
-			CURL_URL="$URL$WEB_PATH"
-			HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
-			RES=$?
-			check_curl_error
-		done
+	[ ! -e /tmp/$INSTANCE_NAME ] && continue
 
-		# Process the log file: updates
-		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
-			get_file_path
-			get_web_path $FILE_NAME
-			CURL_URL="$URL$WEB_PATH"
-			HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
-			RES=$?
-			check_curl_error
-		done
+	# Process the log file: inserts
+	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
+		get_file_path $FILE_NAME
+		get_web_path $FILE_NAME
+		CURL_URL="$URL$WEB_PATH"
+		HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
+		RES=$?
+		check_curl_error
+		[ $HTTP_CODE -eq 200 ] && set_file_attributes $FILE_PATH/$FILE_NAME
+		[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "I\t$FILE_NAME" >> $TRANSACTION_LOG
+	done
 
-		# Process the log file: deletes
-		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
-			get_file_path
+	# Process the log file: updates
+	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
+		get_file_path $FILE_NAME
+		get_web_path $FILE_NAME
+		CURL_URL="$URL$WEB_PATH"
+		HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
+		RES=$?
+		check_curl_error
+		[ $HTTP_CODE -eq 200 ] && set_file_attributes $FILE_PATH/$FILE_NAME
+		[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "U\t$FILE_NAME" >> $TRANSACTION_LOG
+	done
+
+	# Process the log file: deletes (if not an append-only replica)
+	if [ $APPEND_ONLY -gt 0 ] ; then
+	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
+			get_file_path $FILE_NAME
 			rm -f $FILE_PATH/$FILE_NAME
+			[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "D\t$FILE_NAME" >> $TRANSACTION_LOG
 		done
-
-		rm -f /tmp/$INSTANCE_NAME
 	fi
 
+	rm -f /tmp/$INSTANCE_NAME
+
 	# Save our save point
-	echo "SAVEPOINT=$END_YEAR$END_MONTH$END_DAY$END_HOUR" > $SAVED_ROOT/$INSTANCE_NAME
+	echo "SAVEPOINT=$END_YEAR$END_MONTH$END_DAY$END_HOUR" > $SAVED_ROOT/$MASTER_INSTANCE_NAME
 done
 
 ## Check parallelism
