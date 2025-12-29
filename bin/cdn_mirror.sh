@@ -6,47 +6,58 @@ MASTER_ROOT="/etc/cdn/mirror.d"
 LOCAL_ROOT="/etc/cdn/index.d"
 SAVED_ROOT="/var/lib/cdn/mirror.d"
 
-# Function to get the path of a file from its name
+# Helper to get the file path of a file from its name
+# $1 is the file name
+# $2 is the CDN depth
 get_file_path() {
-	FILE_PATH=$FS_ROOT
-	for i in $(seq 1 $FS_DEPTH) ; do
+	FILE_PATH=""
+	for i in $(seq 1 $2) ; do
 		POS=$(echo $1 | cut -c $i)
 		FILE_PATH="$FILE_PATH/$POS"
 	done
 }
 
-# Function to get the web path for an index file
-get_web_path() {
-        WEB_PATH=""
-        for i in $(seq 1 $MASTER_FS_DEPTH) ; do
-                POS=$(echo $1 | cut -c $i)
-                WEB_PATH="$WEB_PATH/$POS"
-        done
-        WEB_PATH="$WEB_PATH/$1"
-}
 
-# Function to check for HTTP errors
-check_curl_error() {
-	if [ $RES -gt 0 ] ; then
-		# Curl exit code 22 is HTTP error 400+
-		if [ $RES -ne 22 ] ; then
-			_ERR=1
-		elif [ $HTTP_CODE -ne 404 ] ; then
-			_ERR=1
-		fi
+# Helper to get a file from master
+# $1 is the file name to get
+# $2 is the local path to write file
+get_file() {
+	get_file_path $1 $MASTER_FS_DEPTH
+	SRC=$URL$FILE_PATH/$1
 
-		if [ x$_ERR != 'x' ] ; then
-			echo "Replication failed for $CURL_URL curl code $RES HTTP code $HTTP_CODE"
-			rm -f /tmp/$INSTANCE_NAME
-			exit 1
+	REGEX='https?://.*'
+	if [[ $URL =~ $REGEX ]] ; then
+		# The URL parameter is a remote URL, so use cURL to fetch the file
+		# Get the web path for the remote file
+		HTTP_CODE=$(curl -w %{http_code} -f -s -o $2 $SRC)
+		RES=$?
+
+		# Check for errors
+		# NB: We do not treat 404 as an error - a file may have been added and then deleted prior to replication
+		if [ $RES -gt 0 ] ; then
+			# Curl exit code 22 is HTTP error 400+
+			if [ $RES -ne 22 ] ; then
+				_ERR=1
+			elif [ $HTTP_CODE -ne 404 ] ; then
+				_ERR=1
+			fi
+
+			if [ x$_ERR != 'x' ] ; then
+				echo "Replication failed for $SRC curl code $RES HTTP code $HTTP_CODE"
+				rm -f /tmp/$INSTANCE_NAME
+				exit 1
+			fi
 		fi
+	else
+		# Local filesystem copy
+		cp -f $SRC $2
 	fi
 }
 
 # Function to set file attributes
 set_file_attributes() {
-	chown $FS_USER:$FS_GROUP $1
-	chmod $FS_MODE $1
+	[ x$FS_USER != 'x' ] && [ x$FS_GROUP != 'x' ] && chown $FS_USER:$FS_GROUP $1
+	[ x$FS_MODE != 'x' ] && chmod $FS_MODE $1
 }
 
 # Current timestamp and the name of the local transaction log for the current hour
@@ -81,8 +92,12 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 
 	# Transaction log path and name
 	LOG_NAME="$INDEX_PREFIX$BASE_LOG_NAME"
-	get_file_path $LOG_NAME
-	TRANSACTION_LOG="$FILE_PATH/$LOG_NAME"
+	get_file_path $LOG_NAME $FS_DEPTH
+	TRANSACTION_LOG="$FS_ROOT/$FILE_PATH/$LOG_NAME"
+
+	# Skip log (of DELETE operations on an append-only replica)
+	# Place it in the same directory as transaction logs, but name it "skip.log"
+	SKIP_LOG="$FILE_PATH/${INDEX_PREFIX}skip.log"
 
 	# Compare our save point to the current time and build indices to read
 	if [ -e $SAVED_ROOT/$MASTER_INSTANCE_NAME ] ; then
@@ -112,11 +127,7 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 		CURR_HOUR=$(echo $CURR_DATE | awk '{print $4}')
 
 		INDEX_NAME="$MASTER_INDEX_PREFIX$CURR_YEAR$CURR_MONTH$CURR_DAY$CURR_HOUR"
-		get_web_path $INDEX_NAME
-		CURL_URL="$URL$WEB_PATH"
-		HTTP_CODE=$(curl -w %{http_code} -f -s -o /tmp/$INDEX_NAME $CURL_URL)
-		RES=$?
-		check_curl_error
+		get_file $INDEX_NAME /tmp/$INDEX_NAME
 		[ -f /tmp/$INDEX_NAME ] && cat /tmp/$INDEX_NAME >> /tmp/$INSTANCE_NAME
 		rm -f /tmp/$INDEX_NAME
 	done
@@ -125,35 +136,32 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 
 	# Process the log file: inserts
 	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
-		get_file_path $FILE_NAME
-		get_web_path $FILE_NAME
-		CURL_URL="$URL$WEB_PATH"
-		HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
-		RES=$?
-		check_curl_error
-		[ $HTTP_CODE -eq 200 ] && set_file_attributes $FILE_PATH/$FILE_NAME
+		get_file_path $FILE_NAME $FS_DEPTH
+		LOCAL_FILE="$FS_ROOT/$FILE_PATH/$FILE_NAME"
+		get_file $FILE_NAME $LOCAL_FILE
+		[ $HTTP_CODE -eq 200 ] && set_file_attributes $LOCAL_FILE
 		[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "I\t$FILE_NAME" >> $TRANSACTION_LOG
 	done
 
 	# Process the log file: updates
 	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
-		get_file_path $FILE_NAME
-		get_web_path $FILE_NAME
-		CURL_URL="$URL$WEB_PATH"
-		HTTP_CODE=$(curl -w %{http_code} -f -s -o $FILE_PATH/$FILE_NAME $CURL_URL)
-		RES=$?
-		check_curl_error
-		[ $HTTP_CODE -eq 200 ] && set_file_attributes $FILE_PATH/$FILE_NAME
+		get_file_path $FILE_NAME $FS_DEPTH
+		LOCAL_FILE="$FS_ROOT/$FILE_PATH/$FILE_NAME"
+		get_file $FILE_NAME $LOCAL_FILE
+		[ $HTTP_CODE -eq 200 ] && set_file_attributes $LOCAL_FILE
 		[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "U\t$FILE_NAME" >> $TRANSACTION_LOG
 	done
 
 	# Process the log file: deletes (if not an append-only replica)
 	if [ $APPEND_ONLY -gt 0 ] ; then
-	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
-			get_file_path $FILE_NAME
-			rm -f $FILE_PATH/$FILE_NAME
+		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
+			get_file_path $FILE_NAME $FS_DEPTH
+			rm -f $FS_ROOT/$FILE_PATH/$FILE_NAME
 			[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "D\t$FILE_NAME" >> $TRANSACTION_LOG
 		done
+	else
+		# Log the DELETE operation so that it may be carreid out later manually if desired
+		echo -e "D\t$FILE_NAME" >> $SKIP_LOG
 	fi
 
 	rm -f /tmp/$INSTANCE_NAME

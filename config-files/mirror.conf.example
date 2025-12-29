@@ -4,6 +4,7 @@
 INSTANCE_NAME="some_instance"
 
 # URL of the remote (master) instance
+# To use a filesystem copy instead of HTTP request, set the value to an absolute path
 URL="https://cdn.example.com"
 
 # The depth of the remote (master) instance
