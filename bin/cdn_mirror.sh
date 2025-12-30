@@ -50,14 +50,16 @@ get_file() {
 		fi
 	else
 		# Local filesystem copy
-		cp -f $SRC $2
+		[ -f $SRC ] && cp -f $SRC $2
 	fi
 }
 
 # Function to set file attributes
 set_file_attributes() {
-	[ x$FS_USER != 'x' ] && [ x$FS_GROUP != 'x' ] && chown $FS_USER:$FS_GROUP $1
-	[ x$FS_MODE != 'x' ] && chmod $FS_MODE $1
+	if [ -f $1 ] ; then
+		[ x$FS_USER != 'x' ] && [ x$FS_GROUP != 'x' ] && chown $FS_USER:$FS_GROUP $1
+		[ x$FS_MODE != 'x' ] && chmod $FS_MODE $1
+	fi
 }
 
 # Current timestamp and the name of the local transaction log for the current hour
@@ -137,18 +139,18 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 	# Process the log file: inserts
 	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^I | awk '{print $2}') ; do
 		get_file_path $FILE_NAME $FS_DEPTH
-		LOCAL_FILE="$FS_ROOT/$FILE_PATH/$FILE_NAME"
+		LOCAL_FILE="$FS_ROOT$FILE_PATH/$FILE_NAME"
 		get_file $FILE_NAME $LOCAL_FILE
-		[ $HTTP_CODE -eq 200 ] && set_file_attributes $LOCAL_FILE
+		set_file_attributes $LOCAL_FILE
 		[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "I\t$FILE_NAME" >> $TRANSACTION_LOG
 	done
 
 	# Process the log file: updates
 	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^U | awk '{print $2}') ; do
 		get_file_path $FILE_NAME $FS_DEPTH
-		LOCAL_FILE="$FS_ROOT/$FILE_PATH/$FILE_NAME"
+		LOCAL_FILE="$FS_ROOT$FILE_PATH/$FILE_NAME"
 		get_file $FILE_NAME $LOCAL_FILE
-		[ $HTTP_CODE -eq 200 ] && set_file_attributes $LOCAL_FILE
+		set_file_attributes $LOCAL_FILE
 		[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "U\t$FILE_NAME" >> $TRANSACTION_LOG
 	done
 
@@ -156,7 +158,7 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 	if [ $APPEND_ONLY -gt 0 ] ; then
 		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
 			get_file_path $FILE_NAME $FS_DEPTH
-			rm -f $FS_ROOT/$FILE_PATH/$FILE_NAME
+			rm -f $FS_ROOT$FILE_PATH/$FILE_NAME
 			[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "D\t$FILE_NAME" >> $TRANSACTION_LOG
 		done
 	else
