@@ -21,6 +21,7 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 #include <pthread.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -34,7 +35,9 @@
 #include <unistd.h>
 
 #ifdef CDN_ENABLE_JWT
-#include <jwt.h>
+#include <jansson.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
 #endif
 
 #ifdef CDN_ENABLE_MONGO
@@ -65,6 +68,9 @@
 #elif __GLIBC_MINOR__ == 34
 	#define RHEL9
 #endif
+#elif __GLIBC_MINOR__ == 39
+	#define RHEL10
+#endif
 
 #ifdef RHEL7
 	#include <bson.h>
@@ -73,6 +79,9 @@
 	#include <bson/bson.h>
 #endif
 #ifdef RHEL9
+	#include <bson/bson.h>
+#endif
+#ifdef RHEL10
 	#include <bson/bson.h>
 #endif
 
@@ -97,7 +106,6 @@
 #define DEFAULT_FS_ROOT "/opt/cdn"
 #define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_INDEX_PREFIX "______"
-#define DEFAULT_JWT_ALG "none"
 #define DEFAULT_JWT_KEY "none"
 #define DEFAULT_JWT_FIELD "none"
 #define DEFAULT_MATRIX_ALLOW "allow"
@@ -401,12 +409,6 @@ typedef struct {
 #endif
 } session_t;
 
-// LibJWT context
-typedef struct {
-	session_t *session;
-	ngx_http_request_t *r;
-} jwt_ctx_t;
-
 // Upload
 typedef struct {
 	char *rb;
@@ -444,6 +446,13 @@ enum {
 	INDEX_ACTION_INSERT,
 	INDEX_ACTION_UPDATE,
 	INDEX_ACTION_DELETE,
+};
+
+enum {
+	JWT_ALG_NONE = 0,
+	JWT_ALG_HS256,
+	JWT_ALG_RS256,
+	JWT_ALG_ES256,
 };
 
 //// GLOBALS

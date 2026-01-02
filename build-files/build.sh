@@ -73,7 +73,7 @@ pushd $CHECKOUT_DIR
 EXTRA_LIBS="-lbson-1.0 -lcurl -lxml2"
 EXTRA_INCLUDES="-I /usr/include/libbson-1.0 -I/usr/include/libxml2"
 if [ x$ARG_CDN_ENABLE_JWT != 'x' ] ; then
-	EXTRA_LIBS="$EXTRA_LIBS -ljwt"
+	EXTRA_LIBS="$EXTRA_LIBS -lcrypto -ljansson"
 	sed -i 's|^.*CDN_ENABLE_JWT.*$|#define CDN_ENABLE_JWT|' src/modules.h
 fi
 if [ x$ARG_CDN_ENABLE_MONGO != 'x' ] ; then
@@ -142,8 +142,10 @@ copy_spec_file
 
 # Update RPM dependencies
 if [ x$ARG_CDN_ENABLE_JWT != 'x' ] ; then
-	sed -i 's|^.*libjwt-devel.*$|BuildRequires: libjwt-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
-	sed -i 's|^.*libjwt$|Requires: libjwt|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	sed -i 's|^.*jansson-devel.*$|BuildRequires: jansson-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	sed -i 's|^.*openssl-devel.*$|BuildRequires: openssl-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	sed -i 's|^.*jansson$|Requires: jansson|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
+	sed -i 's|^.*openssl$|Requires: openssl|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec
 fi
 if [ x$ARG_CDN_ENABLE_MONGO != 'x' ] ; then
 	sed -i 's|^.*mongo-c-driver-devel.*$|BuildRequires: mongo-c-driver-devel|' $RPM_HOME/SPECS/$RPM_PACKAGE.spec

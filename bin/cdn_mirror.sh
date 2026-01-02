@@ -163,7 +163,8 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 		done
 	else
 		# Log the DELETE operation so that it may be carreid out later manually if desired
-		echo -e "D\t$FILE_NAME" >> $SKIP_LOG
+		# NB: Only apply to existing files (i.e. a file that was added and delete in the same transaction log will not be replicated at all)
+		[ -f $FS_ROOT$FILE_PATH/$FILE_NAME ] && echo -e "D\t$FILE_NAME" >> $SKIP_LOG
 	fi
 
 	rm -f /tmp/$INSTANCE_NAME
