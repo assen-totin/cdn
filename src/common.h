@@ -450,9 +450,9 @@ enum {
 
 enum {
 	JWT_ALG_NONE = 0,
-	JWT_ALG_HS256,
-	JWT_ALG_RS256,
-	JWT_ALG_ES256,
+	JWT_ALG_HS,
+	JWT_ALG_RS,
+	JWT_ALG_ES,
 };
 
 //// GLOBALS
