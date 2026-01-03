@@ -38,6 +38,8 @@
 #include <jansson.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/pem.h>
+#include <openssl/err.h>
 #endif
 
 #ifdef CDN_ENABLE_MONGO
@@ -67,7 +69,6 @@
 	#define RHEL8
 #elif __GLIBC_MINOR__ == 34
 	#define RHEL9
-#endif
 #elif __GLIBC_MINOR__ == 39
 	#define RHEL10
 #endif
@@ -334,6 +335,9 @@ typedef struct {
 typedef struct {
 	uint32_t id;
 	char *jwt_key;
+#ifdef CDN_ENABLE_JWT
+	EVP_PKEY *jwt_pubkey;
+#endif
 	dsn_t *dsn;
 	auth_matrix_t *matrix_dnld;
 	auth_matrix_t *matrix_del;
@@ -387,9 +391,6 @@ typedef struct {
 	int tcp_port;
 	char *http_url;
 	CURL *curl;
-#ifdef CDN_ENABLE_JWT
-	jwt_t *jwt;
-#endif
 #ifdef CDN_ENABLE_MONGO
 	char *mongo_db;
 	char *mongo_collection;
@@ -446,13 +447,6 @@ enum {
 	INDEX_ACTION_INSERT,
 	INDEX_ACTION_UPDATE,
 	INDEX_ACTION_DELETE,
-};
-
-enum {
-	JWT_ALG_NONE = 0,
-	JWT_ALG_HS,
-	JWT_ALG_RS,
-	JWT_ALG_ES,
 };
 
 //// GLOBALS

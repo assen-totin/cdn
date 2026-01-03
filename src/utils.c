@@ -464,11 +464,15 @@ static inline auth_matrix_t *init_auth_matrix(ngx_http_request_t *r, char *matri
 instance_t *instance_init(ngx_http_request_t *r) {
 	instance_t *instance, *instance_tmp;
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
-	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
-	int fd, i, ret, cache_size;
+	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr, *errstr;
+	int i, ret, cache_size;
 	struct stat statbuf;
 	time_t t = time(NULL);
 	struct tm lt = {0};
+	char *key_name = NULL, *key_header = NULL;
+	uint8_t *key_data = NULL;
+	size_t key_data_len = 0;
+	FILE *fp;
 
 	// Get config
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
@@ -537,29 +541,33 @@ instance_t *instance_init(ngx_http_request_t *r) {
 		return NULL;
 
 	// Init JWT
+	instance->jwt_key = NULL;
+	instance->jwt_pubkey = NULL;
+
 	jwt_key = from_ngx_str_malloc(r->pool, cdn_loc_conf->jwt_key);
 	if (strstr(jwt_key, "/") == jwt_key) {
-		if ((fd = open(jwt_key, O_RDONLY)) < 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to open JWT key file %s: %s", jwt_key, strerror(errno));
+#ifdef CDN_ENABLE_JWT
+		// Public key from PEM
+		if ((fp = fopen(jwt_key, "r")) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to open public key file %s: %s", jwt_key, strerror(errno));
 			return NULL;
 		}
 
-		fstat(fd, &statbuf);
-
-		if ((instance->jwt_key = malloc(statbuf.st_size + 1)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", statbuf.st_size + 1);
+		if ((PEM_read(fp, &key_name, &key_header, &key_data, &key_data_len)) == 0) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to read public key file %s: %s", jwt_key, ERR_error_string(ERR_get_error(), NULL));
+			fclose(fp);
 			return NULL;
 		}
 
-		if (read(fd, instance->jwt_key, statbuf.st_size) < statbuf.st_size) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to read %l bytes from JWT key file %s: %s", statbuf.st_size, jwt_key, strerror(errno));
+		// Import the public key
+		if ((instance->jwt_pubkey = d2i_PUBKEY(NULL, (const unsigned char **)&key_data, key_data_len)) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to import public key file %s: %s", jwt_key, ERR_error_string(ERR_get_error(), NULL));
+			fclose(fp);
 			return NULL;
 		}
 
-		if (close(fd) < 0)
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to close JWT key file %s: %s", jwt_key, strerror(errno));
-
-		instance->jwt_key[statbuf.st_size] = '\0';
+		fclose(fp);
+#endif
 	}
 	else {
 		// Copy the string from config

@@ -4,6 +4,12 @@
  * @author: Assen Totin assen.totin@gmail.com
  */
 
+/**
+ * Generate RSA key pair for JWT signing:
+ * openssl genrsa -out private.key 2048
+ * openssl rsa -in private.key -pubout -outform PEM -out public.key
+ */
+
 #include "common.h"
 
 #ifdef CDN_ENABLE_JWT
@@ -75,7 +81,7 @@ static inline unsigned char *base64url_decode(const unsigned char *src, size_t l
 	}
 
 	if (out_len)
-		*out_len = pos - out;
+		*out_len = olen;
 
 	return out;
 }
@@ -92,9 +98,10 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	char *tosign;
 	char *pld_auth_value_s;
 	unsigned char *dig;
-	unsigned int hdr_json_len=0, pld_json_len=0, sig_len=0, dig_len=0, alg_type=JWT_ALG_NONE, sig_size=0;
+	size_t hdr_json_len=0, pld_json_len=0, sig_len=0, dig_len=0, sig_size=0;
+	unsigned int alg_type=JWT_ALG_NONE;
 	json_error_t error;
-	json_t *hdr, hdr_alg, pld, pld_auth_value;
+	json_t *hdr, pld, pld_auth_value;
 	const EVP_MD *ossl_alg;
 	EVP_MD_CTX *ossl_md_ctx = NULL;
 	EVP_PKEY *ossl_pkey = NULL;
@@ -162,38 +169,17 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	// Get signature algorithm
-	hdr_alg = json_object_get(hdr, "alg");
-	if (! hdr_alg) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find ALG property in header: %s", session->auth_token, hdr_json);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
+	// Decide on signature: we only support SHA-256 with either HMAC (if instance->jwt_key is defined) or RSA+SHA256 (if instance->jwt_pubkey is defined)
+	ossl_alg = EVP_sha256();
 
-	// Decide on expected signature length
-	if (strcmp(json_string_value(hdr_alg), "HS256")) {
-		alg_type = JWT_ALG_HS;
-		ossl_alg = EVP_sha256();
-		sig_size = 32;		
-	}
-	else if (strcmp(json_string_value(hdr_alg), "RS256")) {
-		alg_type = JWT_ALG_RS;
-		ossl_alg = EVP_sha256();
+	if (session->instance->jwt_key)
+		// HMAC
 		sig_size = 32;
-	}
-	else if (strcmp(json_string_value(hdr_alg), "ES256")) {
-		alg_type = JWT_ALG_ES;
-		ossl_alg = EVP_sha256();
-		// FIXME: remove comment when algo is implemented below
-		//sig_size = 32;		
-	}
+	else if (session->instance->jwt_pubkey)
+		// RSA
+		sig_size = 256;
 
-	// Check if we support the signature type
-	if (! sig_size) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unsupported signature type: %s", json_string_value(hdr_alg));
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
-
-	// Get signature
+	// Get signature from JWT
 	sig = base64url_decode(sig_b64u, strlen(sig_b64u), &sig_len);
 	if (! sig) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to decode signature from base64url: %s", session->auth_token, sig_b64u);
@@ -205,76 +191,70 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	// Create data to be signed: concat the header and payload with a dot
-	// NB: The data does not have to be string, but this way we could print it for debug
-	if ((tosign = ngx_pcalloc(r->pool, strlen(hdr_b64u) + strlen(pld_b64u) + 2)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for JWT signature data", strlen(hdr_b64u) + strlen(pld_b64u) + 2);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
+	// HMAC
+	if (session->instance->jwt_key) {
+		// Create data to be signed: concat the header and payload with a dot
+		// NB: The data does not have to be string, but this way we could print it for debug
+		if ((tosign = ngx_pcalloc(r->pool, strlen(hdr_b64u) + strlen(pld_b64u) + 2)) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for JWT signature data", strlen(hdr_b64u) + strlen(pld_b64u) + 2);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+		memcpy(tosign, hdr_b64u, strlen(hdr_b64u));
+		memcpy(tosign + strlen(hdr_b64u), ".", 1);
+		memcpy(tosign + strlen(hdr_b64u) + 1, pld_b64u, strlen(pld_b64u));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s data to sign: %s", session->auth_token, tosign);
+
+		// Compute digest
+		if ((dig = ngx_pcalloc(r->pool, sig_size )) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for JWT digest", sig_size);
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
+
+		HMAC(ossl_alg, session->instance->jwt_key, strlen(session->instance->jwt_key), tosign, strlen(tosign), dig, &dig_len);
+
+		if (sig_len != dig_len) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s HMAC length mismatch (wanted %l got %l)", session->auth_token, sig_len, dig_len);
+			return NGX_HTTP_UNAUTHORIZED;
+		}
+
+		if (memcmp(sig, dig, sig_size) != 0) {
+			char *sig_hex = calloc(2*sig_len + 1, 1);
+			for (unsigned int i = 0; i < sig_len; i++)
+				sprintf(sig_hex + 2*i, "%02hhX", sig[i]);
+			char *dig_hex = calloc(2*dig_len + 1, 1);
+			for (unsigned int i = 0; i < dig_len; i++)
+				sprintf(dig_hex + 2*i, "%02hhX", dig[i]);
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s HMAC mismatch (wanted %s got %s)", session->auth_token, sig_hex, dig_hex);
+			free(sig_hex);
+			free(dig_hex);
+			return NGX_HTTP_UNAUTHORIZED;
+		}
 	}
-	memcpy(tosign, hdr_b64u, strlen(hdr_b64u));
-	memcpy(tosign + strlen(hdr_b64u), ".", 1);
-	memcpy(tosign + strlen(hdr_b64u) + 1, pld_b64u, strlen(pld_b64u));
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s data to sign: %s", session->auth_token, tosign);
 
-	// Compute digest
-	if ((dig = ngx_pcalloc(r->pool, sig_size )) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for JWT digest", sig_size);
-		return NGX_HTTP_INTERNAL_SERVER_ERROR;
-	}
+	// RSA
+	if (session->instance->jwt_pubkey) {
+		if ((ossl_md_ctx = EVP_MD_CTX_create()) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s error creating OpenSSL MD context: %s", session->auth_token, ERR_error_string(ERR_get_error(), NULL));
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
 
-	// FIXME: Check here for RS256 and ES256?
-	//https://github.com/benmcollins/libjwt/blob/master/libjwt/openssl/sign-verify.c
-	switch(alg_type) {
-		case JWT_ALG_HS:
-			HMAC(ossl_alg, session->instance->jwt_key, strlen(session->instance->jwt_key), tosign, strlen(tosign), dig, &dig_len);
-
-			if (sig_len != dig_len) {
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s HMAC length mismatch (wanted %l got %l)", session->auth_token, sig_len, dig_len);
-				return NGX_HTTP_UNAUTHORIZED;
-			}
-
-			if (memcmp(sig, dig, sig_size) != 0) {
-				char *sig_hex = calloc(2*sig_len + 1, 1);
-				for (unsigned int i = 0; i < sig_len; i++)
-					sprintf(sig_hex + 2*i, "%02hhX", sig[i]);
-				char *dig_hex = calloc(2*dig_len + 1, 1);
-				for (unsigned int i = 0; i < dig_len; i++)
-					sprintf(dig_hex + 2*i, "%02hhX", dig[i]);
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s HMAC mismatch (wanted %s got %s)", session->auth_token, sig_hex, dig_hex);
-				free(sig_hex);
-				free(dig_hex);
-				return NGX_HTTP_UNAUTHORIZED;
-			}
-			break;
-
-		case JWT_ALG_RS:
-			//FIXME
-			ossl_pkey = jwt->key->provider_data;
-
-			ossl_md_ctx = EVP_MD_CTX_create();
-			if (ossl_md_ctx == NULL) {
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s error creating OpenSSL MD context", session->auth_token);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-
-			if (EVP_DigestVerifyInit(ossl_md_ctx, &ossl_pkey_ctx, ossl_alg, NULL, ossl_pkey) != 1) {
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s error initialising OpenSSL MD context", session->auth_token);
-				EVP_MD_CTX_destroy(ossl_md_ctx);
-				return NGX_HTTP_INTERNAL_SERVER_ERROR;
-			}
-
-			if (EVP_DigestVerify(ossl_md_ctx, sig, sig_len, (const unsigned char *)tosign, strlen(tosign)) != 1) {
-				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s RSA MAC mismatch", session->auth_token);
-				EVP_MD_CTX_destroy(ossl_md_ctx);
-				return NGX_HTTP_UNAUTHORIZED;
-			}
-
+		if (EVP_DigestVerifyInit(ossl_md_ctx, &ossl_pkey_ctx, ossl_alg, NULL, session->instance->jwt_pubkey) != 1) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s error initialising OpenSSL MD context: %s", session->auth_token, ERR_error_string(ERR_get_error(), NULL));
 			EVP_MD_CTX_destroy(ossl_md_ctx);
-			break;
+			return NGX_HTTP_INTERNAL_SERVER_ERROR;
+		}
 
-		//case JWT_ALG_ES256:
-		//break;
+		if (EVP_DigestVerify(ossl_md_ctx, sig, sig_len, (const unsigned char *)tosign, strlen(tosign)) != 1) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s RSA MAC mismatch: %s", session->auth_token, ERR_error_string(ERR_get_error(), NULL));
+			EVP_MD_CTX_destroy(ossl_md_ctx);
+			return NGX_HTTP_UNAUTHORIZED;
+		}
+
+		EVP_MD_CTX_destroy(ossl_md_ctx);
 	}
+
+	// FIXME: Check here for ES256?
+	//https://github.com/benmcollins/libjwt/blob/master/libjwt/openssl/sign-verify.c
 
 	// Get the auth value from the payload of the JWT
 	pld_auth_value = json_object_get(pld, session->jwt_field);
