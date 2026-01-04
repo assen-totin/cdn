@@ -98,13 +98,12 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	char *tosign;
 	char *pld_auth_value_s;
 	unsigned char *dig;
-	size_t hdr_json_len=0, pld_json_len=0, sig_len=0, dig_len=0, sig_size=0;
-	unsigned int alg_type=JWT_ALG_NONE;
+	size_t hdr_json_len=0, pld_json_len=0, sig_len=0, sig_size=0;
+	unsigned int  dig_len=0;
 	json_error_t error;
-	json_t *hdr, pld, pld_auth_value;
+	json_t *hdr, *pld, *pld_auth_value;
 	const EVP_MD *ossl_alg;
 	EVP_MD_CTX *ossl_md_ctx = NULL;
-	EVP_PKEY *ossl_pkey = NULL;
 	EVP_PKEY_CTX *ossl_pkey_ctx = NULL;
 
 	// Split the JWT into its three parts: header, payload, signature
@@ -144,13 +143,13 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s signature: %s", session->auth_token, sig_b64u);
 
 	// Decode Base64URL
-	hdr_json = base64url_decode(hdr_b64u, strlen(hdr_b64u), &hdr_json_len);
+	hdr_json = base64url_decode((const unsigned char *)hdr_b64u, strlen(hdr_b64u), &hdr_json_len);
 	if (! hdr_json) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to decode header from base64url: %s", session->auth_token, hdr_b64u);
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	pld_json = base64url_decode(pld_b64u, strlen(pld_b64u), &pld_json_len);
+	pld_json = base64url_decode((const unsigned char *)pld_b64u, strlen(pld_b64u), &pld_json_len);
 	if (! pld_json) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to decode payload from base64url: %s", session->auth_token, pld_b64u);
 		return NGX_HTTP_UNAUTHORIZED;
@@ -210,7 +209,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 
-		HMAC(ossl_alg, session->instance->jwt_key, strlen(session->instance->jwt_key), tosign, strlen(tosign), dig, &dig_len);
+		HMAC(ossl_alg, session->instance->jwt_key, strlen(session->instance->jwt_key), (const unsigned char *)tosign, strlen(tosign), dig, &dig_len);
 
 		if (sig_len != dig_len) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s HMAC length mismatch (wanted %l got %l)", session->auth_token, sig_len, dig_len);
