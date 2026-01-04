@@ -464,14 +464,14 @@ static inline auth_matrix_t *init_auth_matrix(ngx_http_request_t *r, char *matri
 instance_t *instance_init(ngx_http_request_t *r) {
 	instance_t *instance, *instance_tmp;
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
-	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr, *errstr;
+	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
 	int i, ret, cache_size;
 	struct stat statbuf;
 	time_t t = time(NULL);
 	struct tm lt = {0};
 	char *key_name = NULL, *key_header = NULL;
 	uint8_t *key_data = NULL;
-	size_t key_data_len = 0;
+	long key_data_len = 0;
 	FILE *fp;
 
 	// Get config
