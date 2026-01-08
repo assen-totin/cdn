@@ -99,7 +99,7 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 
 	# Skip log (of DELETE operations on an append-only replica)
 	# Place it in the same directory as transaction logs, but name it "skip.log"
-	SKIP_LOG="$FILE_PATH/${INDEX_PREFIX}skip.log"
+	SKIP_LOG="$FS_ROOT/_skip.log"
 
 	# Compare our save point to the current time and build indices to read
 	if [ -e $SAVED_ROOT/$MASTER_INSTANCE_NAME ] ; then
@@ -155,17 +155,17 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 	done
 
 	# Process the log file: deletes (if not an append-only replica)
-	if [ $APPEND_ONLY -gt 0 ] ; then
-		for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
+	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
+		if [ $APPEND_ONLY -gt 0 ] ; then
 			get_file_path $FILE_NAME $FS_DEPTH
 			rm -f $FS_ROOT$FILE_PATH/$FILE_NAME
 			[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "D\t$FILE_NAME" >> $TRANSACTION_LOG
-		done
-	else
-		# Log the DELETE operation so that it may be carreid out later manually if desired
-		# NB: Only apply to existing files (i.e. a file that was added and delete in the same transaction log will not be replicated at all)
-		[ -f $FS_ROOT$FILE_PATH/$FILE_NAME ] && echo -e "D\t$FILE_NAME" >> $SKIP_LOG
-	fi
+		else
+			# Log the DELETE operation so that it may be carried out later manually if desired
+			# NB: Only apply to existing files (i.e. a file that was added and deleted in the same transaction log will not be replicated at all)
+			[ -f $FS_ROOT$FILE_PATH/$FILE_NAME ] && echo -e "D\t$FILE_NAME" >> $SKIP_LOG
+		fi
+	done
 
 	rm -f /tmp/$INSTANCE_NAME
 
