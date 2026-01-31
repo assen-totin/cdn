@@ -9,7 +9,7 @@ FS_DEPTH=4
 # File ownership user, group and permissions
 # NB: these are only used when replicating remote master to this instance;
 # file uploads into the instance will inherit the user, group and umask of the Nginx process
-# Disable thes rto disable the chown/chmod of replicated files
+# Disable these to disable the chown/chmod of replicated files
 FS_USER="nginx"
 FS_GROUP="nginx"
 FS_MODE="644"

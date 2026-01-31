@@ -53,8 +53,21 @@ ngx_int_t index_open(session_t* session) {
 		if (index->fd > 0)
 			close(index->fd);
 
-		// Compose new index name and path
-		snprintf(&filename[0], 256, "%s%02u%02u%02u%02u", index->prefix, index->year + 1900, index->month + 1, index->day, index->hour);
+		// FIXME Compose new index name and path
+		/*
+		NB: The index file will be written to by multiple threads - 
+		but in Nginx module's globals are confined per-thread, so the mutex will not work.
+		This results in a race condition when the second of two concurrent uploads may 
+		overwrite the first one when the index file has just been rotated.
+		In theory, (Nginx-provided) shared memory may be used to host the mutex, 
+		but this is cumbersome and not particularly well documented.
+		Attempts to be more strict in file writing (O_DIRECT or O_SYNC) may lead to index file corruption on NFS
+		when multiple threads attempt to write to it at the same time.
+		As a workaround, we add a thread-specific suffix to the name of the hourly index file
+		(so we end up with multiple index files for a given hour) and then use an external cron job 
+		to combine them to the actual hourly index file that will be read by the replicas.
+		*/
+		snprintf(&filename[0], 256, "%s%02u%02u%02u%02u#%u", index->prefix, index->year + 1900, index->month + 1, index->day, index->hour, ngx_log_tid);
 		bzero(&path[0], 256);
 		get_path0(fs->root, fs->depth, &filename[0], &path[0]);
 

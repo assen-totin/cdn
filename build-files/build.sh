@@ -18,7 +18,7 @@ CMDL_JOB_HELP+=("The name of the RPM package to produce")
 
 CMDL_JOB_NAME+=("--cdn-enable-jwt")
 CMDL_JOB_FLAG+=(0)
-CMDL_JOB_HELP+=("Link against libjwt.so")
+CMDL_JOB_HELP+=("Enable JWT support (requries Jansson and OpenSSL)")
 
 CMDL_JOB_NAME+=("--cdn-enable-mongo")
 CMDL_JOB_FLAG+=(0)

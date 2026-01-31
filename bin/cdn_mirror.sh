@@ -3,7 +3,7 @@
 # Mirroring job for CDN
 
 MASTER_ROOT="/etc/cdn/mirror.d"
-LOCAL_ROOT="/etc/cdn/index.d"
+LOCAL_ROOT="/etc/cdn/instance.d"
 SAVED_ROOT="/var/lib/cdn/mirror.d"
 
 # Helper to get the file path of a file from its name

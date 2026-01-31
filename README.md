@@ -629,7 +629,7 @@ To only transfer files that were changed and to avoid the need to compare both s
 
 The file is tab-delimited with two fields: single letter for the operation (I - file inserted, U - file updated, D - file deleted) and the ID of the file. 
 
-To automatically purge old replication log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/index.d/XYZ.conf` (there is an example provided).
+To automatically purge old replication log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/instance.d/XYZ.conf` (there is an example provided).
 
 The remote side may retrieve the list from the previous hour and then fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf` (there is an example provided). On its first run, the script will create the initial savepoint file in `/var/lib/cdn/mirror.d/XYZ.conf` with the following line, containing the date and hour (in UTC) from which to start the replication:
 

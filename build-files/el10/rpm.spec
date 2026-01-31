@@ -44,8 +44,8 @@ CDN Nginx module
 
 %install
 
-mkdir -p $RPM_BUILD_ROOT/etc/cdn/index.d
-cp -r ${RPM_SOURCE_DIR}/config-files/index* $RPM_BUILD_ROOT/etc/cdn/index.d
+mkdir -p $RPM_BUILD_ROOT/etc/cdn/instance.d
+cp -r ${RPM_SOURCE_DIR}/config-files/instance* $RPM_BUILD_ROOT/etc/cdn/instance.d
 mkdir -p $RPM_BUILD_ROOT/etc/cdn/mirror.d
 cp -r ${RPM_SOURCE_DIR}/config-files/mirror* $RPM_BUILD_ROOT/etc/cdn/mirror.d
 

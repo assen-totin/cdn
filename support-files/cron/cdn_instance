@@ -1,0 +1,6 @@
+# CDN crontab file for instances
+
+# Maintenance: run every hour to aggregate any partial transaction logs
+# This will also purge old transaction logs
+3 * * * *	root	/usr/bin/cdn_instance.sh
+
