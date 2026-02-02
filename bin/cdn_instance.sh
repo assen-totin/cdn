@@ -22,7 +22,7 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	done
 
 	# Go to the index directory
-	pushd $INDEX_PATH
+	cd $INDEX_PATH
 
 	# Compose the name of the index file for the previous hour
 	CURR_TS=$(date +%s)
@@ -41,7 +41,5 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 
 	# Cleanup: remove all files older than $KEEP days
 	find -type f -mtime +$KEEP | xargs rm -f
-
-	popd
 done
 
