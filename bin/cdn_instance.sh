@@ -26,6 +26,7 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 
 	# Compose the name of the index file for the previous hour
 	CURR_TS=$(date +%s)
+	CURR_DT=$(date -d @${CURR_TS} -u +%Y%m%d%H)
 	PREV_TS=$((CURR_TS-3600))
 	PREV_DT=$(date -d @${PREV_TS} -u +%Y%m%d%H)
 	FULL_LOG="${INDEX_PREFIX}${PREV_DT}"
@@ -33,8 +34,9 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	# Aggregate any partial transaction logs into an index file. 
 	# File name format for a partial log is $INDEX_PREFIX + YYYYMMDDHH + "#" + PID
 	# The full log file should be for the previous hour even if the partials are older,
-	# this way the replicas will still find the changes
-	for PARTIAL_LOG in $(find | grep '#' | awk -F '/' '{print $NF}') ; do
+	# this way the replicas will still find the changes.
+	# Exclude any existing log for the current hour.
+	for PARTIAL_LOG in $(find | grep '#' | grep -v $CURR_DT | awk -F '/' '{print $NF}') ; do
 		cat $PARTIAL_LOG >> $FULL_LOG
 		rm -f $PARTIAL_LOG
 	done
