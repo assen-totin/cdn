@@ -183,6 +183,7 @@
 #define TRANSPORT_TYPE_NONE "none"
 #define TRANSPORT_TYPE_ORACLE "oracle"
 #define TRANSPORT_TYPE_POSTGRESQL "postgresql"
+#define TRANSPORT_TYPE_PREAUTH "preauth"
 #define TRANSPORT_TYPE_REDIS "redis"
 #define TRANSPORT_TYPE_TCP "tcp"
 #define TRANSPORT_TYPE_UNIX "unix"

@@ -1,20 +1,26 @@
-# Concept
+# Concepts
 
-The module implements an optimised, custom delivery of authorised content (e.g., user files etc.). Using it is as easy as making a `GET`, `POST` or `DELETE` HTTP request.
+This is an Nginx module that implements optimised custom delivery of content with possible access authorisation (e.g., user files etc.). Using it is as easy as making a `GET`, `POST`, `PUT` or `DELETE` HTTP request.
 
-The module performs all tasks needed to manage the content: upload, download and delete. You may still implement the uploads and deletions yourself if preferred (e.g. if a custom post-processing of uploaded files like thumbnail generation is required); the CDN may be put in read-only mode in this case.
+The module performs all tasks needed to manage the content: upload, download and delete. One may still implement the uploads and deletions outside this module if desired (e.g. if custom post-processing of uploaded files like thumbnail generation is required); the CDN may be put in read-only mode in such case.
 
-Each file request for must be authorised before served. Authorisation is handled by an external body to which the module connects. The authorisation body should return some file metadata for an approved download.
+Various methods of authorisation, both internal and external, are available. It is also possible to use the CDN without authorisation (e.g., for public content).
 
-The business logic for authorisation consists of three main elements:
+Multuple CDN nodes may be connected to each other to form the desired replication topology (e.g. star, full mesh etc.).
 
-- Authorisation method: we support JWT, session ID  and transparent (completely offloaded)
-- Request type: specifies the format of the request that will be sent to the external authorisation body; we support SQL, JSON, XML and Mongo.
-- Transport type: specifies how to connect to the external authorisation body; we support MySQL, PostgreSQL, Oracle, Mongo, Redis, Internal, HTTP, TCP and Unix domain socket.
+The CDN URL for a file will be similar to `http://cdn.example.com/file-id`. The file ID consists of 16 letters and numbers, followed by a dot and an integer. A second dot and a short extension may be present if the file is a part of a pack of files (see below).
 
 # Initialise
 
 To create a blank filesystem storage, use `bin/mkcdn.sh`.
+
+Several parameters pay be passed to this tool:
+- `depth`: the depth of the directory tree (i.e. the number of nested levels with 16 subdirectories per level); for 50-100 million files or less, depth of 4 is usually sufficient; for larger instances, depths of 5 or 6 may be preferable.
+- `root`: the apex of the directory tree
+- `user`: the name of the system user that will be made the owner of the directories (usually the account under which Nginx runs).
+- `group`: the name of the system group that will be set for the directories (usually the primary group under which Nginx runs).
+
+Note that depth is mostly for admin's convenience and is not related to the actual number of files the CDN may store (for which there is no hard limit); for example, a depth of 4 means that with 10 million files, there will be about 150 files per directory. 
 
 # Nginx configuration
 
@@ -22,13 +28,15 @@ All below Nginx parameters should be configured for the chosen `location`:
 
 ## General parameters
 
+Sampel values are illustrative.
+
 - `cdn`: Enable CDN module (mandatory)
 - `cdn_fs_root /opt/cdn`: Root directory of the CDN filesystem (mandatory)
 - `cdn_fs_depth 4`: depth of the CDN tree (mandatory)
 - `cdn_server_id 1`: the ID of the server instance, integer between 1 and 48 (optional, default 1)
 - `cdn_vhost_id 2725a35b-fb7c-4aad-923d-cadf00fa292d`: the ID of the server instance, any string (optional, default "00000000")
 - `cdn_cors_origin host.example.com`: Allowed CORS origin (optional, default *)
-- `cdn_read_only no`: Read-only mode prohibits uploads and deletions; set to `yes` to enable (optional, default "no")
+- `cdn_read_only yes`: Read-only mode prohibits uploads and deletions; set to `yes` to enable (optional, default "no")
 
 ## Authorisation parameters
 
@@ -47,12 +55,12 @@ All below Nginx parameters should be configured for the chosen `location`:
 
 ## Transport parameters
 
-- `cdn_transport_type unix`: Type of transport for authorisation, one of `unix`, `tcp`, `http`, `mysql`, `oracle`, `postgresql`, `mongo`, `redis`, `internal`
+- `cdn_transport_type unix`: Type of transport for authorisation, one of `unix`, `tcp`, `http`, `mysql`, `oracle`, `postgresql`, `mongo`, `redis`, `internal`, `none` or `preauth`
 - `cdn_unix_socket /path/to/unix.sock`: Only for transport type `unix`: path to the Unix socket of the authorisation service
 - `cdn_tcp_host`: only for transport type `tcp`: hostname of the authorisation service
 - `cdn_tcp_port`: only for transport type `tcp`: port of the authorisation service
 - `cdn_http_url`: only for transport type `http`: URL of the authorisation service
-- `cdn_db_dsn dsn-or-url`: only for transport type `mysql`, `oracle`, `postgresql`, `mongo`, `redis`: DSN of the database service (format is DB-specific, see below)
+- `cdn_db_dsn DNS-or-URL`: only for transport type `mysql`, `oracle`, `postgresql`, `mongo`, `redis`: DSN of the database service (format is DB-specific, see below)
 - `cdn_sql_insert`: only for transport type `mysql`, `oracle`, `postgresql`: SQL query to execute when uploading a file (with placeholders)
 - `cdn_sql_select`: only for transport type `mysql`, `oracle`, `postgresql`: SQL query to execute when fetching a file (with placeholders)
 - `cdn_sql_delete`: only for transport type `mysql`, `oracle`, `postgresql`: SQL query to execute when deleting a file (with placeholders)
@@ -66,21 +74,19 @@ The following general-purpose Nginx params may be useful:
 - `client_body_buffer_size`: sets the size above which a temp file will be used for uploads; default is 16k, you may want to increase it.
 - `client_max_body_size`: sets the maximum size of a single POST request used for uploads to CDN (i.e. larger files will not be accepted for upload); default is 1m, you may want to increase it.
 
-The CDN URL for a file will be similar to `http://cdn.example.com/some-file-id`
-
 ## Additional notes
 
 ### Server ID
 
 Configuration parameter `cdn_server_id` defines the ID of the server when multiple CDN servers write to the same filesystem tree. It is used to guarantee the uniqueness of the uploaded file. Only used when uploading files via CDN. Default is 1.
 
-### Vhost ID
+### Virtual Host ID
 
-Configuration parameter `cdn_vhost_id` defines the ID of the virtual host when multiple CDN virtual hosts share the same filesystem tree (e.g., one virtual host is used for writing to the CDN and another to reading from it). It is used to guarantee the uniqueness of the configuration. Default is "00000000", but it will be ignored and instead of it, the filesystem tree path will be used.
+Configuration parameter `cdn_vhost_id` defines the ID of the virtual host when multiple CDN virtual hosts share the same filesystem tree (e.g., one virtual host is used for writing to the CDN and another to reading from it). It is used to guarantee the uniqueness of the configuration. If not specified, the filesystem path to the apex of the directory tree will be used.
 
 ### CORS
 
-For cross-origin resource sharing (CORS) you configure one allowed host in the `cdn_cors_origin` configuration parameter. The default value for it is "*" (allow any host).
+For cross-origin resource sharing (CORS) one allowed host may be set in the `cdn_cors_origin` configuration parameter. The default value for it is "*" (allow any host).
 
 # Build configuration
 
@@ -97,12 +103,19 @@ To enable/disable some of the features (mostly such that require external librar
 
 ## Platforms
 
-The following tags are known to build on the below plaforms:
+The following tags are known to build on the below platforms:
 
 - 0.16.x: RHEL-9 (nginx-1.20, libjwt-1.x, libxml2-2.9)
 - 0.17.x: RHEL-10 (nginx-1.26, libjwt-3.x, libxml2-2.12)
+- 0.18.x: RHEL-10 (nginx-1.26, libxml2-2.12, janssons-2.14-3, openssl-3.5.1-7)
 
 # Authorisation
+
+Authorisation is built from three components:
+
+- Authorisation method: supported are JWT, session ID  and transparent (completely offloaded)
+- Request type: specifies the format of the request that will be sent to the authorisation body: SQL, JSON, XML or MongoDB.
+- Transport type: specifies the connection type to the authorisation body: MySQL, PostgreSQL, Oracle, Mongo, Redis, Internal, HTTP, TCP, Unix domain socket as well as the special pre-authorised (preauth) type.
 
 ## Method
 
@@ -114,7 +127,7 @@ Authorisation token may be supplied in:
 
 The authorisation method determines how this authentication token will be processed to extract the actual authorisation token, which is then passed to the authorisation backend. 
 
-You may also use transparent authorisation when we pass all incoming headers and cookies to the authorisation body without working on them.
+With transparent authorisation all incoming headers and cookies are passed verbatim to the authorisation body.
 
 ## Matrix
 
@@ -130,52 +143,52 @@ In the first case the request will be allowed or denied based on the explicit st
 
 If defined, the `cdn_matrix_upld` configuration parameter must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
-- Authorisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
-- Authorisation request with authorisation value yielded empty response; default is `allow`.
-- Authorisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
-- Authorisation request without authorisation value yielded empty response; default is `deny`.
+- Authorisation value is present and the authorisation request yielded non-empty response (without a `status` field); default is `allow`.
+- Authorisation value is present and the authorisation request yielded empty response; default is `allow`.
+- Authorisation value is missing and the authorisation request yielded non-empty response (without a `status` field); default is `deny`.
+- Authorisation value is missing and the authorisation request yielded empty response; default is `deny`.
 
 ### Download
 
 If defined, the `cdn_matrix_dnld` configuration parameter must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
-- Authorisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
-- Authorisation request with authorisation value yielded empty response; default is `deny`.
-- Authorisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
-- Authorisation request without authorisation value yielded empty response; default is `deny`.
+- Authorisation value is present and the authorisation request yielded non-empty response (without a `status` field); default is `allow`.
+- Authorisation value is present and the authorisation request yielded empty response; default is `deny`.
+- Authorisation value is missing and the authorisation request yielded non-empty response (without a `status` field); default is `deny`.
+- Authorisation value is missing and the authorisation request yielded empty response; default is `deny`.
 
 ### Deletion
 
 If defined, the `cdn_matrix_del` configuration parameter must be a colon-delimited list of 4 actions, each either `allow` or `deny`. They will be applied in the given order to the following cases: 
 
-- Authorisation request with authorisation value yielded non-empty response without `status` field; default is `allow`.
-- Authorisation request with authorisation value yielded empty response; default is `deny`.
-- Authorisation request without authorisation value yielded non-empty response without `status` field; default is `deny`.
-- Authorisation request without authorisation value yielded empty response; default is `deny`.
+- Authorisation value is present and the authorisation request yielded non-empty response (without a `status` field); default is `allow`.
+- Authorisation value is present and the authorisation request yielded empty response; default is `deny`.
+- Authorisation value is missing and the authorisation request yielded non-empty response (without a `status` field); default is `deny`.
+- Authorisation value is missing and the authorisation request yielded empty response; default is `deny`.
 
 ## Authorisation by JWT
 
-In this case the authorisation token is a JWT, which is extracted and validated to obtain the authorisation value.
+The authorisation token is a JWT, which is extracted and validated to obtain the authorisation value. This is the recommended method.
 
 To use this method, set the configuration option `cdn_auth_type` to `jwt`.
 
-Also, set the JWT signature verification key in configuration option `cdn_jwt_key`; you may also set the full path to the file that has the key instead.
+Also, set the JWT signature verification key in configuration option `cdn_jwt_key`: if using a symmetric key, set in directly in the configuration; if using a public key, enter the path to its file. The CDN will not use fully-encrypted JWT.
 
 Finally, specify the JWT payload field to use for authorisation in configuration option `cdn_jwt_field`.
 
-The JWT must have a claim named `exp`, containing the Unix timestamp for the expiration time of the token.
-
-For JWT you'll need the JWT decoding library: https://github.com/benmcollins/libjwt
+The JWT must have a claim named `exp`, containing the Unix timestamp for the expiration time of the token. Expired requests will be denied.
 
 ## Authorisation by session ID
 
-In this case the authorisation token is a session ID, which used as authorisation value. As the session ID has no digital signature nor expiration time, its validity should be verified by the authorisation body; this means authorisation by session ID is only useful with transparent authorisation.
+The authorisation token is a session ID, which used as authorisation value. This method is not recommended. 
 
 To use this method, set the configuration option `cdn_auth_type` to `session`.
 
+As the session ID has neither a digital signature nor expiration time, its validity should be verified by the authorisation body; this means authorisation by session ID is only useful (security-wise) with transparent authorisation (see next).
+
 ## Transparent authorisation
 
-This method allows you to send some extra info to the authorisation body. This extra info may be:
+This method sends extra information to the authorisation body, which may be:
 
 - All HTTP headers, if configuration option `cdn_all_headers` is set to `yes`.
 - All cookies, if configuration option `cdn_all_cookies` is set to `yes`.
@@ -186,11 +199,11 @@ This method may be used with some complex request types like `json` or `xml`. It
 
 ## Authorisation value filters
 
-If the authorisation value needs processing, you may configure a build-in filter to be applied to it. The name of the filter and its parameters are given as comma-separated list in the `cdn_auth_filter` configuration parameter.
+If the authorisation value needs processing, you may configure a filter to be applied to it. The name of the filter and its parameters are given as comma-separated list in the `cdn_auth_filter` configuration parameter.
 
 The following filters are currently defined:
 
-- `filter_token`: splits the authorisation value by a single-byte delimiter and returns the N-th token. First parameter is the delimiter, second parameter is which token to return (first is counted as 1, second as 2 etc.). If delimiter is not found, the authorisation value is retained as-is. If the delimiter is found, but not as many time as requested in token count, the authorisation value is reset to NULL, which will deny the request.
+- `filter_token`: splits the authorisation value by a single-byte delimiter and returns the N-th token. First parameter is the delimiter, second parameter is which token to return (first is 1, second is 2 etc.). If the delimiter is not found, the authorisation value is retained as-is. If the delimiter is found, but not as many time as requested in token count, the authorisation value is reset to NULL, which may deny the request.
 
 # Request types
 
@@ -268,7 +281,7 @@ Same as with the upload. An existing document will be updated.
 
 Set the Mongo filter in the configuration option `cdn_mongo_filter`. It may have up to two `%s` placeholders - the first will be filled with the file ID and the second - with the authorisation value.
 
-NB: The parameter value must be a valid a JSON. You must escape all double quotes when putting the string in the Nginx configuration!
+NB: The parameter value must be a valid a JSON. All double quotes must be escaped when putting the string in the Nginx configuration!
 
 The default filter is `{"file_id": "%s", "auth_value": "%s"}`.
 
@@ -280,7 +293,7 @@ The CDN will compose and execute the same query as with download. The document, 
 
 This request type can be used with transport type set to `unix` (Unix socket), `tcp` (TCP socket) or `http` (HTTP request).
 
-NB: The CDN modules uses libbson to create and parse JSON. This library expects your strings (e.g., file name) to be valid UTF-8. If not, your request will likely fail. Keep in mind that there are technically valid UTF-8 sequences (like 0x96) which are not valid UTF-8 characters (as, in this example, it sis a control character). 
+NB: The CDN modules uses libbson to create and parse JSON. This library expects strings (e.g., file name) to be valid UTF-8. If not, the request will likely fail. Note that there are technically valid UTF-8 sequences (like 0x96) which are not valid UTF-8 characters (as, in this example, it is a control character). 
 
 ### Upload
 
@@ -496,25 +509,13 @@ This transport is usually used when request type is `json` (JSON file format, pr
 
 The metadata will be saved into a Redis instance as either JSON (preferred as it is faster) or XML.
 
-Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `hostname:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket instead of port number; fields `username`, `password` and `database` are ignored.
-
-## Internal
-
-This transport is usually used when request type is `json` (JSON file format, preferred) or `xml` (XML file format).
-
-The metadata will be saved into a local file alongside the uploaded file itself, as either JSON (preferred as it is faster) or XML.
-
-There are no configuration options for this transport.
-
-To enable the in-memory cache of metadata, set the `cdn_cache_size` to the desired amount in MB; default value is 0 (meaning cache is disabled). Each cached entry consumes around 3 KB of memory (when the allocated amount is exhausted, oldest entry will be evicted from the cache).
-
-NB: The cache is global (for all CDN instances that have it enabled), so its size will only be set once - therefore, if you want to use the cache for multiple CDN instances, make sure you have the same size set in each one (this will be the shared global cache size).
+Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `hostname:port:username:password:database`. If the host is `localhost`, you may put the full path to the Unix socket instead of port number; fields `username`, `password` and `database` are ignored.
 
 ## MySQL
 
 This transport is only useful when request type is set to `mysql`.
 
-Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `hostname:port:username:password:database`. If you host is `localhost`, you may put the full path to the Unix socket in the `port` field.
+Set the DSN in the configuration option `cnd_db_dsn` using the following syntax: `hostname:port:username:password:database`. If the host is `localhost`, you may put the full path to the Unix socket instead of the port.
 
 ## PostgreSQL
 
@@ -526,11 +527,11 @@ Set the DSN in the configuration option `cnd_db_dsn` using the following syntax:
 
 This transport is only useful when request type is set to `oracle`.
 
-Set the DSN in the configuration option `cnd_db_dsn` just like you would do for MySQL above; field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service`; fields `port` and `database` are ignored. Note that since the `:` is a delimited, it cannot be part of the service name, i.e. you cannot specify a TCP port as a part of the service name. Oracle's default TCP port is 1521.
+Set the DSN in the configuration option `cnd_db_dsn` the same way as for MySQL (see above); field `host` should be a valid TNS record with a hostname and a service, typically in the format `hostname/service`; fields `port` and `database` are ignored. Note that since the `:` is a delimited, it cannot be part of the service name, i.e. you cannot specify a TCP port as a part of the service name. Oracle's default TCP port is 1521.
 
-You'll need to manually install Oracle Instant Client library; make sure you have a version which knows how to talk to your Oracle server. You will likely need to export `LD_LIBARY_PATH` with the path to the client library directory.
+You need to manually install Oracle Instant Client library; make sure the chosen version knows how to talk to the Oracle server. `LD_LIBARY_PATH` may need to be exported with the path to the client library directory.
 
-You'll also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime you'll need to export the `ORACLE_HOME` variable. You also must whitelist this environment variable in Nginx by adding `env ORACLE_HOME` to the top level of your Nginx configuration file.
+You also need the OCI library from https://github.com/vrogier/ocilib. In order for this library to work, at runtime the `ORACLE_HOME` variable needs to be exported; it shoudl also be whitelisted in Nginx by adding `env ORACLE_HOME` to the top level of the Nginx configuration file for the CDN.
 
 ## MongoDB
 
@@ -538,11 +539,39 @@ Only useful when request type is set to `mongo`.
 
 Set the database connection string in the configuration option `cnd_db_dsn` using the standard MongoDB driver syntax following syntax: `mongodb://user:password@hostname:port[,more-hosts-if-replicaset]/database?options` where `options` may include such as `replicaSet=some_name` or `authSource=some_database`. 
 
+## Internal
+
+This transport is usually used when request type is `json` (JSON file format, preferred) or `xml` (XML file format).
+
+The metadata will be saved into a local file alongside the uploaded file itself, as either JSON (preferred as it is faster) or XML.
+
+There are no configuration options for this transport.
+
+To enable the in-memory cache of metadata, set the `cdn_cache_size` to the desired amount in MB; default value is 0 (meaning cache is disabled). Each cached entry consumes around 3 KB of memory (when the allocated amount is exhausted, oldest entry will be evicted from the cache). Note that the cache is per-thread (of Nginx).
+
+## Preauth
+
+This transport is useful to organise access to content wuth pre-authorised URL.
+
+There are no configuration options for this transport.
+
+This transport matches the `auth_value` to the `file_id`; if the `auth_value` is missing, or if the two do not match, the request is denied. For this reason, this transport only works for downloads.
+
+No metadata is returned by this transport, so the file is served verbatim.
+
+## None
+
+This transport discards the authorisation request and always returns OK. It can be used on public instances usually combined with `auth_type: none`.
+
+There are no configuration options for this transport.
+
+No metadata is returned by this transport, so the file is served verbatim.
+
 # File uploads
 
 ## Uploads via CDN
 
-Files can be uploaded via the CDN itself. File upload uses HTTP POST request. Only one file can be uploaded per request. The file must be accompanied by an authorisation token as per the chosen configuration (e.g., signed JWT with proper authorisation value and `exp` claim in the `Bearer` field of the `Authorization` header).
+File upload uses HTTP POST request. Only one file can be uploaded per request. The file may have to be accompanied by an authorisation token as per the chosen configuration (e.g., signed JWT with proper authorisation value and `exp` claim in the `Bearer` field of the `Authorization` header).
 
 The following upload methods are available via CDN:
 
@@ -560,7 +589,7 @@ The following form field names are recognised:
 
 The metadata can be created in two ways:
 
-- For SQL or MongoDB, you need to provide `auth_value` to be set in the database table or collection, e.g. via JWT.
+- For SQL or MongoDB, `auth_value` must be provided to be set in the database table or collection, e.g. via JWT.
 - For JSON or XML, a request will be send using the chosen transport (Unix, TCP, HTTP) with the file metadata (as in the response when asking to download or delete a file); the response will be ignored.
 
 ## Concurrent versions
@@ -569,36 +598,41 @@ Although the CDN uses large hashing depth (128 bit) and an algorithm with sigh s
 
 ## File packs
 
-Normally, every uploaded file will get its own ID, computed by the CDN. Sometimes it may be necessary to use an existing ID instead, followed by an extension. An example would be storing multiple copies of the same image, but with different resolution; in this case, the base file ID (called here "pack leader") will be provided to the client application and, based on its needs, it will request this file ID, amended by a resolution-specific extension.
+Normally, every uploaded file will get its own ID, computed by the CDN. Sometimes it may be necessary to use an existing ID instead, followed by an extension. An example would be storing multiple copies of the same image, but with different resolution; in this case, the base file ID (called here "pack leader") will be provided to the web client and, based on its needs, it will request this file ID, amended by a specific extension.
 
 To upload the pack leader, just do a regular upload and save the provided ID.
 
-To upload any subsequent file to the pack, add the `pl` and the `ext` parameters to the upload; the first must be the file ID of the pack leader, the second the custom extension for this specific file. The CDN will return the file ID of the newly uploaded file, which will be the ID of the pack leader, followed by a dot and the provided extension. 
+To upload any subsequent file to the pack, add the `pl` and the `ext` parameters to the upload:
+
+`pl` must be the file ID of the pack leader
+`ext` must be a custom extension for this specific file
+
+The CDN will return the file ID of the newly uploaded file, which will be the ID of the pack leader, followed by a dot and the provided extension.
 
 To retrieve a file from the pack, just use its full ID as returned by the CDN.
 
 When getting a file, if the file ID contains an extension, but the file is not found, the CDN will attempt to serve the pack leader instead.
 
-Note that the extensions will be converted to base16 before being written to the filesystem; this is to protect from directory traversal attempts. The file ID of a pack member will contain the extension in its original form.
+Note that the extensions will be converted to base16 before being written to the filesystem; this is a security measure. The file ID of a pack member will contain the extension in its original form.
 
 ## Manual uploads
 
-Here is the workflow to upload yourself a file to the CDN:
+Here is the workflow to upload a file to the CDN:
 
-### Create file ID
+### Create a file ID
 
 - Use a lightweight hashing algorithm. 
 - We recommend strongly 128-bit murmur3: very fast, very sensitive, very good distribution, open source.
 - Ensure input is unique: use the file name, the current timestamp (with at least ms precision), the ID (or session ID) of the user and an ID of the app instance (e.g., IP address).
 - Convert the ID to lowercase hex string. Append a dot and a counter value (start at zero, increment by one for each existing file with the same hash).
 - If uploading packs, select an extension and convert it to base16. Append to the file ID after a dot.
-- Do not use random data: low entropy on virtualised systems will slow you down.
+- Do not use random data: low entropy on virtualised systems will slow the CDN down.
 
 ### Write the file ID and its metadata
 
-Write them to the metadata storage which will be used by CDN for authorisation (e.g., to the MySQL database); include all teh fields that will be needed for download.
+Write them to the metadata storage which will be used by CDN for authorisation (e.g., to the MySQL database); include all the fields that will be needed for download.
 
-Test your authorisation query to make sure metadata is properly returned.
+Test the custom authorisation query to make sure metadata is properly returned.
 
 ### Write the file into CDN file structure
 
@@ -613,7 +647,7 @@ The `examples` directory contains a sample file upload server in NodeJS.
 
 # File download
 
-To get a file from the CDN, issue a `GET` HTTP request to the CDN endpoint, followed by the file ID, e.g. `http://cdn.example.com/some-file-id`. The request must be accompanied by an authorisation token as per the chosen configuration (e.g., signed JWT with proper authorisation value and `exp` claim in the `Bearer` field of the `Authorization` header).
+To get a file from the CDN, issue a `GET` HTTP request to the CDN endpoint, followed by the file ID, e.g. `http://cdn.example.com/file-id`. The request must be accompanied by an authorisation token as per the chosen configuration (e.g., signed JWT with proper authorisation value and `exp` claim in the `Bearer` field of the `Authorization` header).
 
 # File deletion
 
@@ -623,19 +657,19 @@ NB: The metadata for the file will be deleted when using internal authorisation,
 
 # Replication
 
-You can mirror the CDN in any way desired (e.g., rsync). 
+The CDN files may be mirrored in any way desired (e.g., rsync). 
 
-To only transfer files that were changed and to avoid the need to compare both sides file by file, the CDN keeps a replication log with all changes. The log file is written as plain text file inside the CDN and is rotated on the top of every hour. The file name is `<prefix>YYYYMMDDHH` where the date is always in UTC and the prefix can be set in the `cdn_index_prefix` configuration options (the default is `______`). 
+To only transfer files that were changed and to avoid the need to compare both sides file by file, the CDN keeps a transaction log with all changes. The log file is written as plain text file inside the CDN and is rotated on the top of every hour. The file name is `<prefix>YYYYMMDDHH` where the date is always in UTC and the prefix can be set in the `cdn_index_prefix` configuration options (the default is `______`). 
 
 The file is tab-delimited with two fields: single letter for the operation (I - file inserted, U - file updated, D - file deleted) and the ID of the file. 
 
-To automatically purge old replication log files, put the `cdn_index.sh` into the cron and put and configure its config file `/etc/cdn/instance.d/XYZ.conf` (there is an example provided).
+To automatically purge old replication log files, put the `cdn_instance.sh` into the cron and put and configure its config file `/etc/cdn/instance.d/XYZ.conf` (an example file is provided).
 
-The remote side may retrieve the list from the previous hour and then fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron and put and configure one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf` (there is an example provided). On its first run, the script will create the initial savepoint file in `/var/lib/cdn/mirror.d/XYZ.conf` with the following line, containing the date and hour (in UTC) from which to start the replication:
+The remote side may retrieve the list from the previous hour and then fetch the inserted or updated files and also remove the deleted files. To do so, put the `cdn_mirror.sh` into the cron of the remote side and add one config file per remote CDN instance in `/etc/cdn/mirror.d/XYZ.conf` (an example file is provided). On its first run, the script will create the initial savepoint file in `/var/lib/cdn/mirror.d/XYZ.conf` with the following line, containing the date and hour (in UTC) from which to start the replication:
 
 `SAVEPOINT=YYYYMMDDHH`
 
-To use the mirroring script you need to create a separate virtual host in Nginx on the master instance. It should not have the CDN module loaded, but instead it should just provide direct access to the whole file tree for the CDN instance (i.e. the web root of the virtual host should be set to the filesystem root of the CDN instance). As this provides unauthenticated access to all CDN files without any authorisation imposed, make sure you only allow access to this virtual host from the IP addresses of the replica CDN instances.
+Using the mirroring script requires a separate virtual host in Nginx on the master instance. It should not have the CDN module loaded, but instead it should just provide direct access to the whole file tree for the CDN instance (i.e. the web root of the virtual host should be set to the filesystem root of the CDN instance). As this provides unauthenticated access to all CDN files without any authorisation imposed, make sure access to this virtual host is only allowed from the IP addresses of the replica CDN instances.
 
 # Compliance
 
@@ -653,37 +687,53 @@ The CDN supports a number of HTTP headers that govern the file delivery:
 
 # Development environment setup
 
-NB: This is for RHEL-8 and derivatives. RHEL-7 has some differences in packages and in the configure command. 
+NB: This is for RHEL-10 and derivatives.
 
 ```
 # Go to checkout dir
 
-# Install build deps
+# Install build tools and basic dependencies
 yum groupinstall -y 'Development Tools'
-yum install -y nginx libbson-devel libcurl-devel pcre-devel libxml2-devel libxml-devel libxslt-devel gd-devel gperftools-devel mariadb-connector-c-devel perl-ExtUtils-Embed
+yum install -y nginx libcurl-devel pcre-devel
 
-# Install libjwt from https://github.com/benmcollins/libjwt
+# JWT support requires Jansson and OpenSSL.
+# yum install jansson-devel openssl-devel
 
-# To have Oracle support, install Oracle Instant Client and the OCI library from wget https://github.com/vrogier/ocilib/releases/download/v4.6.3/ocilib-4.6.3-gnu.tar.gz
+# XML suport requries libXML
+# yum install libxml2-devel libxml-devel libxslt-devel
+
+# MySQL/MariaDB support requires Connector-C:
+# yum install mariadb-connector-c-devel
+
+# PostgreSQL requires their client library
+# yum install libpq-devel
+
+# Oracle support requries Oracle Instant Client and the OCI library.
+# wget https://github.com/vrogier/ocilib/releases/download/v4.6.3/ocilib-4.6.3-gnu.tar.gz
 # OCIlib needs to know where to find Oracle Instant Client at runtime, so export ORACLE_HOME for it, e.g.:
 # export ORACLE_HOME=/ora01/app/oracle/product/11.2.0/dbhome_1
 # To link against OCIlib, Oracle Instant Client's library directry must be in the LD path, so export LD_LIBRARY_PATH for it, e.g.:
 # export LD_LIBRARY_PATH=$ORACLE_HOME/lib
 
-# To enable/disable MySQL and Oracle support, edit src/modules.h. Also there you can toggle JWT support.
+# MongoDB requires BSON support and a MongoDB connector
+# yum install libbson-devel mongo-c-driver-devel
+
+# To enable/disable support for various authentications and transports, edit src/modules.h.
 
 # Copy our module config
 cp support-files/nginx/modules/* /usr/share/nginx/modules
 
 # Get the Nginx sources (version must match the installed one from RPM)
-wget http://nginx.org/download/nginx-1.14.1.tar.gz
-gunzip nginx-1.14.1.tar.gz
-tar xf nginx-1.14.1.tar
-cd nginx-1.14.1
+wget http://nginx.org/download/nginx-1.26.3.tar.gz
+gunzip nginx-1.26.3.tar.gz
+tar xf nginx-1.26.3.tar
+cd nginx-1.26.3
 
-# Configure the build the same way as the RPM packages does
-# NB: This command has only includes and libraries for JWT and MySQL enabled - 
-# and not for PostgreSQL, Oracle, Mongo and Redis
+# Configure the build the same way as the RPM package does
+# NB: This command does not include the additional transports and authorisations; add them to the $EXTRA_INCLUDES and $EXTRA_LIBS, e.g.:
+#EXTRA_INCLUDES="-I /usr/include/libbson-1.0 -I/usr/include/libxml2"
+#EXTRA_LIBS="-ljansson -lcrypto -lxml2"
+
 CFLAGS=-Wno-error ./configure \
 --add-dynamic-module=../src \
 --prefix=/usr/share/nginx \
@@ -701,36 +751,41 @@ CFLAGS=-Wno-error ./configure \
 --lock-path=/run/lock/subsys/nginx \
 --user=nginx \
 --group=nginx \
+--with-compat \
+--with-debug \
 --with-file-aio \
---with-ipv6 \
---with-http_ssl_module \
---with-http_v2_module \
---with-http_realip_module \
 --with-http_addition_module \
---with-http_xslt_module=dynamic \
---with-http_image_filter_module=dynamic \
---with-http_sub_module \
+--with-http_auth_request_module \
 --with-http_dav_module \
+--with-http_degradation_module \
 --with-http_flv_module \
---with-http_mp4_module \
 --with-http_gunzip_module \
 --with-http_gzip_static_module \
---with-http_random_index_module \
---with-http_secure_link_module \
---with-http_degradation_module \
---with-http_slice_module \
---with-http_stub_status_module \
+--with-http_image_filter_module=dynamic \
+--with-http_mp4_module \
 --with-http_perl_module=dynamic \
---with-http_auth_request_module \
+--with-http_random_index_module \
+--with-http_realip_module \
+--with-http_secure_link_module \
+--with-http_slice_module \
+--with-http_ssl_module \
+--with-http_stub_status_module \
+--with-http_sub_module \
+--with-http_v2_module \
+--with-http_v3_module \
+--with-http_xslt_module=dynamic \
 --with-mail=dynamic \
 --with-mail_ssl_module \
+--with-openssl-opt=enable-ktls \
 --with-pcre \
 --with-pcre-jit \
 --with-stream=dynamic \
+--with-stream_realip_module \
 --with-stream_ssl_module \
---with-debug \
---with-cc-opt='-O2 -g -pipe -Wall -Werror=format-security -Wp,-D_FORTIFY_SOURCE=2 -Wp,-D_GLIBCXX_ASSERTIONS -fexceptions -fstack-protector-strong -grecord-gcc-switches -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1 -m64 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -I /usr/include/libbson-1.0 -I /usr/include/mysql -I/usr/include/libxml2' \
---with-ld-opt='-Wl,-z,relro -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -Wl,-E -lbson-1.0 -lcurl -ljwt -lmysqlclient -lxml2'
+--with-stream_ssl_preread_module \
+--with-threads \
+--with-cc-opt=-"O2 -flto=auto -ffat-lto-objects -fexceptions -g -grecord-gcc-switches -pipe -Wall -Wno-complain-wrong-lang -Werror=format-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 -Wp,-D_GLIBCXX_ASSERTIONS -specs=/usr/lib/rpm/redhat/redhat-hardened-cc1 -fstack-protector-strong -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1  -m64 -march=x86-64-v3 -mtune=generic -fasynchronous-unwind-tables -fstack-clash-protection -fcf-protection -mtls-dialect=gnu2 $EXTRA_INCLUDES" \
+--with-ld-opt="-Wl,-z,relro -Wl,--as-needed  -Wl,-z,pack-relative-relocs -Wl,-z,now -specs=/usr/lib/rpm/redhat/redhat-hardened-ld -specs=/usr/lib/rpm/redhat/redhat-annobin-cc1  -Wl,--build-id=sha1 -Wl,-E -O2 $EXTRA_LIBS"
 
 # Build modules only
 make modules

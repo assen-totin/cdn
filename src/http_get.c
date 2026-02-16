@@ -667,6 +667,8 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		ret = transport_mysql(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_NONE))
 		ret = transport_none(session, metadata, r, METADATA_SELECT);
+	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_PREAUTH))
+		ret = transport_preauth(session, metadata, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_ORACLE))
 		ret = transport_oracle(session, r, METADATA_SELECT);
 	else if (! strcmp(session->transport_type, TRANSPORT_TYPE_POSTGRESQL))
