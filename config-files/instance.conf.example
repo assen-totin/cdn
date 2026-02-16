@@ -7,9 +7,9 @@ FS_ROOT="/opt/cdn"
 FS_DEPTH=4
 
 # File ownership user, group and permissions
-# NB: these are only used when replicating remote master to this instance;
+# NB: these are only used when replicating remote master to this instance and when aggregating transaction logs;
 # file uploads into the instance will inherit the user, group and umask of the Nginx process
-# Disable these to disable the chown/chmod of replicated files
+# Disable these to disable the chown/chmod of replicated files and aggregated logs
 FS_USER="nginx"
 FS_GROUP="nginx"
 FS_MODE="644"
@@ -17,7 +17,7 @@ FS_MODE="644"
 # The transaction logs prefix
 INDEX_PREFIX="______"
 
-# How many days to keep transaction logs (index files are rotated hourly)
+# How many days to keep transaction logs (logs are rotated hourly)
 KEEP=7
 
 # If this local instance is updated from a remote master, save the retrieved transaction logs for chained slaves
