@@ -42,9 +42,11 @@ for CONFIG_FILE in $CONFIG_FILES ; do
 	done
 
 	# Chown/chmod the file if configured
-	[ "x$FS_USER" != 'x' ] && chown $FS_USER $FULL_LOG
-	[ "x$FS_GROUP" != 'x' ] && chgrp $FS_GROUP $FULL_LOG
-	[ "x$FS_MODE" != 'x' ] && chmod $FS_MODE $FULL_LOG
+	if [ -f $FULL_LOG ] ; then
+		[ "x$FS_USER" != 'x' ] && chown $FS_USER $FULL_LOG
+		[ "x$FS_GROUP" != 'x' ] && chgrp $FS_GROUP $FULL_LOG
+		[ "x$FS_MODE" != 'x' ] && chmod $FS_MODE $FULL_LOG
+	fi
 
 	# Cleanup: remove all files older than $KEEP days
 	find -type f -mtime +$KEEP | xargs rm -f
