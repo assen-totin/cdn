@@ -156,14 +156,15 @@ for MASTER_CONFIG in $MASTER_CONFIGS ; do
 
 	# Process the log file: deletes (if not an append-only replica)
 	for FILE_NAME in $(cat /tmp/$INSTANCE_NAME | grep ^D | awk '{print $2}') ; do
+		get_file_path $FILE_NAME $FS_DEPTH
+		LOCAL_FILE="$FS_ROOT$FILE_PATH/$FILE_NAME"
 		if [ $APPEND_ONLY -gt 0 ] ; then
 			# Log the DELETE operation so that it may be carried out later manually if desired
 			# NB: Only apply to existing files (i.e. a file that was added and deleted in the same transaction log will not be replicated at all)
-			[ -f $FS_ROOT$FILE_PATH/$FILE_NAME ] && echo -e "D\t$FILE_NAME" >> $SKIP_LOG
+			[ -f $LOCAL_FILE ] && echo -e "D\t$FILE_NAME" >> $SKIP_LOG
 		else
 			# Delete as usual
-			get_file_path $FILE_NAME $FS_DEPTH
-			rm -f $FS_ROOT$FILE_PATH/$FILE_NAME
+			rm -f $LOCAL_FILE
 			[ $INTERMEDIATE_MASTER -gt 0 ] && echo -e "D\t$FILE_NAME" >> $TRANSACTION_LOG
 		fi
 	done
