@@ -538,13 +538,13 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			}
 			sprintf(metadata->file16, "%s.%s", metadata->pack, metadata->ext16);
 
-			len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file16);
+			len = strlen(session->settings->fs->root) + 1 + 2 * session->settings->fs->depth + strlen(metadata->file16);
 			if ((metadata->path = ngx_pcalloc(r->pool, len + 1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len + 1);
 				return upload_cleanup(r, upload, NGX_ERROR);
 			}
 			bzero(metadata->path, len + 1);
-			get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file16, metadata->path);
+			get_path0(session->settings->fs->root, session->settings->fs->depth, metadata->file16, metadata->path);
 		}
 		else {
 			// Create hash salt: number of seconds for today with ms precision, mulitplied by server id =< 49
@@ -552,7 +552,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			gettimeofday(&tv, NULL);
 			int sec = tv.tv_sec % 86400;
 			int msec = tv.tv_usec / 1000;
-			uint32_t salt = session->instance->fs->server_id * (1000 * sec + msec);
+			uint32_t salt = session->settings->fs->server_id * (1000 * sec + msec);
 
 			// Create file hash
 			murmur3_128((void *)file_data_begin, metadata->length, salt, (void *) &hash[0]);
@@ -722,22 +722,22 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		if (session->auth_value) {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = session->instance->matrix_upld->auth_resp;
+				metadata->status = session->settings->matrix_upld->auth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value +resp setting status %l.", metadata->status);
 			}
 			else {
-				metadata->status = session->instance->matrix_upld->auth_noresp;
+				metadata->status = session->settings->matrix_upld->auth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value -resp setting status %l.", metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = session->instance->matrix_upld->noauth_resp;
+				metadata->status = session->settings->matrix_upld->noauth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value +resp setting status %l.", metadata->status);
 			}
 			else {
-				metadata->status = session->instance->matrix_upld->noauth_noresp;
+				metadata->status = session->settings->matrix_upld->noauth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value -resp setting status %l.", metadata->status);
 			}
 		}

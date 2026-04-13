@@ -97,13 +97,13 @@
 #define DEFAULT_AUTH_COOKIE "none"
 #define DEFAULT_AUTH_FILTER "none"
 #define DEFAULT_AUTH_METOD "none"
-#define DEFAULT_CACHE_SIZE "0"
+#define DEFAULT_CACHE_SIZE 0
 #define DEFAULT_CONTENT_TYPE "application/octet-stream"
 #define DEFAULT_CONTENT_DISPOSITION "none"
 #define DEFAULT_DB_DSN "none"
 #define DEFAULT_ETAG "00000000000000000000000000000000"
 #define DEFAULT_FILE_NAME "unnamed"
-#define DEFAULT_FS_DEPTH "4"
+#define DEFAULT_FS_DEPTH 4
 #define DEFAULT_FS_ROOT "/opt/cdn"
 #define DEFAULT_HTTP_URL "http://example.com"
 #define DEFAULT_INDEX_PREFIX "______"
@@ -119,12 +119,12 @@
 #define DEFAULT_MONGO_FILTER "{'file_id': '%s', 'auth_value': '%s'}"
 #define DEFAULT_READ_ONLY "no"
 #define DEFAULT_REQUEST_TYPE "none"
-#define DEFAULT_SERVER_ID "1"
+#define DEFAULT_SERVER_ID 1
 #define DEFAULT_SQL_QUERY_DELETE "DELETE FROM cdn WHERE file_id='%s'"
 #define DEFAULT_SQL_QUERY_INSERT "REPLACE INTO cdn (auth_value, file_id, filename, content_type, content_disposition, etag) VALUES ('%s','%s','%s',%u,'%s','%s', %u,'%s')"
 #define DEFAULT_SQL_QUERY_SELECT "SELECT * FROM cdn WHERE file_id='%s' AND auth_value='%s'"
 #define DEFAULT_TCP_HOST "example.com"
-#define DEFAULT_TCP_PORT "12345"
+#define DEFAULT_TCP_PORT 12345
 #define DEFAULT_TRANSPORT_TYPE "none"
 #define DEFAULT_UNIX_SOCKET "/tmp/auth.socket"
 #define DEFAULT_VHOST_ID "00000000"
@@ -190,48 +190,6 @@
 
 // STRUCTURES
 
-// Main config
-typedef struct {
-	ngx_array_t loc_confs; 		// ngx_http_cdn_conf_t
-} ngx_http_cdn_main_conf_t;
-
-// Local config
-typedef struct {
-	ngx_str_t server_id;
-	ngx_str_t vhost_id;
-	uint32_t instance_id;
-	ngx_str_t fs_root;
-	ngx_str_t fs_depth;
-	ngx_str_t index_prefix;
-	ngx_str_t request_type;
-	ngx_str_t transport_type;
-	ngx_str_t unix_socket;
-	ngx_str_t tcp_host;
-	ngx_str_t tcp_port;
-	ngx_str_t auth_cookie;
-	ngx_str_t auth_header;
-	ngx_str_t auth_type;
-	ngx_str_t auth_filter;
-	ngx_str_t jwt_key;
-	ngx_str_t jwt_field;
-	ngx_str_t all_cookies;
-	ngx_str_t all_headers;
-	ngx_str_t db_dsn;
-	ngx_str_t sql_select;
-	ngx_str_t sql_insert;
-	ngx_str_t sql_delete;
-	ngx_str_t http_url;
-	ngx_str_t mongo_db;
-	ngx_str_t mongo_collection;
-	ngx_str_t mongo_filter;
-	ngx_str_t cors_origin;
-	ngx_str_t read_only;
-	ngx_str_t cache_size;
-	ngx_str_t matrix_del;
-	ngx_str_t matrix_dnld;
-	ngx_str_t matrix_upld;
-} ngx_http_cdn_loc_conf_t;
-
 // Metadata
 typedef struct {
 	char *hash;
@@ -282,8 +240,8 @@ typedef struct {
 
 // FS structure
 typedef struct {
-	int server_id;
-	int depth;
+	unsigned int server_id;
+	unsigned int depth;
 	char *root;
 } fs_t;
 
@@ -302,6 +260,7 @@ typedef struct {
 	uint64_t mem_used;
 	uint64_t mem_max;
 	uint64_t *btree_mask;
+	pthread_mutex_t mutex;
 } cache_t;
 
 // Cache payload element structure
@@ -324,6 +283,7 @@ typedef struct {
 	int month;
 	int day;
 	int hour;
+	pthread_mutex_t mutex;
 } index_t;
 
 // Range header
@@ -332,26 +292,25 @@ typedef struct {
 	int64_t end;		// -1 means read from "start" to end of file
 } hdr_range_t;
 
-// Globals for a CDN instance
+// CDN settings
 typedef struct {
-	uint32_t id;
+	auth_matrix_t *matrix_dnld;
+	auth_matrix_t *matrix_del;
+	auth_matrix_t *matrix_upld;
+	fs_t *fs;
+	cache_t *cache;
+	index_t *index;
+	dsn_t *dsn;
+	int tm_gmtoff;
 	char *jwt_key;
 #ifdef CDN_ENABLE_JWT
 	EVP_PKEY *jwt_pubkey;
 #endif
-	dsn_t *dsn;
-	auth_matrix_t *matrix_dnld;
-	auth_matrix_t *matrix_del;
-	auth_matrix_t *matrix_upld;
-	cache_t *cache;
-	index_t *index;
-	fs_t *fs;
-	int tm_gmtoff;
-} instance_t;
+} settings_t;
 
 // Session
 typedef struct {
-	instance_t *instance;
+	settings_t *settings;
 	ngx_http_request_t *r;
 	time_t exp;
 	char *read_only;
@@ -418,14 +377,46 @@ typedef struct {
 	CURL *curl;
 } upload_t;
 
-// Globals
+// Main config
 typedef struct {
-	instance_t *instances;
-	int instances_cnt;
-	pthread_mutex_t lock_instance;
-	pthread_mutex_t lock_index;
-	pthread_mutex_t lock_cache;
-} globals_t;
+	ngx_array_t loc_confs; 		// ngx_http_cdn_conf_t
+} ngx_http_cdn_main_conf_t;
+
+// Local config
+typedef struct {
+	ngx_int_t server_id;
+	ngx_int_t fs_depth;
+	ngx_str_t fs_root;
+	ngx_str_t index_prefix;
+	ngx_str_t request_type;
+	ngx_str_t transport_type;
+	ngx_str_t unix_socket;
+	ngx_str_t tcp_host;
+	ngx_int_t tcp_port;
+	ngx_str_t auth_cookie;
+	ngx_str_t auth_header;
+	ngx_str_t auth_type;
+	ngx_str_t auth_filter;
+	ngx_str_t jwt_key;
+	ngx_str_t jwt_field;
+	ngx_str_t all_cookies;
+	ngx_str_t all_headers;
+	ngx_str_t db_dsn;
+	ngx_str_t sql_select;
+	ngx_str_t sql_insert;
+	ngx_str_t sql_delete;
+	ngx_str_t http_url;
+	ngx_str_t mongo_db;
+	ngx_str_t mongo_collection;
+	ngx_str_t mongo_filter;
+	ngx_str_t cors_origin;
+	ngx_str_t read_only;
+	ngx_int_t cache_size;
+	ngx_str_t matrix_del;
+	ngx_str_t matrix_dnld;
+	ngx_str_t matrix_upld;
+	settings_t *settings;
+} ngx_http_cdn_loc_conf_t;
 
 //// ENUMERATORS
 
@@ -449,7 +440,4 @@ enum {
 	INDEX_ACTION_UPDATE,
 	INDEX_ACTION_DELETE,
 };
-
-//// GLOBALS
-//extern globals_t *globals;
 

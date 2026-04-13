@@ -13,10 +13,6 @@
 #include "utils.h"
 #include "murmur3_32.h"
 
-//// GLOBALS
-// NB: In Nginx, globals are per-thread
-globals_t *globals;
-
 /**
  * Module initialisation
  */
@@ -50,36 +46,6 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 	// Init cURL
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 
-	// Init the globals and create a slot that will never be used, but which will save one conditional jump on every request
-	if ((globals = malloc(sizeof(globals_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for globals.", sizeof(globals_t));
-		return NGX_ERROR;
-	}
-
-	if ((globals->instances = malloc(sizeof(instance_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to allocate %l bytes for first instance.", sizeof(instance_t));
-		return NGX_ERROR;
-	}
-
-	if (pthread_mutex_init(&globals->lock_instance, NULL) != 0) {
-		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init globals mutex for instances.");
-		return NGX_ERROR;
-	}
-
-	globals->instances[0].id = 0;
-	globals->instances_cnt = 1;
-
-	// Init other mutexes
-	if (pthread_mutex_init(&globals->lock_cache, NULL) != 0) {
-		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init globals mutex for cache.");
-		return NGX_ERROR;
-	}
-
-	if (pthread_mutex_init(&globals->lock_index, NULL) != 0) {
-		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init globals mutex for index.");
-		return NGX_ERROR;
-	}
-
 	return NGX_OK;
 }
 
@@ -87,58 +53,12 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
  * Module termination
  */
 void ngx_http_cdn_module_end(ngx_cycle_t *cycle) {
-	int i;
-	instance_t *instance;
-
 #ifdef CDN_ENABLE_MYSQL
 	mysql_library_end();
 #endif
 #ifdef CDN_ENABLE_ORACLE
 	OCI_Cleanup();
 #endif
-
-	// Clean all instances
-	// NB: Skip the first instance at i=0, it is always uninitialised
-	for (i=1; i < globals->instances_cnt; i++) {
-		instance = &globals->instances[i];
-
-		cache_destroy(instance->cache);
-
-		index_destroy(instance->index);
-
-		fs_destroy(instance->fs);
-
-		if (instance->jwt_key)
-			free(instance->jwt_key);
-
-		if (instance->dsn) {
-			if (instance->dsn->dsn)
-				free(instance->dsn->dsn);
-			if (instance->dsn->host)
-				free(instance->dsn->host);
-			if (instance->dsn->port_str)
-				free(instance->dsn->port_str);
-			if (instance->dsn->user)
-				free(instance->dsn->user);
-			if (instance->dsn->password)
-				free(instance->dsn->password);
-			if (instance->dsn->db)
-				free(instance->dsn->db);
-			free(instance->dsn);
-		}
-
-		if (instance->matrix_dnld)
-			free(instance->matrix_dnld);
-
-		if (instance->matrix_upld)
-			free(instance->matrix_upld);
-
-		if (instance->matrix_del)
-			free(instance->matrix_del);
-	}
-
-	free(globals->instances);
-	free(globals);
 }
 
 /**
@@ -152,6 +72,12 @@ void* ngx_http_cdn_create_loc_conf(ngx_conf_t* cf) {
 		return NGX_CONF_ERROR;
 	}
 
+	loc_conf->settings = NULL;
+	loc_conf->server_id = NGX_CONF_UNSET;
+	loc_conf->fs_depth = NGX_CONF_UNSET;
+	loc_conf->cache_size = NGX_CONF_UNSET;
+	loc_conf->tcp_port = NGX_CONF_UNSET;
+
 	return loc_conf;
 }
 
@@ -163,16 +89,15 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_http_cdn_loc_conf_t *child = void_child;
 	int len;
 
-	ngx_conf_merge_str_value(child->server_id, parent->server_id, DEFAULT_SERVER_ID);
-	ngx_conf_merge_str_value(child->vhost_id, parent->vhost_id, DEFAULT_VHOST_ID);
+	ngx_conf_merge_uint_value(child->server_id, parent->server_id, DEFAULT_SERVER_ID);
+	ngx_conf_merge_uint_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
 	ngx_conf_merge_str_value(child->fs_root, parent->fs_root, DEFAULT_FS_ROOT);
-	ngx_conf_merge_str_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
 	ngx_conf_merge_str_value(child->index_prefix, parent->index_prefix, DEFAULT_INDEX_PREFIX);
 	ngx_conf_merge_str_value(child->request_type, parent->request_type, DEFAULT_REQUEST_TYPE);
 	ngx_conf_merge_str_value(child->transport_type, parent->transport_type, DEFAULT_TRANSPORT_TYPE);
 	ngx_conf_merge_str_value(child->unix_socket, parent->unix_socket, DEFAULT_UNIX_SOCKET);
 	ngx_conf_merge_str_value(child->tcp_host, parent->tcp_host, DEFAULT_TCP_HOST);
-	ngx_conf_merge_str_value(child->tcp_port, parent->tcp_port, DEFAULT_TCP_PORT);
+	ngx_conf_merge_uint_value(child->tcp_port, parent->tcp_port, DEFAULT_TCP_PORT);
 	ngx_conf_merge_str_value(child->auth_cookie, parent->auth_cookie, DEFAULT_AUTH_COOKIE);
 	ngx_conf_merge_str_value(child->auth_header, parent->auth_header, DEFAULT_AUTH_HEADER);
 	ngx_conf_merge_str_value(child->auth_type, parent->auth_type, DEFAULT_AUTH_METOD);
@@ -191,20 +116,15 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 	ngx_conf_merge_str_value(child->mongo_filter, parent->mongo_filter, DEFAULT_MONGO_FILTER);
 	ngx_conf_merge_str_value(child->cors_origin, parent->cors_origin, DEFAULT_ACCESS_CONTROL_ALLOW_ORIGIN);
 	ngx_conf_merge_str_value(child->read_only, parent->read_only, DEFAULT_READ_ONLY);
-	ngx_conf_merge_str_value(child->cache_size, parent->cache_size, DEFAULT_CACHE_SIZE);
+	ngx_conf_merge_uint_value(child->cache_size, parent->cache_size, DEFAULT_CACHE_SIZE);
 	ngx_conf_merge_str_value(child->matrix_upld, parent->matrix_upld, DEFAULT_MATRIX_UPLD);
 	ngx_conf_merge_str_value(child->matrix_dnld, parent->matrix_dnld, DEFAULT_MATRIX_DNLD);
 	ngx_conf_merge_str_value(child->matrix_del, parent->matrix_del, DEFAULT_MATRIX_DEL);
 
-	// Calculate and save instance ID hash only if working on real location
-	// Use a custom vhost ID if defined, else compute something out of FS root
-	if (child->fs_root.len != strlen(DEFAULT_FS_ROOT)) {
-		len = (child->vhost_id.len < strlen(DEFAULT_VHOST_ID)) ? child->vhost_id.len : strlen(DEFAULT_VHOST_ID);
-		if (memcmp((void *)child->vhost_id.data, DEFAULT_VHOST_ID, len))
-			murmur3_32((void *)child->vhost_id.data, child->vhost_id.len, 42, (void *) &child->instance_id);
-		else
-			murmur3_32((void *)child->fs_root.data, child->fs_root.len, 42, (void *) &child->instance_id);
-		ngx_log_error(NGX_LOG_INFO, cf->log, 0, "Setting instance ID to %uD", child->instance_id);
+	// See if we need to init settings
+	if (! child->settings) {
+		if ((child->settings = settings_init()) == NULL)
+			return NGX_CONF_ERROR;
 	}
 
 	return NGX_CONF_OK;

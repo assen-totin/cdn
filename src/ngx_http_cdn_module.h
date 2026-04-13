@@ -25,17 +25,9 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 	{
 		ngx_string("cdn_server_id"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-		ngx_conf_set_str_slot,
+		ngx_conf_set_num_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, server_id),
-		NULL
-	},
-	{
-		ngx_string("cdn_vhost_id"),
-		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-		ngx_conf_set_str_slot,
-		NGX_HTTP_LOC_CONF_OFFSET,
-		offsetof(ngx_http_cdn_loc_conf_t, vhost_id),
 		NULL
 	},
 	{
@@ -49,7 +41,7 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 	{
 		ngx_string("cdn_fs_depth"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-		ngx_conf_set_str_slot,
+		ngx_conf_set_num_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, fs_depth),
 		NULL
@@ -97,7 +89,7 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 	{
 		ngx_string("cdn_tcp_port"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-		ngx_conf_set_str_slot,
+		ngx_conf_set_num_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, tcp_port),
 		NULL
@@ -249,7 +241,7 @@ static ngx_command_t ngx_http_cdn_commands[] = {
 	{
 		ngx_string("cdn_cache_size"),
 		NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-		ngx_conf_set_str_slot,
+		ngx_conf_set_num_slot,
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_cdn_loc_conf_t, cache_size),
 		NULL

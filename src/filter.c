@@ -12,6 +12,7 @@
 char *filter_token(ngx_http_request_t *r, char *string, char *delimiter, int position) {
 	int i;
 	char *ret, *prev, *next;
+	ngx_log_t *log = (r && r->log) ? r->log : ngx_cycle->log;
 
 	if (! string)
 		return NULL;
@@ -34,8 +35,8 @@ char *filter_token(ngx_http_request_t *r, char *string, char *delimiter, int pos
 		}
 	}
 
-	if ((ret = ngx_pcalloc(r->pool, next - prev + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for filter_token.", next - prev + 1);
+	if ((ret = (r && r->pool) ? ngx_pcalloc(r->pool, next - prev + 1) : calloc(next - prev + 1, 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, log, 0, "Failed to allocate %l bytes for filter_token.", next - prev + 1);
 		return NULL;
 	}
 

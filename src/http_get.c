@@ -50,22 +50,22 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 		if (session->auth_value) {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->auth_resp : session->instance->matrix_del->auth_resp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->settings->matrix_dnld->auth_resp : session->settings->matrix_del->auth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value +resp setting status %l.", metadata->file16, metadata->status);
 			}
 			else {
-				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->auth_noresp : session->instance->matrix_del->auth_noresp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->settings->matrix_dnld->auth_noresp : session->settings->matrix_del->auth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value -resp setting status %l.", metadata->file16, metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
-				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->noauth_resp : session->instance->matrix_del->noauth_resp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->settings->matrix_dnld->noauth_resp : session->settings->matrix_del->noauth_resp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value +resp setting status %l.", metadata->file16, metadata->status);
 			}
 			else {
-				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->instance->matrix_dnld->noauth_noresp : session->instance->matrix_del->noauth_noresp;
+				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->settings->matrix_dnld->noauth_noresp : session->settings->matrix_del->noauth_noresp;
 				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value -resp setting status %l.", metadata->file16, metadata->status);
 			}
 		}
@@ -507,7 +507,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 	if (r->headers_in.if_modified_since) {
 		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
 		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
-			session->hdr_if_modified_since = mktime(&ltm) + session->instance->tm_gmtoff;
+			session->hdr_if_modified_since = mktime(&ltm) + session->settings->tm_gmtoff;
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session->hdr_if_modified_since);
 		}
 		else
@@ -530,7 +530,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 
 		// This header may either be time or etag
 		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
-			session->hdr_if_range_time = mktime(&ltm) + session->instance->tm_gmtoff;
+			session->hdr_if_range_time = mktime(&ltm) + session->settings->tm_gmtoff;
 			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Range to timestamp: %l", session->hdr_if_range_time);
 		}
 		else {

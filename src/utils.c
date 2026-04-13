@@ -7,7 +7,6 @@
 #include "common.h"
 #include "filter.h"
 #include "fs.h"
-#include "globals.h"
 #include "index.h"
 #include "cache.h"
 
@@ -65,18 +64,18 @@ char *from_ngx_str(ngx_pool_t *pool, ngx_str_t ngx_str) {
 /**
  * Convert Nginx string to normal using malloc
  */
-char *from_ngx_str_malloc(ngx_pool_t *pool, ngx_str_t ngx_str) {
+char *from_ngx_str_malloc(ngx_log_t *pool_log, ngx_str_t ngx_str) {
 	char *ret;
+	ngx_log_t *log = (pool_log) ? pool_log : ngx_cycle->log;
 
 	if (! ngx_str.len)
 		return NULL;
 
-	if ((ret = malloc(ngx_str.len + 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, pool->log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
+	if ((ret = calloc(ngx_str.len + 1, 1)) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, log, 0, "Failed to allocate %l bytes in from_ngx_str().", ngx_str.len + 1);
 		return NULL;
 	}
 
-	bzero(ret, ngx_str.len + 1);
 	memcpy(ret, ngx_str.data, ngx_str.len);
 	return ret;
 }
@@ -158,13 +157,13 @@ void get_path0(char *fs_root, int fs_depth, char *filename, char *result) {
 ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t *r) {
 	int len;
 
-	len = strlen(session->instance->fs->root) + 1 + 2 * session->instance->fs->depth + strlen(metadata->file16);
+	len = strlen(session->settings->fs->root) + 1 + 2 * session->settings->fs->depth + strlen(metadata->file16);
 	if ((metadata->path = ngx_pcalloc(r->pool, len + 1)) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for path.", len + 1);
 		return NGX_ERROR;
 	}
 	bzero(metadata->path, len + 1);
-	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->file16, metadata->path);
+	get_path0(session->settings->fs->root, session->settings->fs->depth, metadata->file16, metadata->path);
 
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file16, metadata->path);
 
@@ -181,7 +180,7 @@ ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 	// The path prefix will always be the same, no matter what ver is
 	bzero(&prefix[0], 1536);
-	get_path0(session->instance->fs->root, session->instance->fs->depth, metadata->hash, &prefix[0]);
+	get_path0(session->settings->fs->root, session->settings->fs->depth, metadata->hash, &prefix[0]);
 
 	// Try all possible ver up to MAX_VER
 	while (metadata->ver < MAX_VER) {
@@ -419,16 +418,16 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 /**
  * Helper: SQL DSN parser
  */
-static inline ngx_int_t property_sql(ngx_http_request_t *r, char **field, char *field_name, char *value) {
+static inline ngx_int_t property_sql(ngx_log_t *log, char **field, char *field_name, char *value) {
 	char *f;
 
 	if ((f = calloc(strlen(value) + 1, 1)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for SQL property %s: %s.", strlen(value) + 1, field_name, value);
+		ngx_log_error(NGX_LOG_EMERG, log, 0, "Failed to allocate %l bytes for SQL property %s: %s.", strlen(value) + 1, field_name, value);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	strcpy(f, value);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found SQL property %s: %s", field_name, f);
+	ngx_log_error(NGX_LOG_INFO, log, 0, "Found SQL property %s: %s", field_name, f);
 	*field = f;
 
 	return NGX_OK;
@@ -437,35 +436,35 @@ static inline ngx_int_t property_sql(ngx_http_request_t *r, char **field, char *
 /**
  * Auth matrix parser
  */
-static inline auth_matrix_t *init_auth_matrix(ngx_http_request_t *r, char *matrix_str) {
+static inline auth_matrix_t *init_auth_matrix(ngx_log_t *log, char *matrix_str) {
 	auth_matrix_t *matrix;
 
 	if ((matrix = malloc(sizeof(auth_matrix_t))) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth matrix.", sizeof(auth_matrix_t));
+		ngx_log_error(NGX_LOG_EMERG, log, 0, "Failed to allocate %l bytes for auth matrix.", sizeof(auth_matrix_t));
 		return NULL;
 	}
 
-	matrix->auth_resp = (! strcmp(filter_token(r, matrix_str, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	matrix->auth_noresp = (! strcmp(filter_token(r, matrix_str, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	matrix->noauth_resp = (! strcmp(filter_token(r, matrix_str, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
-	matrix->noauth_noresp = (! strcmp(filter_token(r, matrix_str, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	matrix->auth_resp = (! strcmp(filter_token(NULL, matrix_str, ":", 1), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	matrix->auth_noresp = (! strcmp(filter_token(NULL, matrix_str, ":", 2), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	matrix->noauth_resp = (! strcmp(filter_token(NULL, matrix_str, ":", 3), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
+	matrix->noauth_noresp = (! strcmp(filter_token(NULL, matrix_str, ":", 4), DEFAULT_MATRIX_ALLOW)) ? MATRIX_ALLOW_STATUS : MATRIX_DENY_STATUS;
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Matrix: setting auth_resp=%l", matrix->auth_resp);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Matrix: setting auth_noresp=%l", matrix->auth_noresp);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Matrix: setting noauth_resp=%l", matrix->noauth_resp);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Matrix: setting noauth_noresp=%l", matrix->noauth_noresp);
+	ngx_log_error(NGX_LOG_INFO, log, 0, "Matrix: setting auth_resp=%l", matrix->auth_resp);
+	ngx_log_error(NGX_LOG_INFO, log, 0, "Matrix: setting auth_noresp=%l", matrix->auth_noresp);
+	ngx_log_error(NGX_LOG_INFO, log, 0, "Matrix: setting noauth_resp=%l", matrix->noauth_resp);
+	ngx_log_error(NGX_LOG_INFO, log, 0, "Matrix: setting noauth_noresp=%l", matrix->noauth_noresp);
 
 	return matrix;
 }
 
 /**
- * Init instance
+ * Init settings
  */
-instance_t *instance_init(ngx_http_request_t *r) {
-	instance_t *instance, *instance_tmp;
+settings_t *settings_init() {
+	settings_t *settings;
 	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
-	int i, ret, cache_size;
+	int i, ret;
 	struct stat statbuf;
 	time_t t = time(NULL);
 	struct tm lt = {0};
@@ -474,94 +473,94 @@ instance_t *instance_init(ngx_http_request_t *r) {
 	long key_data_len = 0;
 	FILE *fp;
 
+	// Create settings
+	if ((settings = malloc(sizeof(settings_t))) == NULL)
+		return NULL;
+
 	// Get config
 	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 
-	// Create a new instance in the global array
-	pthread_mutex_lock(&globals->lock_instance);
-	if ((instance_tmp = realloc(globals->instances, (globals->instances_cnt + 1) * sizeof(instance_t))) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to realloc global instances");
-		pthread_mutex_unlock(&globals->lock_instance);
-		return NULL;
-	}
-	globals->instances = instance_tmp;
-	instance = &globals->instances[globals->instances_cnt];
-	globals->instances_cnt ++;
-	pthread_mutex_unlock(&globals->lock_instance);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Created global space for new instance, count is now %l", globals->instances_cnt);
 
-	instance->id = cdn_loc_conf->instance_id;
-	instance->jwt_key = NULL;
-	instance->dsn = NULL;
-	instance->matrix_dnld = NULL;
-	instance->matrix_del = NULL;
-	instance->matrix_upld = NULL;
+	// Init to NULL everything that we may malloc() later
+	settings->matrix_dnld = NULL;
+	settings->matrix_del = NULL;
+	settings->matrix_upld = NULL;
+	settings->jwt_key = NULL;
+	settings->jwt_pubkey = NULL;
+	settings->dsn = NULL;
 
 	// Init FS
-	if ((instance->fs = fs_init()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init FS");
+	if ((settings->fs = fs_init()) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "Failed to init FS");
 		return NULL;
 	}
-	instance->fs->root = from_ngx_str_malloc(r->pool, cdn_loc_conf->fs_root);
-	instance->fs->depth = atoi(from_ngx_str(r->pool, cdn_loc_conf->fs_depth));
-	instance->fs->server_id = atoi(from_ngx_str(r->pool, cdn_loc_conf->server_id));
+	if (! (settings->fs->root = from_ngx_str_malloc(ngx_cycle->log, cdn_loc_conf->fs_root)))
+		return NULL;
+	settings->fs->depth = (unsigned int) cdn_loc_conf->depth;
+	settings->fs->server_id = (unsigned int) cdn_loc_conf->server_id;
 
 	// Init index
-	if ((instance->index = index_init()) == NULL) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init index");
+	if ((settings->index = index_init()) == NULL) {
+		ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "Failed to init index");
 		return NULL;
 	}
-	instance->index->prefix = from_ngx_str_malloc(r->pool, cdn_loc_conf->index_prefix);
+	settings->index->prefix = from_ngx_str_malloc(ngx_cycle->log, cdn_loc_conf->index_prefix);
 
 	// Init cache for internal transport (if enabled in config)
-	if ((cache_size = atoi(from_ngx_str(r->pool, cdn_loc_conf->cache_size))) > 0) {
-		if ((instance->cache = cache_init()) == NULL) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to init in-memory cache (malloc failed)");
+	if (cdn_loc_conf->cache_size > 0) {
+		if ((settings->cache = cache_init()) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "Failed to init in-memory cache (malloc failed)");
 			return NULL;
 		}
-		instance->cache->mem_max = CACHE_SIZE_MULTIPLIER * cache_size;
+		settings->cache->mem_max = CACHE_SIZE_MULTIPLIER * cdn_loc_conf->cache_size;
 	}
 	else
-		instance->cache = NULL;
+		settings->cache = NULL;
 
 	// Init authorisation matrices
-	matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_dnld);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing matrix: matrix_dnld: %s", matrix_str);
-	if ((instance->matrix_dnld = init_auth_matrix(r, matrix_str)) == NULL)
+	if ((matrix_str = from_ngx_str_malloc(ngx_cycle->log, cdn_loc_conf->matrix_dnld)) == NULL)
+		return NULL;
+	ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, "Processing matrix: matrix_dnld: %s", matrix_str);
+	settings->matrix_dnld = init_auth_matrix(ngx_cycle->log, matrix_str);
+	free(matrix_str);
+	if (! settings->matrix_dnld)
 		return NULL;
 
-	matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_upld);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing matrix: matrix_upld: %s", matrix_str);
-	if ((instance->matrix_upld = init_auth_matrix(r, matrix_str)) == NULL)
+	if ((matrix_str = from_ngx_str_malloc(ngx_cycle->log, cdn_loc_conf->matrix_upld)) == NULL)
+		return NULL;
+	ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, "Processing matrix: matrix_upld: %s", matrix_str);
+	settings->matrix_upld = init_auth_matrix(ngx_cycle->log, matrix_str);
+	free(matrix_str);
+	if (! settings->matrix_upld)
 		return NULL;
 
-	matrix_str = from_ngx_str(r->pool, cdn_loc_conf->matrix_del);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing matrix: matrix_del: %s", matrix_str);
-	if ((instance->matrix_del = init_auth_matrix(r, matrix_str)) == NULL)
+	if ((matrix_str = from_ngx_str_malloc(ngx_cycle->log, cdn_loc_conf->matrix_del)) == NULL)
+		return NULL;
+	ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, "Processing matrix: matrix_del: %s", matrix_str);
+	settings->matrix_del = init_auth_matrix(ngx_cycle->log, matrix_str);
+	free(matrix_str);
+	if (! settings->matrix_del)
 		return NULL;
 
 	// Init JWT
-	instance->jwt_key = NULL;
-	instance->jwt_pubkey = NULL;
-
-	jwt_key = from_ngx_str_malloc(r->pool, cdn_loc_conf->jwt_key);
+	jwt_key = from_ngx_str_malloc(ngx_cycle->log, cdn_loc_conf->jwt_key);
 	if (strstr(jwt_key, "/") == jwt_key) {
 #ifdef CDN_ENABLE_JWT
 		// Public key from PEM
 		if ((fp = fopen(jwt_key, "r")) == NULL) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to open public key file %s: %s", jwt_key, strerror(errno));
+			ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "Failed to open public key file %s: %s", jwt_key, strerror(errno));
 			return NULL;
 		}
 
 		if ((PEM_read(fp, &key_name, &key_header, &key_data, &key_data_len)) == 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to read public key file %s: %s", jwt_key, ERR_error_string(ERR_get_error(), NULL));
+			ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "Failed to read public key file %s: %s", jwt_key, ERR_error_string(ERR_get_error(), NULL));
 			fclose(fp);
 			return NULL;
 		}
 
 		// Import the public key
-		if ((instance->jwt_pubkey = d2i_PUBKEY(NULL, (const unsigned char **)&key_data, key_data_len)) == NULL) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to import public key file %s: %s", jwt_key, ERR_error_string(ERR_get_error(), NULL));
+		if ((settings->jwt_pubkey = d2i_PUBKEY(NULL, (const unsigned char **)&key_data, key_data_len)) == NULL) {
+			ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "Failed to import public key file %s: %s", jwt_key, ERR_error_string(ERR_get_error(), NULL));
 			fclose(fp);
 			return NULL;
 		}
@@ -569,33 +568,30 @@ instance_t *instance_init(ngx_http_request_t *r) {
 		fclose(fp);
 #endif
 	}
-	else {
+	else
 		// Copy the string from config
-		if ((instance->jwt_key = strdup(jwt_key)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for jwt_key", statbuf.st_size + 1);
-			return NULL;
-		}
-	}
+		settings->jwt_key = jwt_key;
 
 	// Init DSN (only for Redis, Oracle and MySQL transport)
 	if (cdn_loc_conf->db_dsn.len > 4) {
-		if ((instance->dsn = malloc(sizeof(dsn_t))) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for dsn", sizeof(dsn_t));
+		if ((settings->dsn = calloc(sizeof(dsn_t)), 1) == NULL) {
+			ngx_log_error(NGX_LOG_EMERG, ngx_cycle->log, 0, "Failed to allocate %l bytes for dsn", sizeof(dsn_t));
 			return NULL;
 		}
 
-		instance->dsn->dsn = from_ngx_str_malloc(r->pool, cdn_loc_conf->db_dsn);
-		instance->dsn->host = NULL;
-		instance->dsn->port_str = NULL;
-		instance->dsn->port = 0;
-		instance->dsn->socket = NULL;
-		instance->dsn->user = NULL;
-		instance->dsn->password = NULL;
-		instance->dsn->db = NULL;
+		if ((settings->dsn->dsn = from_ngx_str_malloc(ngx_cycle->log, cdn_loc_conf->db_dsn)) == NULL)
+			return NULL;
+		settings->dsn->host = NULL;
+		settings->dsn->port_str = NULL;
+		settings->dsn->port = 0;
+		settings->dsn->socket = NULL;
+		settings->dsn->user = NULL;
+		settings->dsn->password = NULL;
+		settings->dsn->db = NULL;
 
 		// host:port|socket:user:password:db
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing DSN: %s", instance->dsn->dsn);
-		db_dsn = strdup(instance->dsn->dsn);
+		ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, "Processing DSN: %s", settings->dsn->dsn);
+		db_dsn = strdup(settings->dsn->dsn);
 		for (str = db_dsn, i = 0; ; str = NULL, i++) {
 			token = strtok_r(str, ":", &saveptr);
 			if (token == NULL)
@@ -603,23 +599,23 @@ instance_t *instance_init(ngx_http_request_t *r) {
 
 			switch(i) {
 				case 0:
-					if ((ret = property_sql(r, &instance->dsn->host, "host", token)) > 0)
+					if ((ret = property_sql(ngx_cycle->log, &settings->dsn->host, "host", token)) > 0)
 						return NULL;
 					break;
 				case 1:
-					if ((ret = property_sql(r, &instance->dsn->port_str, "port_str", token)) > 0)
+					if ((ret = property_sql(ngx_cycle->log, &settings->dsn->port_str, "port_str", token)) > 0)
 						return NULL;
 					break;
 				case 2:
-					if ((ret = property_sql(r, &instance->dsn->user, "user", token)) > 0)
+					if ((ret = property_sql(ngx_cycle->log, &settings->dsn->user, "user", token)) > 0)
 						return NULL;
 					break;
 				case 3:
-					if ((ret = property_sql(r, &instance->dsn->password, "password", token)) > 0)
+					if ((ret = property_sql(ngx_cycle->log, &settings->dsn->password, "password", token)) > 0)
 						return NULL;
 					break;
 				case 4:
-					if ((ret = property_sql(r, &instance->dsn->db, "db", token)) > 0)
+					if ((ret = property_sql(ngx_cycle->log, &settings->dsn->db, "db", token)) > 0)
 						return NULL;
 					break;
 			}
@@ -627,36 +623,17 @@ instance_t *instance_init(ngx_http_request_t *r) {
 		free(db_dsn);
 
 		// Detect if we were given a port or a socket
-		instance->dsn->port = atoi(instance->dsn->port_str);
-
-		if (instance->dsn->port == 0)
-			instance->dsn->socket = instance->dsn->port_str;
+		settings->dsn->port = atoi(settings->dsn->port_str);
+		if (settings->dsn->port == 0)
+			settings->dsn->socket = settings->dsn->port_str;
 	}
 
 	// Init time offset
 	// NB: This effectively requires restart when DST goes on/off
 	localtime_r(&t, &lt);
-	instance->tm_gmtoff = lt.tm_gmtoff;
+	settings->tm_gmtoff = lt.tm_gmtoff;
 
-	return instance;
-}
-
-/**
- * Get instance
- */
-instance_t *instance_get(ngx_http_request_t *r, int instance_id) {
-	int i;
-
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Instance count is %l", globals->instances_cnt);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Searching for instance with ID %uD", instance_id);
-
-	for (i=0; i < globals->instances_cnt; i++) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Checking existing instance in slot %l with ID %uD", i, globals->instances[i].id);
-		if (instance_id == globals->instances[i].id)
-			return &globals->instances[i];
-	}
-
-	return NULL;
+	return settings;
 }
 
 /**
@@ -672,20 +649,8 @@ session_t *init_session(ngx_http_request_t *r) {
 		return NULL;
 	}
 
-	// Get config
-	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
-
-	// Check if we have the instance saved and retrieve it
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Looking for instance ID %uD", cdn_loc_conf->instance_id);
-	session->instance = instance_get(r, cdn_loc_conf->instance_id);
-	if (session->instance) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found instance ID %uD", session->instance->id);
-	}
-	else {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Instance ID %uD not found, creating new", cdn_loc_conf->instance_id);
-		if ((session->instance = instance_init(r)) == NULL)
-			return NULL;
-	}
+	// Get settings
+	session->settings = cdn_loc_conf->settings;
 
 	// Set options for all HTTP methods
 	session->auth_header = from_ngx_str(r->pool, cdn_loc_conf->auth_header);

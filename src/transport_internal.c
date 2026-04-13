@@ -110,21 +110,21 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to write meta file %s to index: %s", file16, strerror(ret));
 
 		// Purge the record from the cache if found there
-		if ((mode == METADATA_UPDATE) && (session->instance->cache)) {
+		if ((mode == METADATA_UPDATE) && (session->settings->cache)) {
 			// Get the key
 			if ((key = get_key(metadata, r)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
-			cache_remove (session->instance->cache, key);
+			cache_remove (session->settings->cache, key);
 		}			
 	}
 
 	else if (mode == METADATA_DELETE) {
-		if (session->instance->cache) {
+		if (session->settings->cache) {
 			if ((key = get_key(metadata, r)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
-			cache_remove (session->instance->cache, key);
+			cache_remove (session->settings->cache, key);
 		}
 
 		// Delete metadata file
@@ -141,7 +141,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 	else {
 		// Read metadata - first check memory cache if it is enabled for current session
-		if (session->instance->cache) {
+		if (session->settings->cache) {
 			if ((key = get_key(metadata, r)) == NULL)
 				return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
@@ -151,7 +151,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			// Seek the key (mutex-protected operation)
 			// If key was found, node->left will have the payload
 			// If key was not found, it was added; store the value by passing the same node, key, ext and the value (NULL-terminated char*) to cache_put()
-			node = cache_seek(session->instance->cache, key, &error);
+			node = cache_seek(session->settings->cache, key, &error);
 
 			free(key);
 
@@ -161,7 +161,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 			}
 
 			if (node->left) {
-				if ((session->auth_response = cache_get(session->instance->cache, node, ext)) != NULL) {
+				if ((session->auth_response = cache_get(session->settings->cache, node, ext)) != NULL) {
 					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: found key in cache", path);
 					return NGX_OK;
 				}
@@ -193,9 +193,9 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		session->auth_response[statbuf.st_size] = '\0';
 
 		// Save the data to the cache if it is enabled
-		if (session->instance->cache) {
+		if (session->settings->cache) {
             ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: saving metadata in cache", path);
-			cache_put(session->instance->cache, node, ext, strdup(session->auth_response));
+			cache_put(session->settings->cache, node, ext, strdup(session->auth_response));
 		}
 
 		close(file_fd);

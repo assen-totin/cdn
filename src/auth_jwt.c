@@ -168,13 +168,13 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	// Decide on signature: we only support SHA-256 with either HMAC (if instance->jwt_key is defined) or RSA+SHA256 (if instance->jwt_pubkey is defined)
+	// Decide on signature: we only support SHA-256 with either HMAC (if settings->jwt_key is defined) or RSA+SHA256 (if settings->jwt_pubkey is defined)
 	ossl_alg = EVP_sha256();
 
-	if (session->instance->jwt_key)
+	if (session->settings->jwt_key)
 		// HMAC
 		sig_size = 32;
-	else if (session->instance->jwt_pubkey)
+	else if (session->settings->jwt_pubkey)
 		// RSA
 		sig_size = 256;
 
@@ -191,7 +191,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	}
 
 	// HMAC
-	if (session->instance->jwt_key) {
+	if (session->settings->jwt_key) {
 		// Create data to be signed: concat the header and payload with a dot
 		// NB: The data does not have to be string, but this way we could print it for debug
 		if ((tosign = ngx_pcalloc(r->pool, strlen(hdr_b64u) + strlen(pld_b64u) + 2)) == NULL) {
@@ -209,7 +209,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 
-		HMAC(ossl_alg, session->instance->jwt_key, strlen(session->instance->jwt_key), (const unsigned char *)tosign, strlen(tosign), dig, &dig_len);
+		HMAC(ossl_alg, session->settings->jwt_key, strlen(session->settings->jwt_key), (const unsigned char *)tosign, strlen(tosign), dig, &dig_len);
 
 		if (sig_len != dig_len) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s HMAC length mismatch (wanted %l got %l)", session->auth_token, sig_len, dig_len);
@@ -231,13 +231,13 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	}
 
 	// RSA
-	if (session->instance->jwt_pubkey) {
+	if (session->settings->jwt_pubkey) {
 		if ((ossl_md_ctx = EVP_MD_CTX_create()) == NULL) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s error creating OpenSSL MD context: %s", session->auth_token, ERR_error_string(ERR_get_error(), NULL));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 
-		if (EVP_DigestVerifyInit(ossl_md_ctx, &ossl_pkey_ctx, ossl_alg, NULL, session->instance->jwt_pubkey) != 1) {
+		if (EVP_DigestVerifyInit(ossl_md_ctx, &ossl_pkey_ctx, ossl_alg, NULL, session->settings->jwt_pubkey) != 1) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s error initialising OpenSSL MD context: %s", session->auth_token, ERR_error_string(ERR_get_error(), NULL));
 			EVP_MD_CTX_destroy(ossl_md_ctx);
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
