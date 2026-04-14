@@ -94,7 +94,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_JWT
 	char *p1, *p2;
 	char *hdr_b64u, *pld_b64u, *sig_b64u;
-	char *hdr_json, *pld_json, *sig;
+	unsigned char *hdr_json, *pld_json, *sig;
 	char *tosign = NULL;
 	char *pld_auth_value_s;
 	unsigned char *dig;
@@ -156,15 +156,15 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	}
 
 	// Parse JSON for header and payload
-	hdr = json_loadb(hdr_json, hdr_json_len, 0, &error);
+	hdr = json_loadb((char *)hdr_json, hdr_json_len, 0, &error);
 	if (! hdr) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to parse JSON from header: %s", session->auth_token, hdr_json);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to parse JSON from header: %s", session->auth_token, (char *)hdr_json);
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	pld = json_loadb(pld_json, pld_json_len, 0, &error);
+	pld = json_loadb((char *)pld_json, pld_json_len, 0, &error);
 	if (! pld) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to parse JSON from payload: %s", session->auth_token, pld_json);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to parse JSON from payload: %s", session->auth_token, (char *)pld_json);
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
