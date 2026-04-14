@@ -83,15 +83,15 @@ char *from_ngx_str_malloc(ngx_log_t *pool_log, ngx_str_t ngx_str) {
 /**
  * Encode a string to base16 string
  */
-void base16_encode(unsigned char *in, char *out) {
+void base16_encode(unsigned char *in, int len, char *out) {
 	size_t  i;
 
-	if (in == NULL || strlen(in) == 0) {
+	if (in == NULL || len == 0) {
 		out[0] = '\0';
 		return;
 	}
 
-	for (i=0; i < strlen(in); i++) {
+	for (i=0; i < len; i++) {
 		out[i * 2]   = "0123456789abcdef"[in[i] >> 4];
 		out[i * 2 + 1] = "0123456789abcdef"[in[i] & 0x0F];
 	}
@@ -849,7 +849,7 @@ ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for ext16.", len + 1);
 				return NGX_ERROR;
 			}
-			base16_encode((unsigned char *)metadata->ext, metadata->ext16);
+			base16_encode((unsigned char *)metadata->ext, strlen(metadata->ext), metadata->ext16);
 
 			// Create file16
 			len = strlen(metadata->file) - strlen(p2 + 1) + strlen(metadata->ext16);

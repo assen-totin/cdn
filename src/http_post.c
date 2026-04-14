@@ -509,7 +509,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for base16.", strlen(metadata->ext) + 1);
 				return upload_cleanup(r, upload, NGX_ERROR);
 			}
-			base16_encode((unsigned char *)metadata->ext, metadata->ext16);
+			base16_encode((unsigned char *)metadata->ext, strlen(metadata->ext), metadata->ext16);
 		}
 	}
 	else {

@@ -23,7 +23,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r);
 ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 char *trim_quotes(ngx_http_request_t *r, char *s);
-void base16_encode(unsigned char *in, char *out);
+void base16_encode(unsigned char *in, int len, char *out);
 settings_t *settings_init(ngx_http_cdn_loc_conf_t *cdn_loc_conf);
 
 
