@@ -20,19 +20,19 @@ ngx_int_t transport_redis(session_t *session, metadata_t *metadata, ngx_http_req
 	if (session->settings->dsn->socket) {
 		// Connect via Unix socket
 		if ((context = redisConnectUnixWithTimeout(session->settings->dsn->socket, timeout)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unable to create Redis context.");
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to create Redis context.");
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 	}
 	else {
 		if ((context = redisConnectWithTimeout(session->settings->dsn->host, session->settings->dsn->port, timeout)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unable to create Redis context.");
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to create Redis context.");
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 	}
 
 	if (context->err) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Error connecting to Redis: %s", context->errstr);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Error connecting to Redis: %s", context->errstr);
 		redisFree(context);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}

@@ -29,7 +29,7 @@ ngx_int_t response_get_mysql(session_t *session, metadata_t *metadata, ngx_http_
 		session->auth_response_count = 1;
 
 		for(i = 0; i < fields_num; i++) {
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with length %l", fields[i].name, fields[i].length);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Processing metadata key %s with length %l", fields[i].name, fields[i].length);
 
 			// Handle NULL values
 			if (! mysql_row[i])
@@ -62,7 +62,7 @@ ngx_int_t response_get_mysql(session_t *session, metadata_t *metadata, ngx_http_
 
 			else if (! strcmp(fields[i].name, "status")) {
 				metadata->status = atol(mysql_row[i]);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 			}
 		}
 	}
@@ -95,7 +95,7 @@ ngx_int_t response_post_mysql(session_t *session, metadata_t *metadata, ngx_http
 		session->auth_response_count = 1;
 
 		for(i = 0; i < fields_num; i++) {
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with length %l", fields[i].name, fields[i].length);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Processing metadata key %s with length %l", fields[i].name, fields[i].length);
 
 			// Handle NULL values
 			if (! mysql_row[i])
@@ -103,7 +103,7 @@ ngx_int_t response_post_mysql(session_t *session, metadata_t *metadata, ngx_http
 
 			if (! strcmp(fields[i].name, "status")) {
 				metadata->status = atol(mysql_row[i]);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 			}
 		}
 	}

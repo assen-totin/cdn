@@ -19,7 +19,7 @@ extern ngx_module_t ngx_http_cdn_module;
  * Cleanup (unmap mapped file after serving)
  */
 static void cleanup(metadata_t *metadata, ngx_http_request_t *r) {
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Running connection cleanup.");
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Running connection cleanup.");
 	
 	if (metadata->data && (munmap(metadata->data, metadata->length) < 0))
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s munmap() error %s", metadata->file16, strerror(errno));
@@ -51,29 +51,29 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			// Check if we got back a response
 			if (session->auth_response_count) {
 				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->settings->matrix_dnld->auth_resp : session->settings->matrix_del->auth_resp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value +resp setting status %l.", metadata->file16, metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s auth response -status +auth_value +resp setting status %l.", metadata->file16, metadata->status);
 			}
 			else {
 				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->settings->matrix_dnld->auth_noresp : session->settings->matrix_del->auth_noresp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status +auth_value -resp setting status %l.", metadata->file16, metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s auth response -status +auth_value -resp setting status %l.", metadata->file16, metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
 				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->settings->matrix_dnld->noauth_resp : session->settings->matrix_del->noauth_resp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value +resp setting status %l.", metadata->file16, metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s auth response -status -auth_value +resp setting status %l.", metadata->file16, metadata->status);
 			}
 			else {
 				metadata->status = (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD)) ? session->settings->matrix_dnld->noauth_noresp : session->settings->matrix_del->noauth_noresp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s auth response -status -auth_value -resp setting status %l.", metadata->file16, metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s auth response -status -auth_value -resp setting status %l.", metadata->file16, metadata->status);
 			}
 		}
 	}
 
 	// Check if authorisation denied the request
 	if (metadata->status >= NGX_HTTP_BAD_REQUEST ) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth service returned status: %l", metadata->status);
 		return metadata->status;
 	}
 
@@ -84,7 +84,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		strcpy(metadata->etag, DEFAULT_ETAG);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file16, DEFAULT_ETAG);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s etag not found, using default %s", metadata->file16, DEFAULT_ETAG);
 	}
 
 	// Check on ranges (headers Range and If-Range)
@@ -125,7 +125,7 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		strcpy(metadata->filename, metadata->file);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file16, metadata->file);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s filename not found, will use file ID %s", metadata->file16, metadata->file);
 	}
 
 	// Check if we have the content type and use the default one if missing
@@ -135,12 +135,12 @@ static ngx_int_t metadata_check(session_t *session, metadata_t *metadata, ngx_ht
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 		strcpy(metadata->content_type, DEFAULT_CONTENT_TYPE);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file16, DEFAULT_CONTENT_TYPE);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s content_type not found, using default %s", metadata->file16, DEFAULT_CONTENT_TYPE);
 	}
 
 	// Check if we have the content disposition and use the default one if missing
 	if (! metadata->content_disposition)
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file16);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s content_disposition not found, not setting it", metadata->file16);
 
 	// Return 304 in certain cases
 	if (! session->hdr_ranges_cnt) {
@@ -277,7 +277,7 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 			encoded = curl_easy_escape(session->curl, metadata->filename, strlen(metadata->filename));
 			if (encoded) {
 				curl_encoded = true;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using URI-encoded filename %s", metadata->file16, encoded);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s using URI-encoded filename %s", metadata->file16, encoded);
 			}
 			else {
 				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "File %s unable to URI-encode filename %s", metadata->file16, metadata->filename);
@@ -291,7 +291,7 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 		// headers['Content-Disposition'] = 'attachment; filename="' + encodeURIComponent(this.file.filename) + '";'
 		// NB: It is not in the standard Nginx header table, so add it as custom header
 		if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header.");
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to add new output header.");
 			return NGX_ERROR;
 		}
 		h->hash = 1;
@@ -348,7 +348,7 @@ ngx_int_t send_file(session_t *session, metadata_t *metadata, ngx_http_request_t
 
 	// Add Access-Control-Allow-Origin header
 	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
 		return NGX_ERROR;
 	}
 	h->hash = 1;
@@ -508,7 +508,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		s1 = from_ngx_str(r->pool, r->headers_in.if_modified_since->value);
 		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
 			session->hdr_if_modified_since = mktime(&ltm) + session->settings->tm_gmtoff;
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session->hdr_if_modified_since);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Converted value for header If-Modified-Since to timestamp: %l", session->hdr_if_modified_since);
 		}
 		else
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to convert header If-Modified-Since to timestamp: %s", s1);
@@ -521,7 +521,7 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for if_none_match.", strlen(s1) - 1);
 			return NGX_ERROR;
 		}
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-None-Match: %s", session->hdr_if_none_match);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found header If-None-Match: %s", session->hdr_if_none_match);
 	}
 
 	// Process header If-Range
@@ -531,25 +531,27 @@ ngx_int_t cdn_handler_get(ngx_http_request_t *r) {
 		// This header may either be time or etag
 		if (strptime(s1, "%a, %d %b %Y %H:%M:%S", &ltm)) {
 			session->hdr_if_range_time = mktime(&ltm) + session->settings->tm_gmtoff;
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Converted value for header If-Range to timestamp: %l", session->hdr_if_range_time);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Converted value for header If-Range to timestamp: %l", session->hdr_if_range_time);
 		}
 		else {
 			if ((session->hdr_if_range_etag = trim_quotes(r, s1)) == NULL) {
 				ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for if_range.", strlen(s1) - 1);
 				return NGX_ERROR;
 			}
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header If-Range: %s", session->hdr_if_range_etag);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found header If-Range: %s", session->hdr_if_range_etag);
 		}
 	}
 
 	// Process header Range
 	if (r->headers_in.range) {
 		session->hdr_range = from_ngx_str(r->pool, r->headers_in.range->value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found Range header: %s", session->hdr_range);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found Range header: %s", session->hdr_range);
 
 		// Split by equal sign
-		if (! (s1 = strchr(session->hdr_range, '=')))
+		if (! (s1 = strchr(session->hdr_range, '='))) {
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Range header: %s bad value", session->hdr_range);
 			return NGX_HTTP_BAD_REQUEST;
+		}
 		s1++;
 
 		// Loop around entries (we should have at least one)

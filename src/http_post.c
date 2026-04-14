@@ -33,11 +33,11 @@ static char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
 	char *end, *ret; 
 
 	end = strstr(begin, "\r\n");
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Header line length: %l", end - begin);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Header line length: %l", end - begin);
 
 	// Sanity check - line should not exceed 1 KB
 	if ((end - begin) > 1024) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Header line too long: %l", end - begin);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Header line too long: %l", end - begin);
 		return NULL;
 	}
 
@@ -48,7 +48,7 @@ static char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
 	}
 
 	strncpy(ret, begin, end - begin);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header line: %s", ret);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found header line: %s", ret);
 
 	return ret;
 }
@@ -60,11 +60,11 @@ static char *mpfd_get_line(ngx_http_request_t *r, char *begin) {
 static char *mpfd_get_value(ngx_http_request_t *r, char *haystack, char *needle) {
 	char *begin, *end, *ret;
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Looking for needle %s in haystack %s", needle, haystack);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Looking for needle %s in haystack %s", needle, haystack);
 
 	// Find the beginning of the needle
 	if (! (begin = strcasestr(haystack, needle))) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Needle %s not found in haystack %s", needle, haystack);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Needle %s not found in haystack %s", needle, haystack);
         return NULL;
     }
 
@@ -90,7 +90,7 @@ static char *mpfd_get_value(ngx_http_request_t *r, char *haystack, char *needle)
 		ret ++;
     }
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found value for needle %s: %s", needle, ret);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found value for needle %s: %s", needle, ret);
 	return ret;
 }
 
@@ -119,7 +119,7 @@ static char *mpfd_get_header(ngx_http_request_t *r, char *line, char *header) {
 	}
 
 	strncpy(ret, begin, end - begin);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found value for upload part header %s: %s", header, ret);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found value for upload part header %s: %s", header, ret);
 
 	return ret;
 }
@@ -202,7 +202,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	if (! strcmp(session->read_only, "yes"))
 		return upload_cleanup(r, upload, NGX_HTTP_BAD_REQUEST);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body is ready for processing.");
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request body is ready for processing.");
 
 	// For PUT method, extract the file ID from the URL and get file data
 	if (r->method & (NGX_HTTP_PUT)) {
@@ -218,7 +218,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 	// Extract content type from header
 	content_type = from_ngx_str(r->pool, r->headers_in.content_type->value);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload found header Content-Type: %s", content_type);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload found header Content-Type: %s", content_type);
 	if (strstr(content_type, CONTENT_TYPE_MPFD))
 		upload_content_type = UPLOAD_CONTENT_TYPE_MPFD;
 	else if (strstr(content_type, CONTENT_TYPE_AXWFU))
@@ -235,13 +235,13 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 	content_length = atol(content_length_z);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload found header Content-Length: %l", content_length);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload found header Content-Length: %l", content_length);
 
 	// Use mmap or not?
 	bufs = r->request_body->bufs;
 	if (bufs && bufs->buf && bufs->buf->in_file) {
 		// Use mmap from FD in the buffer
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body will use file buffers");
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request body will use file buffers");
 		len = bufs->buf->file_last;
 
 		if ((upload->rb = mmap(NULL, len, PROT_READ, MAP_SHARED, bufs->buf->file->fd, 0)) < 0) {
@@ -251,18 +251,18 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 	else {
 		// Work from memory
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body will use memory buffers");
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request body will use memory buffers");
 
 		upload->rb = malloc(content_length);
 		if (! upload->rb) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to allocate %l bytes for request body conversion", content_length + 1);
+			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unable to allocate %l bytes for request body conversion", content_length + 1);
 			ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
 		upload->rb_malloc = true;
 
 		for (bufs = r->request_body->bufs; bufs; bufs = bufs->next) {
 			len_buf = ngx_buf_size(bufs->buf);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body: found new memory buffer with size: %l", len_buf);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request body: found new memory buffer with size: %l", len_buf);
 			len += len_buf;
 
 			memcpy(upload->rb + rb_pos, bufs->buf->start, len_buf);
@@ -270,7 +270,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		}
 	}
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request body: total memory buffer length: %l", len);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request body: total memory buffer length: %l", len);
 	if (len != content_length) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request body mismatch: Content-Length %l, total memory buffers %l bytes", content_length, len);
 		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -293,7 +293,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			part_content_transfer_encoding = NULL;
 
 			cnt_part++;
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: found new part %l", cnt_part);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request MPFD: found new part %l", cnt_part);
 			if (cnt_part > 10) {
 				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request MPFD: too many loops while processing parts: %l", cnt_part);
 				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -301,13 +301,13 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 			// Seek a boundary and move past it + CRLF
 			if (! (part_pos = memstr(part, boundary, upload->rb - part + content_length))) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: boundary not found in body: %s", boundary);
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request MPFD: boundary not found in body: %s", boundary);
 				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 
 			// If next two characters are '--', this is the end of the form
 			if (! memcmp(part_pos + strlen(boundary), "--", 2)) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Reached end of form");
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Reached end of form");
 				break;
 			}
 
@@ -316,7 +316,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			cnt_header = 0;
 			while (1) {
 				cnt_header++;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: found new header %l in part %l", cnt_header, cnt_part);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request MPFD: found new header %l in part %l", cnt_header, cnt_part);
 				if (cnt_header > 10) {
 					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request MPFD: too many loops while processing headers in part $l: %l", cnt_header, cnt_part);
 					return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -324,13 +324,13 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 				// Get a line from the headers
 				if ((line = mpfd_get_line(r, part_pos)) == NULL) {
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Failed to read a header line.");
+					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to read a header line.");
 					return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 				}
 
 				// If line is empty, this is last line of the header; skip its CRLF and break
 				if (strlen(line) == 0) {
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: found last line of header.");
+					ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request MPFD: found last line of header.");
 					part_pos += 2;
 					break;
 				}
@@ -354,11 +354,11 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 			// Move past the CRLF of the empty line to start reading data
 			if ((part_end = memstr(part_pos, boundary, upload->rb - part_pos + content_length)) == NULL) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: unable to find next boundary: %s", boundary);
+				ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request MPFD: unable to find next boundary: %s", boundary);
 				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 			part_end -= 4;	// Go back the "CRLF--" that preceed the boundary	
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: data length for part %l: %l", cnt_part, part_end - part_pos);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request MPFD: data length for part %l: %l", cnt_part, part_end - part_pos);
 
 			// If this is a file part, remember data begin and end
 			if (part_filename) {
@@ -368,14 +368,14 @@ void cdn_handler_post (ngx_http_request_t *r) {
 				file_content_transfer_encoding = part_content_transfer_encoding;
 				file_data_begin = part_pos;
 				metadata->length = part_end - part_pos;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: filename %s size %l", metadata->filename, metadata->length);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request MPFD: filename %s size %l", metadata->filename, metadata->length);
 			}
 
 			// Check if field name is file data
 			else if (! strcmp(part_field_name, "d")) {
 				file_data_begin = part_pos;
 				metadata->length = part_end - part_pos;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: raw data size %l", metadata->length);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request MPFD: raw data size %l", metadata->length);
 			}
 
 			// Check if field name is a file name
@@ -404,7 +404,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 
 		// If we did not find a file, bail out
 		if (! file_data_begin) {
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request MPFD: unable to find uploaded file");
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request MPFD: unable to find uploaded file");
 			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
 
@@ -437,14 +437,14 @@ void cdn_handler_post (ngx_http_request_t *r) {
 				return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 			}
 			strncpy(part_field_name, part, part_end - part);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: found field name %s", part_field_name);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request AXWFU: found field name %s", part_field_name);
 
 			// Jump over the =
 			part_pos ++;
 
 			// Find next &
 			if ((part = memchr(part, '&', upload->rb - part_pos + content_length)) == NULL) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: reached last form field");
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request AXWFU: reached last form field");
 				part_end = upload->rb + content_length;
 			}
 			else {
@@ -466,10 +466,10 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			int form_field_value_len;
 			char *form_field_value_decoded = curl_easy_unescape(upload->curl, form_field_value, 0, &form_field_value_len);
 			if (form_field_value_len < 1024) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: field name %s value %s", part_field_name, form_field_value_decoded);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request AXWFU: field name %s value %s", part_field_name, form_field_value_decoded);
 			}
 			else {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Upload request AXWFU: field name %s value is %l bytes", part_field_name, form_field_value_len);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request AXWFU: field name %s value is %l bytes", part_field_name, form_field_value_len);
 			}
 
 			// Decide what to do with the field
@@ -723,22 +723,22 @@ void cdn_handler_post (ngx_http_request_t *r) {
 			// Check if we got back a response
 			if (session->auth_response_count) {
 				metadata->status = session->settings->matrix_upld->auth_resp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value +resp setting status %l.", metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth response -status +auth_value +resp setting status %l.", metadata->status);
 			}
 			else {
 				metadata->status = session->settings->matrix_upld->auth_noresp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status +auth_value -resp setting status %l.", metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth response -status +auth_value -resp setting status %l.", metadata->status);
 			}
 		}
 		else {
 			// Check if we got back a response
 			if (session->auth_response_count) {
 				metadata->status = session->settings->matrix_upld->noauth_resp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value +resp setting status %l.", metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth response -status -auth_value +resp setting status %l.", metadata->status);
 			}
 			else {
 				metadata->status = session->settings->matrix_upld->noauth_noresp;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth response -status -auth_value -resp setting status %l.", metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth response -status -auth_value -resp setting status %l.", metadata->status);
 			}
 		}
 	}

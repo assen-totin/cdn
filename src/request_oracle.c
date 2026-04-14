@@ -34,7 +34,7 @@ ngx_int_t response_get_oracle(session_t *session, metadata_t *metadata, ngx_http
 			return ret;
 
 		metadata->status = OCI_GetInt2(session->oracle_result, "STATUS");
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 	}
 
 	if (session->oracle_statement)
@@ -59,7 +59,7 @@ ngx_int_t response_post_oracle(session_t *session, metadata_t *metadata, ngx_htt
 		session->auth_response_count = 1;
 
 		metadata->status = OCI_GetInt2(session->oracle_result, "STATUS");
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 	}
 
 	if (session->oracle_statement)

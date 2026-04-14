@@ -27,7 +27,7 @@ ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
 #ifdef CDN_ENABLE_MYSQL
 	// Init MySQL
 	if ((ret = mysql_library_init(0, NULL, NULL)) > 0) {
-		ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "Failed to init MySQL library: error %l.", ret);
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Failed to init MySQL library: error %l.", ret);
 		return NGX_ERROR;
 	}
 #endif
@@ -165,7 +165,7 @@ ngx_int_t ngx_http_cdn_handler(ngx_http_request_t *r) {
 	if (r->method & (NGX_HTTP_GET | NGX_HTTP_HEAD | NGX_HTTP_DELETE))
 		return cdn_handler_get(r);
 
-	ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "HTTP method not supported: %l", r->method);
+	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "HTTP method not supported: %l", r->method);
 	return NGX_ERROR;
 } 
 

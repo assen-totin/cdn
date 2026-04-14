@@ -36,7 +36,7 @@ ngx_int_t request_get_sql(session_t *session, metadata_t *metadata, ngx_http_req
 	else if (mode == METADATA_DELETE)
 		sprintf(session->sql_query, query, metadata->file);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "SQL to run: %s", session->sql_query);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "SQL to run: %s", session->sql_query);
 
 	return NGX_OK;
 }
@@ -73,7 +73,7 @@ ngx_int_t request_post_sql(session_t *session, metadata_t *metadata, ngx_http_re
 	else
 		sprintf(session->sql_query, query, "", metadata->file, metadata->filename, metadata->content_type, metadata->content_disposition, metadata->etag);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "SQL to run: %s", session->sql_query);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "SQL to run: %s", session->sql_query);
 
 	return NGX_OK;
 }

@@ -65,6 +65,9 @@ ngx_int_t transport_mongo(session_t *session, metadata_t *metadata, ngx_http_req
 #ifdef RHEL9
 		cursor = mongoc_collection_find_with_opts (collection, query, NULL, NULL);
 #endif
+#ifdef RHEL10
+		cursor = mongoc_collection_find_with_opts (collection, query, NULL, NULL);
+#endif
 
 		if (! cursor) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unable to get cursor for collection %s", session->mongo_collection);
@@ -73,7 +76,7 @@ ngx_int_t transport_mongo(session_t *session, metadata_t *metadata, ngx_http_req
 
 		// If nothing was found, the filter did not match, so reject the request
 		if (! mongoc_cursor_next (cursor, &doc)) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Metadata not found in collection %s", session->mongo_collection);
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Metadata not found in collection %s", session->mongo_collection);
 			return close_mongo(query, conn, collection, NGX_HTTP_FORBIDDEN);
 		}
 

@@ -24,7 +24,7 @@ char *get_ext(metadata_t *metadata, ngx_http_request_t *r) {
 
 	strcpy(ext, p);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with ext: %s", metadata->file16, ext);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Internal transport: file %s: searching cache with ext: %s", metadata->file16, ext);
 
 	return ext;
 }
@@ -56,7 +56,7 @@ char *get_key(metadata_t *metadata, ngx_http_request_t *r) {
 
 	memcpy(key, &h1, 8);
 	memcpy(key + 8, &h2, 8);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: searching cache with key: %016xL%016xL", metadata->file16, *((uint64_t*)key), *((uint64_t*)(key+8)));
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Internal transport: file %s: searching cache with key: %016xL%016xL", metadata->file16, *((uint64_t*)key), *((uint64_t*)(key+8)));
 
 	return key;
 }
@@ -162,14 +162,14 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 			if (node->left) {
 				if ((session->auth_response = cache_get(session->settings->cache, node, ext)) != NULL) {
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: found key in cache", path);
+					ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Internal transport: file %s: found key in cache", path);
 					return NGX_OK;
 				}
 			}
 		}
 		
 		// Metadata was not found in the memory cache, so read it from disk
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: key not found in cache", path);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Internal transport: file %s: key not found in cache", path);
 		if ((file_fd = open(path, O_RDONLY)) == -1) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Internal transport: failed to open metadata file %s: %s", path, strerror(errno));
 			return NGX_OK;
@@ -185,7 +185,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 		}
 
 		if (read(file_fd, session->auth_response, statbuf.st_size) < statbuf.st_size) {
-			ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Internal transport: failed to read %l bytes metadata file %s: %s", statbuf.st_size, path, strerror(errno));
+			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Internal transport: failed to read %l bytes metadata file %s: %s", statbuf.st_size, path, strerror(errno));
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 
@@ -194,7 +194,7 @@ ngx_int_t transport_internal(session_t *session, metadata_t *metadata, ngx_http_
 
 		// Save the data to the cache if it is enabled
 		if (session->settings->cache) {
-            ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Internal transport: file %s: saving metadata in cache", path);
+            ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Internal transport: file %s: saving metadata in cache", path);
 			cache_put(session->settings->cache, node, ext, strdup(session->auth_response));
 		}
 

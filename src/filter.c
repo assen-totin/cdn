@@ -73,7 +73,7 @@ ngx_int_t filter_auth_value(session_t *session, ngx_http_request_t *r) {
 		session->auth_value = filter_token(r, session->auth_value, delimiter, position);
 	}
 	else {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Unknown filter specified: %s", filter_name);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Unknown filter specified: %s", filter_name);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 

@@ -117,7 +117,7 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 
 	while(bson_iter_next(&iter)) {
 		bson_key = bson_iter_key (&iter);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
 
 		if ((! strcmp(bson_key, "filename")) && (bson_iter_type(&iter) == BSON_TYPE_UTF8)) {
 			if ((ret = set_metadata_field(r, &metadata->filename, "filename", bson_iter_utf8 (&iter, NULL))) > 0)
@@ -151,7 +151,7 @@ ngx_int_t response_get_json(session_t *session, metadata_t *metadata, ngx_http_r
 
 		else if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
 			metadata->status = bson_iter_int32 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 		}
 	}
 
@@ -193,11 +193,11 @@ ngx_int_t response_post_json(session_t *session, metadata_t *metadata, ngx_http_
 
 	while(bson_iter_next(&iter)) {
 		bson_key = bson_iter_key (&iter);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Processing metadata key %s with type %i", bson_key, bson_iter_type(&iter));
 
 		if ((! strcmp(bson_key, "status")) && (bson_iter_type(&iter) == BSON_TYPE_INT32)) {
 			metadata->status = bson_iter_int32 (&iter);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 		}
 	}
 

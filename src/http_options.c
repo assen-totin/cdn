@@ -20,7 +20,7 @@ ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
 
 	// Add Access-Control-Allow-Origin header
 	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_ORIGIN);
 		return NGX_ERROR;
 	}
 	h->hash = 1;
@@ -30,7 +30,7 @@ ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
 
 	// Add Access-Control-Allow-Methods header
 	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_METHODS);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_METHODS);
 		return NGX_ERROR;
 	}
 	h->hash = 1;
@@ -39,7 +39,7 @@ ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
 
 	// Add Access-Control-Allow-Headers header + the custom value, if any
 	if ((h = ngx_list_push(&r->headers_out.headers)) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_HEADERS);
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to add new output header: %s.", HEADER_ACCESS_CONTROL_ALLOW_HEADERS);
 		return NGX_ERROR;
 	}
 	h->hash = 1;
@@ -51,11 +51,11 @@ ngx_int_t cdn_handler_options (ngx_http_request_t *r) {
 	}
 
 	if (strcmp(session->auth_header, DEFAULT_AUTH_HEADER)) {
-ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s, %s", HEADER_ACCESS_CONTROL_ALLOW_HEADERS, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "%s: %s, %s", HEADER_ACCESS_CONTROL_ALLOW_HEADERS, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
 		sprintf((char *) h->value.data, "%s, %s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS, session->auth_header);
 	}
 	else {
-ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONTROL_ALLOW_HEADERS, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "%s: %s", HEADER_ACCESS_CONTROL_ALLOW_HEADERS, DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
 		sprintf((char *)h->value.data, "%s", DEFAULT_ACCESS_CONTROL_ALLOW_HEADERS);
 	}
 

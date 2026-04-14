@@ -138,9 +138,9 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	}
 	memcpy(sig_b64u, p2, session->auth_token + strlen(session->auth_token) - p2);
 
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s header: %s", session->auth_token, hdr_b64u);
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s payload: %s", session->auth_token, pld_b64u);
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s signature: %s", session->auth_token, sig_b64u);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Token %s header: %s", session->auth_token, hdr_b64u);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Token %s payload: %s", session->auth_token, pld_b64u);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Token %s signature: %s", session->auth_token, sig_b64u);
 
 	// Decode Base64URL
 	hdr_json = base64url_decode((const unsigned char *)hdr_b64u, strlen(hdr_b64u), &hdr_json_len);
@@ -201,7 +201,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 		memcpy(tosign, hdr_b64u, strlen(hdr_b64u));
 		memcpy(tosign + strlen(hdr_b64u), ".", 1);
 		memcpy(tosign + strlen(hdr_b64u) + 1, pld_b64u, strlen(pld_b64u));
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s data to sign: %s", session->auth_token, tosign);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Token %s data to sign: %s", session->auth_token, tosign);
 
 		// Compute digest
 		if ((dig = ngx_pcalloc(r->pool, sig_size )) == NULL) {

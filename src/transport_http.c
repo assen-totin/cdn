@@ -70,15 +70,15 @@ ngx_int_t transport_http(session_t *session, metadata_t *metadata, ngx_http_requ
 	// Send request
 	res = curl_easy_perform(session->curl);
 	if (res != CURLE_OK) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to make HTTP request to URL %s: %s", session->http_url, curl_easy_strerror(res));
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Failed to make HTTP request to URL %s: %s", session->http_url, curl_easy_strerror(res));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 
 	if (session->auth_response) {
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth server response: %s", session->auth_response);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth server response: %s", session->auth_response);
 	}
 	else
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Empty res[onse from auth server");
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Empty response from auth server");
 
 	return NGX_OK;
 }

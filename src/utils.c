@@ -165,7 +165,7 @@ ngx_int_t get_path(session_t *session, metadata_t *metadata, ngx_http_request_t 
 	bzero(metadata->path, len + 1);
 	get_path0(session->settings->fs->root, session->settings->fs->depth, metadata->file16, metadata->path);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file16, metadata->path);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s using path: %s", metadata->file16, metadata->path);
 
 	return NGX_OK;
 }
@@ -225,7 +225,7 @@ ngx_int_t get_path2(session_t *session, metadata_t *metadata, ngx_http_request_t
 	}
 	sprintf(metadata->file16, "%s.%u", metadata->hash, metadata->ver);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "File %s using path: %s", metadata->file16, metadata->path);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "File %s using path: %s", metadata->file16, metadata->path);
 
 	return NGX_OK;
 }
@@ -243,7 +243,7 @@ ngx_int_t set_metadata_field (ngx_http_request_t *r, char **field, char *field_n
 		}
 
 		strcpy(f, value);
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata %s: %s", field_name, f);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata %s: %s", field_name, f);
 	}
 	else {
 		if ((f = ngx_pcalloc(r->pool, 1)) == NULL) {
@@ -252,7 +252,7 @@ ngx_int_t set_metadata_field (ngx_http_request_t *r, char **field, char *field_n
 		}
 
 		sprintf(f, "%s", "");
-		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata %s: empty value", field_name);
+		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata %s: empty value", field_name);
 	}
 
 	*field = f;
@@ -286,7 +286,7 @@ static inline ngx_int_t store_header(session_t *session, ngx_http_request_t *r, 
 	// Extract header value
 	session->headers[session->headers_count].value = from_ngx_str(r->pool, value);
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found header %s: %s", session->headers[session->headers_count].name, session->headers[session->headers_count].value);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found header %s: %s", session->headers[session->headers_count].name, session->headers[session->headers_count].value);
 
 	session->headers_count ++;
 
@@ -336,7 +336,7 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 		cookies_count ++;
 		elt = elt->next;
 	}
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found a total of %l Cookie header", cookies_count);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found a total of %l Cookie header", cookies_count);
 
 	// Allocate initial memory
 	session->cookies = ngx_pnalloc(r->pool, sizeof(cdn_kvp_t) * cookies_count);
@@ -405,7 +405,7 @@ ngx_int_t get_all_cookies(session_t *session, ngx_http_request_t *r) {
 			}
 
 			if (j == 2) {
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found cookie %s with value %s", session->cookies[cookie_index].name, session->cookies[cookie_index].value);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found cookie %s with value %s", session->cookies[cookie_index].name, session->cookies[cookie_index].value);
 			}
 		}
 
@@ -427,7 +427,7 @@ static inline ngx_int_t property_sql(ngx_log_t *log, char **field, char *field_n
 	}
 
 	strcpy(f, value);
-	ngx_log_error(NGX_LOG_INFO, log, 0, "Found SQL property %s: %s", field_name, f);
+	ngx_log_error(NGX_LOG_DEBUG, log, 0, "Found SQL property %s: %s", field_name, f);
 	*field = f;
 
 	return NGX_OK;
@@ -780,7 +780,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 			}
 
 			strncpy(session->auth_token, hdr_authorization + 7, strlen(hdr_authorization) - 7);
-			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in Authorization header: %s", session->auth_token);
+			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth token found in Authorization header: %s", session->auth_token);
 			return NGX_OK;
 		}
 	}
@@ -790,7 +790,7 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 		for (i=0; i < session->headers_count; i++) {
 			if (! strcasecmp(session->headers[i].name, session->auth_header)) {
 				session->auth_token = session->headers[i].value;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in header %s: %s", session->auth_header, session->auth_token);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth token found in header %s: %s", session->auth_header, session->auth_token);
 				return NGX_OK;
 			}
 		}
@@ -801,13 +801,13 @@ ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 		for (i=0; i < session->cookies_count; i++) {
 			if (! strcmp(session->cookies[i].name, session->auth_cookie)) {
 				session->auth_token = session->cookies[i].value;
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token found in cookie %s: %s", session->auth_cookie, session->auth_token);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Auth token found in cookie %s: %s", session->auth_cookie, session->auth_token);
 				return NGX_OK;
 			}
 		}
 	}
 
-	ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Auth token not found");
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Auth token not found");
 
 	return NGX_OK;
 }
@@ -821,7 +821,7 @@ ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *
 
 	// URI
 	uri = from_ngx_str(r->pool, r->uri);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found URI: %s", uri);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found URI: %s", uri);
 
 	// Extract file ID
 	// URL format: http://cdn.example.com/some-file-id

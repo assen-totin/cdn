@@ -46,7 +46,7 @@ ngx_int_t request_get_mongo(session_t *session, metadata_t *metadata, ngx_http_r
 
 	// Convert back to extended JSON to use later
 	session->auth_request = bson_as_canonical_extended_json(&filter, NULL);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Using BSON filter: %s", session->auth_request);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Using BSON filter: %s", session->auth_request);
 
 	bson_destroy(&filter);
 #endif
@@ -73,7 +73,7 @@ ngx_int_t request_post_mongo(session_t *session, metadata_t *metadata, ngx_http_
 		BSON_APPEND_UTF8 (&doc, "auth_value", session->auth_value);
 
 	session->auth_request = bson_as_canonical_extended_json(&doc, NULL);
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Using BSON doc: %s", session->auth_request);
+	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Using BSON doc: %s", session->auth_request);
 
 	bson_destroy(&doc);
 #endif

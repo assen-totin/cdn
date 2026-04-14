@@ -25,7 +25,7 @@ ngx_int_t response_get_postgresql(session_t *session, metadata_t *metadata, ngx_
 				if (! PQgetvalue(session->postgresql_result, 0, i))
 					continue;
 
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with length", PQfname(session->postgresql_result, i));
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Processing metadata key %s with length", PQfname(session->postgresql_result, i));
 
 				if (! strcmp(PQfname(session->postgresql_result, i), "filename")) {
 					if ((ret = set_metadata_field(r, &metadata->filename, "filename", PQgetvalue(session->postgresql_result, 0, i))) > 0)
@@ -54,7 +54,7 @@ ngx_int_t response_get_postgresql(session_t *session, metadata_t *metadata, ngx_
 
 				else if (! strcmp(PQfname(session->postgresql_result, i), "status")) {
 					metadata->status = atol(PQgetvalue(session->postgresql_result, 0, i));
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+					ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 				}
 			}
 		}
@@ -91,11 +91,11 @@ ngx_int_t response_post_postgresql(session_t *session, metadata_t *metadata, ngx
 				if (! PQgetvalue(session->postgresql_result, 0, i))
 					continue;
 
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Processing metadata key %s with length", PQfname(session->postgresql_result, i));
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Processing metadata key %s with length", PQfname(session->postgresql_result, i));
 
 				if (! strcmp(PQfname(session->postgresql_result, i), "status")) {
 					metadata->status = atol(PQgetvalue(session->postgresql_result, 0, i));
-					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+					ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 				}
 			}
 		}

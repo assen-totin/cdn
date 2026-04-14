@@ -268,7 +268,7 @@ ngx_int_t response_get_xml(session_t *session, metadata_t *metadata, ngx_http_re
 
 			else if (! xmlStrcmp(cur_node->name, (const xmlChar *)"status")) {
 				metadata->status = atoi((const char *) cur_node->children->content);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 			}
 		}
 	}
@@ -311,7 +311,7 @@ ngx_int_t response_post_xml(session_t *session, metadata_t *metadata, ngx_http_r
 		if ((cur_node->type == XML_ELEMENT_NODE) && (cur_node->children)) {
 			if (! xmlStrcmp(cur_node->name, (const xmlChar *)"status")) {
 				metadata->status = atoi((const char *) cur_node->children->content);
-				ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Found metadata status: %l", metadata->status);
+				ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Found metadata status: %l", metadata->status);
 			}
 		}
 	}
