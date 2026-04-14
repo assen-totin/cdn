@@ -95,7 +95,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	char *p1, *p2;
 	char *hdr_b64u, *pld_b64u, *sig_b64u;
 	char *hdr_json, *pld_json, *sig;
-	char *tosign;
+	char *tosign = NULL;
 	char *pld_auth_value_s;
 	unsigned char *dig;
 	size_t hdr_json_len=0, pld_json_len=0, sig_len=0, sig_size=0;

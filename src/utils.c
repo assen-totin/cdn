@@ -460,9 +460,8 @@ static inline auth_matrix_t *init_auth_matrix(ngx_log_t *log, char *matrix_str) 
 /**
  * Init settings
  */
-settings_t *settings_init() {
+settings_t *settings_init(ngx_http_cdn_loc_conf_t *cdn_loc_conf) {
 	settings_t *settings;
-	ngx_http_cdn_loc_conf_t *cdn_loc_conf;
 	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
 	int i, ret;
 	struct stat statbuf;
@@ -476,10 +475,6 @@ settings_t *settings_init() {
 	// Create settings
 	if ((settings = malloc(sizeof(settings_t))) == NULL)
 		return NULL;
-
-	// Get config
-	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
-
 
 	// Init to NULL everything that we may malloc() later
 	settings->matrix_dnld = NULL;
@@ -763,11 +758,7 @@ metadata_t *init_metadata(ngx_http_request_t *r) {
  */
 ngx_int_t get_auth_token(session_t *session, ngx_http_request_t *r) {
 	char *hdr_authorization;
-	bool match = false;
-	int i, j;
-	ngx_int_t ret;
-	ngx_table_elt_t *h;
-	ngx_list_part_t *part;
+	int i;
 
 	// First, check Authorization header
 	if (r->headers_in.authorization) {

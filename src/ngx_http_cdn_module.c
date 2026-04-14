@@ -17,8 +17,6 @@
  * Module initialisation
  */
 ngx_int_t ngx_http_cdn_module_init (ngx_cycle_t *cycle) {
-	int ret;
-
 #ifdef CDN_ENABLE_MONGO
 	// Init Mongo
 	mongoc_init();
@@ -87,7 +85,6 @@ void* ngx_http_cdn_create_loc_conf(ngx_conf_t* cf) {
 char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_child) {
 	ngx_http_cdn_loc_conf_t *parent = void_parent;
 	ngx_http_cdn_loc_conf_t *child = void_child;
-	int len;
 
 	ngx_conf_merge_uint_value(child->server_id, parent->server_id, DEFAULT_SERVER_ID);
 	ngx_conf_merge_uint_value(child->fs_depth, parent->fs_depth, DEFAULT_FS_DEPTH);
@@ -123,7 +120,7 @@ char* ngx_http_cdn_merge_loc_conf(ngx_conf_t* cf, void* void_parent, void* void_
 
 	// See if we need to init settings
 	if (! child->settings) {
-		if ((child->settings = settings_init()) == NULL)
+		if ((child->settings = settings_init(child)) == NULL)
 			return NGX_CONF_ERROR;
 	}
 
