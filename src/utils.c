@@ -644,6 +644,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	}
 
 	// Get settings
+	cdn_loc_conf = ngx_http_get_module_loc_conf(r, ngx_http_cdn_module);
 	session->settings = cdn_loc_conf->settings;
 
 	// Set options for all HTTP methods
