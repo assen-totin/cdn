@@ -24,6 +24,6 @@ ngx_int_t get_uri(session_t *session, metadata_t *metadata, ngx_http_request_t *
 void auth_check(session_t *session, metadata_t *metadata, ngx_http_request_t *r);
 char *trim_quotes(ngx_http_request_t *r, char *s);
 void base16_encode(char *in, char *out);
-settings_t *settings_init(ngx_http_cdn_loc_conf_t *child);
+settings_t *settings_init(ngx_http_cdn_loc_conf_t *cdn_loc_conf);
 
 

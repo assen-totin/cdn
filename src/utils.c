@@ -464,7 +464,6 @@ settings_t *settings_init(ngx_http_cdn_loc_conf_t *cdn_loc_conf) {
 	settings_t *settings;
 	char *matrix_str, *jwt_key, *db_dsn, *str, *token, *saveptr;
 	int i, ret;
-	struct stat statbuf;
 	time_t t = time(NULL);
 	struct tm lt = {0};
 	char *key_name = NULL, *key_header = NULL;
@@ -491,7 +490,7 @@ settings_t *settings_init(ngx_http_cdn_loc_conf_t *cdn_loc_conf) {
 	}
 	if (! (settings->fs->root = from_ngx_str_malloc(ngx_cycle->log, cdn_loc_conf->fs_root)))
 		return NULL;
-	settings->fs->depth = (unsigned int) cdn_loc_conf->depth;
+	settings->fs->depth = (unsigned int) cdn_loc_conf->fs_depth;
 	settings->fs->server_id = (unsigned int) cdn_loc_conf->server_id;
 
 	// Init index
@@ -569,7 +568,7 @@ settings_t *settings_init(ngx_http_cdn_loc_conf_t *cdn_loc_conf) {
 
 	// Init DSN (only for Redis, Oracle and MySQL transport)
 	if (cdn_loc_conf->db_dsn.len > 4) {
-		if ((settings->dsn = calloc(sizeof(dsn_t)), 1) == NULL) {
+		if ((settings->dsn = calloc(sizeof(dsn_t), 1)) == NULL) {
 			ngx_log_error(NGX_LOG_EMERG, ngx_cycle->log, 0, "Failed to allocate %l bytes for dsn", sizeof(dsn_t));
 			return NULL;
 		}
@@ -685,7 +684,7 @@ session_t *init_session(ngx_http_request_t *r) {
 	session->read_only = from_ngx_str(r->pool, cdn_loc_conf->read_only);
 	session->request_type = from_ngx_str(r->pool, cdn_loc_conf->request_type);
 	session->tcp_host = from_ngx_str(r->pool, cdn_loc_conf->tcp_host);
-	session->tcp_port = atoi(from_ngx_str(r->pool, cdn_loc_conf->tcp_port));
+	session->tcp_port = cdn_loc_conf->tcp_port;
 	session->transport_type = from_ngx_str(r->pool, cdn_loc_conf->transport_type);
 	session->unix_socket = from_ngx_str(r->pool, cdn_loc_conf->unix_socket);
 
