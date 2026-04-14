@@ -54,7 +54,11 @@ ngx_int_t request_get_json(session_t *session, metadata_t *metadata, ngx_http_re
 		bson_append_array_end (&b, &bc);
 	}
 
+#ifdef RHEL10
+	session->auth_request = bson_as_legacy_extended_json(&b, NULL);
+#else
 	session->auth_request = bson_as_json (&b, NULL);
+#endif
 
 	bson_destroy(&b);
 
@@ -81,7 +85,11 @@ ngx_int_t request_post_json(session_t *session, metadata_t *metadata, ngx_http_r
 	if (session->auth_value)
 		BSON_APPEND_UTF8 (&doc, "auth_value", session->auth_value);
 
-	session->auth_request = bson_as_json (&doc, NULL);
+#ifdef RHEL10
+	session->auth_request = bson_as_legacy_extended_json(&doc, NULL);
+#else
+	session->auth_request = bson_as_json(&doc, NULL);
+#endif
 
 	bson_destroy(&doc);
 

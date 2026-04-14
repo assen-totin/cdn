@@ -83,7 +83,11 @@ ngx_int_t transport_mongo(session_t *session, metadata_t *metadata, ngx_http_req
 		// Act as per mode
 		if (mode == METADATA_SELECT)
 			// If invoked to select data, convert it
+#ifdef RHEL10
+			session->auth_response = bson_as_legacy_extended_json(doc, NULL);
+#else
 			session->auth_response = bson_as_json(doc, NULL);
+#endif
 
 		else if (mode == METADATA_UPDATE) {
 			// Prepare a separate filter to match on file ID

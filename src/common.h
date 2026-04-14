@@ -75,14 +75,8 @@
 
 #ifdef RHEL7
 	#include <bson.h>
-#endif
-#ifdef RHEL8
-	#include <bson/bson.h>
-#endif
-#ifdef RHEL9
-	#include <bson/bson.h>
-#endif
-#ifdef RHEL10
+#else
+	// RHEL-8,9,10
 	#include <bson/bson.h>
 #endif
 
