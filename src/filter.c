@@ -12,7 +12,7 @@
 char *filter_token(ngx_http_request_t *r, char *string, char *delimiter, int position) {
 	int i;
 	char *ret, *prev, *next;
-	ngx_log_t *log = (r && r->log) ? r->log : ngx_cycle->log;
+	ngx_log_t *log = (r) ? r->pool->log : ngx_cycle->log;
 
 	if (! string)
 		return NULL;

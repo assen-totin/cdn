@@ -179,7 +179,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 		sig_size = 256;
 
 	// Get signature from JWT
-	sig = base64url_decode(sig_b64u, strlen(sig_b64u), &sig_len);
+	sig = base64url_decode((const unsigned char *)sig_b64u, strlen(sig_b64u), &sig_len);
 	if (! sig) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to decode signature from base64url: %s", session->auth_token, sig_b64u);
 		return NGX_HTTP_UNAUTHORIZED;
@@ -243,7 +243,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 			return NGX_HTTP_INTERNAL_SERVER_ERROR;
 		}
 
-		if (EVP_DigestVerify(ossl_md_ctx, sig, sig_len, (const unsigned char *)tosign, strlen(tosign)) != 1) {
+		if (EVP_DigestVerify(ossl_md_ctx, (const unsigned char *)sig, sig_len, (const unsigned char *)tosign, strlen(tosign)) != 1) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s RSA MAC mismatch: %s", session->auth_token, ERR_error_string(ERR_get_error(), NULL));
 			EVP_MD_CTX_destroy(ossl_md_ctx);
 			return NGX_HTTP_UNAUTHORIZED;
