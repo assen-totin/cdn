@@ -95,7 +95,7 @@ void base16_encode(unsigned char *in, int len, char *out) {
 		out[i * 2]   = "0123456789abcdef"[in[i] >> 4];
 		out[i * 2 + 1] = "0123456789abcdef"[in[i] & 0x0F];
 	}
-	out[strlen(in) * 2] = '\0';
+	out[len * 2] = '\0';
 }
 
 /**
