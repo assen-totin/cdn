@@ -50,7 +50,16 @@ get_file() {
 		fi
 	else
 		# Local filesystem copy
-		[ -f $SRC ] && cp -f $SRC $2
+		if [ -f $SRC ] ; then
+			cp -f $SRC $2
+			RES=$?
+
+			if [ $RES -gt 0 ] ; then
+				echo "Replication failed for $SRC cp code $RES"
+				rm -f /tmp/$INSTANCE_NAME
+				exit 1
+			fi			
+		fi
 	fi
 }
 
