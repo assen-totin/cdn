@@ -1,0 +1,39 @@
+From 633b8f4026a068f9fe30703469d1cdccdf14269c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lubo=C5=A1=20Uhliarik?= <luhliari@redhat.com>
+Date: Thu, 24 Apr 2025 15:10:34 +0200
+Subject: [PATCH] SSL: use of the SSL_OP_IGNORE_UNEXPECTED_EOF option.
+
+A new behaviour was introduced in OpenSSL 1.1.1e, when a peer does not send
+close_notify before closing the connection.  Previously, it was to return
+SSL_ERROR_SYSCALL with errno 0, known since at least OpenSSL 0.9.7, and is
+handled gracefully in nginx.  Now it returns SSL_ERROR_SSL with a distinct
+reason SSL_R_UNEXPECTED_EOF_WHILE_READING ("unexpected eof while reading").
+This leads to critical errors seen in nginx within various routines such as
+SSL_do_handshake(), SSL_read(), SSL_shutdown().  The behaviour was restored
+in OpenSSL 1.1.1f, but presents in OpenSSL 3.0 by default.
+
+Use of the SSL_OP_IGNORE_UNEXPECTED_EOF option added in OpenSSL 3.0 allows
+to set a compatible behaviour to return SSL_ERROR_ZERO_RETURN:
+https://git.openssl.org/?p=openssl.git;a=commitdiff;h=09b90e0
+---
+ src/event/ngx_event_openssl.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/event/ngx_event_openssl.c b/src/event/ngx_event_openssl.c
+index 61ff868..fe6bd08 100644
+--- a/src/event/ngx_event_openssl.c
++++ b/src/event/ngx_event_openssl.c
+@@ -394,6 +394,10 @@ ngx_ssl_create(ngx_ssl_t *ssl, ngx_uint_t protocols, void *data)
+     SSL_CTX_set_options(ssl->ctx, SSL_OP_NO_CLIENT_RENEGOTIATION);
+ #endif
+ 
++#ifdef SSL_OP_IGNORE_UNEXPECTED_EOF
++    SSL_CTX_set_options(ssl->ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
++#endif
++
+ #ifdef SSL_MODE_RELEASE_BUFFERS
+     SSL_CTX_set_mode(ssl->ctx, SSL_MODE_RELEASE_BUFFERS);
+ #endif
+-- 
+2.44.0
+

@@ -1,0 +1,183 @@
+From f3bcc0bcfb6eda3f4874fe2531d546ba724c518c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lubo=C5=A1=20Uhliarik?= <luhliari@redhat.com>
+Date: Wed, 12 Jun 2024 12:49:28 +0200
+Subject: [PATCH] Optimized chain link usage
+
+Previously chain links could sometimes be dropped instead of being reused,
+which could result in increased memory consumption during long requests.
+---
+ src/core/ngx_output_chain.c                    | 10 ++++++++--
+ src/http/modules/ngx_http_grpc_module.c        |  5 ++++-
+ .../modules/ngx_http_gunzip_filter_module.c    | 18 ++++++++++++++----
+ src/http/modules/ngx_http_gzip_filter_module.c | 10 +++++++---
+ src/http/modules/ngx_http_ssi_filter_module.c  |  8 ++++++--
+ src/http/modules/ngx_http_sub_filter_module.c  |  8 ++++++--
+ 6 files changed, 45 insertions(+), 14 deletions(-)
+
+diff --git a/src/core/ngx_output_chain.c b/src/core/ngx_output_chain.c
+index 5c3dbe8..4aa1b02 100644
+--- a/src/core/ngx_output_chain.c
++++ b/src/core/ngx_output_chain.c
+@@ -121,7 +121,10 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
+ 
+                 ngx_debug_point();
+ 
+-                ctx->in = ctx->in->next;
++                cl = ctx->in;
++                ctx->in = cl->next;
++
++                ngx_free_chain(ctx->pool, cl);
+ 
+                 continue;
+             }
+@@ -207,7 +210,10 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
+             /* delete the completed buf from the ctx->in chain */
+ 
+             if (ngx_buf_size(ctx->in->buf) == 0) {
+-                ctx->in = ctx->in->next;
++                cl = ctx->in;
++                ctx->in = cl->next;
++
++                ngx_free_chain(ctx->pool, cl);
+             }
+ 
+             cl = ngx_alloc_chain_link(ctx->pool);
+diff --git a/src/http/modules/ngx_http_grpc_module.c b/src/http/modules/ngx_http_grpc_module.c
+index 53bc547..9f13089 100644
+--- a/src/http/modules/ngx_http_grpc_module.c
++++ b/src/http/modules/ngx_http_grpc_module.c
+@@ -1230,7 +1230,7 @@ ngx_http_grpc_body_output_filter(void *data, ngx_chain_t *in)
+     ngx_buf_t              *b;
+     ngx_int_t               rc;
+     ngx_uint_t              next, last;
+-    ngx_chain_t            *cl, *out, **ll;
++    ngx_chain_t            *cl, *out, *ln, **ll;
+     ngx_http_upstream_t    *u;
+     ngx_http_grpc_ctx_t    *ctx;
+     ngx_http_grpc_frame_t  *f;
+@@ -1458,7 +1458,10 @@ ngx_http_grpc_body_output_filter(void *data, ngx_chain_t *in)
+             last = 1;
+         }
+ 
++        ln = in;
+         in = in->next;
++
++        ngx_free_chain(r->pool, ln);
+     }
+ 
+     ctx->in = in;
+diff --git a/src/http/modules/ngx_http_gunzip_filter_module.c b/src/http/modules/ngx_http_gunzip_filter_module.c
+index c1341f5..5d170a1 100644
+--- a/src/http/modules/ngx_http_gunzip_filter_module.c
++++ b/src/http/modules/ngx_http_gunzip_filter_module.c
+@@ -333,6 +333,8 @@ static ngx_int_t
+ ngx_http_gunzip_filter_add_data(ngx_http_request_t *r,
+     ngx_http_gunzip_ctx_t *ctx)
+ {
++    ngx_chain_t  *cl;
++
+     if (ctx->zstream.avail_in || ctx->flush != Z_NO_FLUSH || ctx->redo) {
+         return NGX_OK;
+     }
+@@ -344,8 +346,11 @@ ngx_http_gunzip_filter_add_data(ngx_http_request_t *r,
+         return NGX_DECLINED;
+     }
+ 
+-    ctx->in_buf = ctx->in->buf;
+-    ctx->in = ctx->in->next;
++    cl = ctx->in;
++    ctx->in_buf = cl->buf;
++    ctx->in = cl->next;
++
++    ngx_free_chain(r->pool, cl);
+ 
+     ctx->zstream.next_in = ctx->in_buf->pos;
+     ctx->zstream.avail_in = ctx->in_buf->last - ctx->in_buf->pos;
+@@ -374,6 +379,7 @@ static ngx_int_t
+ ngx_http_gunzip_filter_get_buf(ngx_http_request_t *r,
+     ngx_http_gunzip_ctx_t *ctx)
+ {
++    ngx_chain_t             *cl;
+     ngx_http_gunzip_conf_t  *conf;
+ 
+     if (ctx->zstream.avail_out) {
+@@ -383,8 +389,12 @@ ngx_http_gunzip_filter_get_buf(ngx_http_request_t *r,
+     conf = ngx_http_get_module_loc_conf(r, ngx_http_gunzip_filter_module);
+ 
+     if (ctx->free) {
+-        ctx->out_buf = ctx->free->buf;
+-        ctx->free = ctx->free->next;
++
++        cl = ctx->free;
++        ctx->out_buf = cl->buf;
++        ctx->free = cl->next;
++
++        ngx_free_chain(r->pool, cl);
+ 
+         ctx->out_buf->flush = 0;
+ 
+diff --git a/src/http/modules/ngx_http_gzip_filter_module.c b/src/http/modules/ngx_http_gzip_filter_module.c
+index b8c5ccc..1d17a6d 100644
+--- a/src/http/modules/ngx_http_gzip_filter_module.c
++++ b/src/http/modules/ngx_http_gzip_filter_module.c
+@@ -978,10 +978,14 @@ static void
+ ngx_http_gzip_filter_free_copy_buf(ngx_http_request_t *r,
+     ngx_http_gzip_ctx_t *ctx)
+ {
+-    ngx_chain_t  *cl;
++    ngx_chain_t  *cl, *ln;
++
++    for (cl = ctx->copied; cl; /* void */) {
++        ln = cl;
++        cl = cl->next;
+ 
+-    for (cl = ctx->copied; cl; cl = cl->next) {
+-        ngx_pfree(r->pool, cl->buf->start);
++        ngx_pfree(r->pool, ln->buf->start);
++        ngx_free_chain(r->pool, ln);
+     }
+ 
+     ctx->copied = NULL;
+diff --git a/src/http/modules/ngx_http_ssi_filter_module.c b/src/http/modules/ngx_http_ssi_filter_module.c
+index 6737965..a55f6e5 100644
+--- a/src/http/modules/ngx_http_ssi_filter_module.c
++++ b/src/http/modules/ngx_http_ssi_filter_module.c
+@@ -455,9 +455,13 @@ ngx_http_ssi_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
+     while (ctx->in || ctx->buf) {
+ 
+         if (ctx->buf == NULL) {
+-            ctx->buf = ctx->in->buf;
+-            ctx->in = ctx->in->next;
++
++            cl = ctx->in;
++            ctx->buf = cl->buf;
++            ctx->in = cl->next;
+             ctx->pos = ctx->buf->pos;
++
++            ngx_free_chain(r->pool, cl);
+         }
+ 
+         if (ctx->state == ssi_start_state) {
+diff --git a/src/http/modules/ngx_http_sub_filter_module.c b/src/http/modules/ngx_http_sub_filter_module.c
+index 6d3de59..456bb27 100644
+--- a/src/http/modules/ngx_http_sub_filter_module.c
++++ b/src/http/modules/ngx_http_sub_filter_module.c
+@@ -335,9 +335,13 @@ ngx_http_sub_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
+     while (ctx->in || ctx->buf) {
+ 
+         if (ctx->buf == NULL) {
+-            ctx->buf = ctx->in->buf;
+-            ctx->in = ctx->in->next;
++
++            cl = ctx->in;
++            ctx->buf = cl->buf;
++            ctx->in = cl->next;
+             ctx->pos = ctx->buf->pos;
++
++            ngx_free_chain(r->pool, cl);
+         }
+ 
+         if (ctx->buf->flush || ctx->buf->recycled) {
+-- 
+2.44.0
+
