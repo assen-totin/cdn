@@ -1,7 +1,7 @@
-From 972780352ac6255796a877300e353484f04a148b Mon Sep 17 00:00:00 2001
+From 96c96ff41ad3d3ead3288ea5ba990d9649f30541 Mon Sep 17 00:00:00 2001
 From: Maxim Dounin <mdounin@mdounin.ru>
-Date: Fri, 24 May 2024 00:20:01 +0300
-Subject: [PATCH] Added max_headers directive.
+Date: Tue, 10 Oct 2023 15:13:39 +0300
+Subject: [PATCH] HTTP/2: per-iteration stream handling limit.
 
 The directive limits the number of request headers accepted from clients.
 While the total amount of headers is believed to be sufficiently limited
@@ -25,12 +25,11 @@ Origin: <https://freenginx.org/hg/nginx/rev/199dc0d6b05be814b5c811876c20af58cd36
  src/http/ngx_http_header_count.hh | 14 ++++++
  src/http/ngx_http_request.c       | 24 ++++++++++
  src/http/v2/ngx_http_v2.c         | 14 ++++++
- src/http/v3/ngx_http_v3_request.c | 14 ++++++
- 6 files changed, 140 insertions(+)
+ 5 files changed, 126 insertions(+)
  create mode 100644 src/http/ngx_http_header_count.hh
 
 diff --git a/auto/modules b/auto/modules
-index 1a5e421..e7632fd 100644
+index f5a4597..837d894 100644
 --- a/auto/modules
 +++ b/auto/modules
 @@ -67,6 +67,7 @@ if [ $HTTP = YES ]; then
@@ -42,7 +41,7 @@ index 1a5e421..e7632fd 100644
          ngx_module_incs="src/http src/http/modules"
          ngx_module_deps="src/http/ngx_http.h \
 diff --git a/src/http/ngx_http_core_module.c b/src/http/ngx_http_core_module.c
-index 033a3bf..c736d83 100644
+index 6664fa6..620cc35 100644
 --- a/src/http/ngx_http_core_module.c
 +++ b/src/http/ngx_http_core_module.c
 @@ -8,6 +8,7 @@
@@ -113,7 +112,7 @@ index 033a3bf..c736d83 100644
  
  ngx_str_t  ngx_http_core_get_method = { 3, (u_char *) "GET" };
  
-@@ -3653,6 +3700,32 @@ ngx_http_core_create_loc_conf(ngx_conf_t *cf)
+@@ -3562,6 +3609,32 @@ ngx_http_core_create_loc_conf(ngx_conf_t *cf)
  }
  
  
@@ -167,7 +166,7 @@ index 0000000..6a8b86d
 +
 +#endif /* _NGX_HTTP_HEADER_COUNT_H_INCLUDED_ */
 diff --git a/src/http/ngx_http_request.c b/src/http/ngx_http_request.c
-index 9593b7f..88165b4 100644
+index 404aa77..d6515b6 100644
 --- a/src/http/ngx_http_request.c
 +++ b/src/http/ngx_http_request.c
 @@ -8,6 +8,7 @@
@@ -178,7 +177,7 @@ index 9593b7f..88165b4 100644
  
  
  static void ngx_http_wait_request_handler(ngx_event_t *ev);
-@@ -565,6 +566,7 @@ ngx_http_alloc_request(ngx_connection_t *c)
+@@ -545,6 +546,7 @@ ngx_http_alloc_request(ngx_connection_t *c)
      ngx_http_connection_t      *hc;
      ngx_http_core_srv_conf_t   *cscf;
      ngx_http_core_main_conf_t  *cmcf;
@@ -186,7 +185,7 @@ index 9593b7f..88165b4 100644
  
      hc = c->data;
  
-@@ -626,6 +628,13 @@ ngx_http_alloc_request(ngx_connection_t *c)
+@@ -606,6 +608,13 @@ ngx_http_alloc_request(ngx_connection_t *c)
          return NULL;
      }
  
@@ -198,9 +197,9 @@ index 9593b7f..88165b4 100644
 +    ngx_http_set_ctx(r, hc_ctx, ngx_http_header_count_module);
 +
  #if (NGX_HTTP_SSL)
-     if (c->ssl && !c->ssl->sendfile) {
+     if (c->ssl) {
          r->main_filter_need_in_memory = 1;
-@@ -1399,6 +1408,8 @@ ngx_http_process_request_headers(ngx_event_t *rev)
+@@ -1378,6 +1387,8 @@ ngx_http_process_request_headers(ngx_event_t *rev)
      ngx_http_request_t         *r;
      ngx_http_core_srv_conf_t   *cscf;
      ngx_http_core_main_conf_t  *cmcf;
@@ -209,7 +208,7 @@ index 9593b7f..88165b4 100644
  
      c = rev->data;
      r = c->data;
-@@ -1472,6 +1483,10 @@ ngx_http_process_request_headers(ngx_event_t *rev)
+@@ -1451,6 +1462,10 @@ ngx_http_process_request_headers(ngx_event_t *rev)
          rc = ngx_http_parse_header_line(r, r->header_in,
                                          cscf->underscores_in_headers);
  
@@ -220,7 +219,7 @@ index 9593b7f..88165b4 100644
          if (rc == NGX_OK) {
  
              r->request_length += r->header_in->pos - r->header_name_start;
-@@ -1489,6 +1504,15 @@ ngx_http_process_request_headers(ngx_event_t *rev)
+@@ -1468,6 +1483,15 @@ ngx_http_process_request_headers(ngx_event_t *rev)
  
              /* a header line has been parsed successfully */
  
@@ -237,7 +236,7 @@ index 9593b7f..88165b4 100644
              if (h == NULL) {
                  ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 diff --git a/src/http/v2/ngx_http_v2.c b/src/http/v2/ngx_http_v2.c
-index 0f5bd3d..b340789 100644
+index 291677a..0c6ae96 100644
 --- a/src/http/v2/ngx_http_v2.c
 +++ b/src/http/v2/ngx_http_v2.c
 @@ -9,6 +9,7 @@
@@ -247,8 +246,8 @@ index 0f5bd3d..b340789 100644
 +#include <ngx_http_header_count.hh>
  
  
- /* errors */
-@@ -1712,6 +1713,8 @@ ngx_http_v2_state_process_header(ngx_http_v2_connection_t *h2c, u_char *pos,
+ typedef struct {
+@@ -1749,6 +1750,8 @@ ngx_http_v2_state_process_header(ngx_http_v2_connection_t *h2c, u_char *pos,
      ngx_http_v2_header_t       *header;
      ngx_http_core_srv_conf_t   *cscf;
      ngx_http_core_main_conf_t  *cmcf;
@@ -257,7 +256,7 @@ index 0f5bd3d..b340789 100644
  
      static ngx_str_t cookie = ngx_string("cookie");
  
-@@ -1817,6 +1820,17 @@ ngx_http_v2_state_process_header(ngx_http_v2_connection_t *h2c, u_char *pos,
+@@ -1860,6 +1863,17 @@ ngx_http_v2_state_process_header(ngx_http_v2_connection_t *h2c, u_char *pos,
          }
  
      } else {
@@ -275,45 +274,6 @@ index 0f5bd3d..b340789 100644
          h = ngx_list_push(&r->headers_in.headers);
          if (h == NULL) {
              return ngx_http_v2_connection_error(h2c,
-diff --git a/src/http/v3/ngx_http_v3_request.c b/src/http/v3/ngx_http_v3_request.c
-index 0faddd2..a3e10ae 100644
---- a/src/http/v3/ngx_http_v3_request.c
-+++ b/src/http/v3/ngx_http_v3_request.c
-@@ -8,6 +8,7 @@
- #include <ngx_config.h>
- #include <ngx_core.h>
- #include <ngx_http.h>
-+#include <ngx_http_header_count.hh>
- 
- 
- static void ngx_http_v3_init_request_stream(ngx_connection_t *c);
-@@ -618,6 +619,8 @@ ngx_http_v3_process_header(ngx_http_request_t *r, ngx_str_t *name,
-     ngx_http_header_t          *hh;
-     ngx_http_core_srv_conf_t   *cscf;
-     ngx_http_core_main_conf_t  *cmcf;
-+    ngx_http_header_count_conf_t *hccf;
-+    ngx_http_header_count_t    *hc_ctx;
- 
-     static ngx_str_t cookie = ngx_string("cookie");
- 
-@@ -665,6 +668,17 @@ ngx_http_v3_process_header(ngx_http_request_t *r, ngx_str_t *name,
-         }
- 
-     } else {
-+        cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
-+        hccf = ngx_http_get_module_srv_conf(r, ngx_http_header_count_module);
-+        hc_ctx = ngx_http_get_module_ctx(r, ngx_http_header_count_module);
-+
-+        if (hc_ctx->count++ >= hccf->max_headers) {
-+            ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-+                          "client sent too many header lines");
-+            ngx_http_finalize_request(r, NGX_HTTP_REQUEST_HEADER_TOO_LARGE);
-+            return NGX_ERROR;
-+        }
-+
-         h = ngx_list_push(&r->headers_in.headers);
-         if (h == NULL) {
-             ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
 -- 
 2.44.0
 
