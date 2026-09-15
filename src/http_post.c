@@ -20,6 +20,9 @@ static void upload_cleanup(ngx_http_request_t *r, upload_t *upload, int status) 
 	if (upload->rb_malloc)
 		free(upload->rb);
 
+	if (upload->rb_mmap)
+		munmap(upload->rb, upload->rb_len);
+
 	if (upload->curl)
 		curl_easy_cleanup(upload->curl);
 
@@ -185,6 +188,9 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 
 	upload->curl = NULL;
+	upload->rb_malloc = false;
+	upload->rb_mmap = false;
+	upload->rb_len = 0;
 
 	// Check if we have body
 	if (r->request_body == NULL)
@@ -242,12 +248,14 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	if (bufs && bufs->buf && bufs->buf->in_file) {
 		// Use mmap from FD in the buffer
 		ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request body will use file buffers");
-		len = bufs->buf->file_last;
+		upload->rb_len = bufs->buf->file_last;
 
-		if ((upload->rb = mmap(NULL, len, PROT_READ, MAP_SHARED, bufs->buf->file->fd, 0)) < 0) {
+		if ((upload->rb = mmap(NULL, upload->rb_len, PROT_READ, MAP_SHARED, bufs->buf->file->fd, 0)) < 0) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Request body: mmap() error %s", strerror(errno));
 			return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 		}
+
+		upload->rb_mmap = true;
 	}
 	else {
 		// Work from memory
@@ -263,7 +271,7 @@ void cdn_handler_post (ngx_http_request_t *r) {
 		for (bufs = r->request_body->bufs; bufs; bufs = bufs->next) {
 			len_buf = ngx_buf_size(bufs->buf);
 			ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request body: found new memory buffer with size: %l", len_buf);
-			len += len_buf;
+			upload->rb_len += len_buf;
 
 			memcpy(upload->rb + rb_pos, bufs->buf->start, len_buf);
 			rb_pos += len_buf;
@@ -271,8 +279,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	}
 
 	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Upload request body: total memory buffer length: %l", len);
-	if (len != content_length) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request body mismatch: Content-Length %l, total memory buffers %l bytes", content_length, len);
+	if (upload->rb_len != content_length) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Upload request body mismatch: Content-Length %l, total memory buffers %l bytes", content_length, upload->rb_len);
 		return upload_cleanup(r, upload, NGX_HTTP_INTERNAL_SERVER_ERROR);
 	}
 
@@ -809,6 +817,8 @@ void cdn_handler_post (ngx_http_request_t *r) {
 	// Clean up
 	if (upload->rb_malloc)
 		free(upload->rb);
+	if (upload->rb_mmap)
+		munmap(upload->rb, upload->rb_len);
 
 	// Prepare output chain; hook the buffer
 	out->buf = b;

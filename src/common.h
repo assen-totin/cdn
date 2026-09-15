@@ -368,6 +368,8 @@ typedef struct {
 typedef struct {
 	char *rb;
 	bool rb_malloc;
+	bool rb_mmap;
+	off_t rb_len;
 	CURL *curl;
 } upload_t;
 
