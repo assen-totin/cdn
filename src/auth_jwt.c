@@ -258,7 +258,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	bson_value = bson_iter_value(&iter);
+	bson_value = bson_iter_value(&bson_iter);
 	if (! bson_value) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find value for key %s", session->auth_token, session->jwt_field);
 		return NGX_HTTP_UNAUTHORIZED;
@@ -270,13 +270,13 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	}
 
 	if ((session->auth_value = ngx_pcalloc(r->pool, bson_value->value.v_utf8.len + 1 )) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_value", strlen(bson_value->value.v_utf8.len));
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_value", bson_value->value.v_utf8.len);
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
 	memcpy(session->auth_value, bson_value->value.v_utf8.str, bson_value->value.v_utf8.len);
 	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim %s: %s", session->auth_token, session->jwt_field, session->auth_value);
 
-	bson_destroy(bson);
+	bson_destroy(pld_bson);
 
 	// FIXME: If we return prior to these, we will leak some memory
 	free(pld_json);
