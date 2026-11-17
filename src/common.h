@@ -12,6 +12,7 @@
 //// INCLUDES
 
 #include "modules.h"
+#include <bson/bson.h>
 #include <curl/curl.h>
 #include <errno.h>
 #include <features.h>
@@ -35,7 +36,6 @@
 #include <unistd.h>
 
 #ifdef CDN_ENABLE_JWT
-#include <jansson.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/pem.h>
@@ -71,13 +71,6 @@
 	#define RHEL9
 #elif __GLIBC_MINOR__ == 39
 	#define RHEL10
-#endif
-
-#ifdef RHEL7
-	#include <bson.h>
-#else
-	// RHEL-8,9,10
-	#include <bson/bson.h>
 #endif
 
 //// DEFINITIONS

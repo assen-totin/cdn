@@ -94,17 +94,19 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 #ifdef CDN_ENABLE_JWT
 	char *p1, *p2;
 	char *hdr_b64u, *pld_b64u, *sig_b64u;
-	unsigned char *hdr_json, *pld_json, *sig;
+	unsigned char *pld_json, *sig;
 	char *tosign = NULL;
-	char *pld_auth_value_s;
 	unsigned char *dig;
-	size_t hdr_json_len=0, pld_json_len=0, sig_len=0, sig_size=0;
 	unsigned int  dig_len=0;
-	json_error_t error;
-	json_t *hdr, *pld, *pld_auth_value;
+	size_t pld_json_len=0, sig_len=0, sig_size=0;
 	const EVP_MD *ossl_alg;
 	EVP_MD_CTX *ossl_md_ctx = NULL;
 	EVP_PKEY_CTX *ossl_pkey_ctx = NULL;
+	bson_error_t bson_error;
+	bson_t *pld_bson;
+	bson_iter_t bson_iter;
+	const bson_value_t *bson_value;
+	bool b;
 
 	// Split the JWT into its three parts: header, payload, signature
 	// They are delimited by a dot and each part is separately encoded as Base64url
@@ -141,32 +143,6 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Token %s header: %s", session->auth_token, hdr_b64u);
 	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Token %s payload: %s", session->auth_token, pld_b64u);
 	ngx_log_error(NGX_LOG_DEBUG, r->connection->log, 0, "Token %s signature: %s", session->auth_token, sig_b64u);
-
-	// Decode Base64URL
-	hdr_json = base64url_decode((const unsigned char *)hdr_b64u, strlen(hdr_b64u), &hdr_json_len);
-	if (! hdr_json) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to decode header from base64url: %s", session->auth_token, hdr_b64u);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-
-	pld_json = base64url_decode((const unsigned char *)pld_b64u, strlen(pld_b64u), &pld_json_len);
-	if (! pld_json) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to decode payload from base64url: %s", session->auth_token, pld_b64u);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-
-	// Parse JSON for header and payload
-	hdr = json_loadb((char *)hdr_json, hdr_json_len, 0, &error);
-	if (! hdr) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to parse JSON from header: %s", session->auth_token, (char *)hdr_json);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
-
-	pld = json_loadb((char *)pld_json, pld_json_len, 0, &error);
-	if (! pld) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to parse JSON from payload: %s", session->auth_token, (char *)pld_json);
-		return NGX_HTTP_UNAUTHORIZED;
-	}
 
 	// Decide on signature: we only support SHA-256 with either HMAC (if settings->jwt_key is defined) or RSA+SHA256 (if settings->jwt_pubkey is defined)
 	ossl_alg = EVP_sha256();
@@ -255,30 +231,54 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	// FIXME: Check here for ES256?
 	//https://github.com/benmcollins/libjwt/blob/master/libjwt/openssl/sign-verify.c
 
+	// Decode Base64URL
+	pld_json = base64url_decode((const unsigned char *)pld_b64u, strlen(pld_b64u), &pld_json_len);
+	if (! pld_json) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to decode payload from base64url: %s", session->auth_token, pld_b64u);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	// Parse JSON payload
+	pld_bson = bson_new_from_json((const uint8_t *)pld_json, pld_json_len, &bson_error);
+	if (! pld_bson) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to parse JSON from payload: %s: %s", session->auth_token, (char *)pld_json, &bson_error.message[0]);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
 	// Get the auth value from the payload of the JWT
-	pld_auth_value = json_object_get(pld, session->jwt_field);
-	if (! pld_auth_value) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim %s", session->auth_token, session->jwt_field);
+	b = bson_iter_init (&bson_iter, bson);	
+	if (! b) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s Failed to create BSON iterator", session->auth_token);
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	pld_auth_value_s = json_string_value(pld_auth_value);
-	if (! pld_auth_value_s) {
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find claim %s", session->auth_token, session->jwt_field);
+	b = bson_iter_find (&bson_iter, session->jwt_field);
+	if (! b) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find key %s", session->auth_token, session->jwt_field);
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim %s: %s", session->auth_token, session->jwt_field, pld_auth_value_s);
-	if ((session->auth_value = ngx_pcalloc(r->pool, strlen(pld_auth_value_s) + 1 )) == NULL) {
-		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_value.", strlen(pld_auth_value_s));
+	bson_value = bson_iter_value(&iter);
+	if (! bson_value) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s unable to find value for key %s", session->auth_token, session->jwt_field);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	if (bson_value->value_type != BSON_TYPE_UTF8) {
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s wrong data type for key %s", session->auth_token, session->jwt_field);
+		return NGX_HTTP_UNAUTHORIZED;
+	}
+
+	if ((session->auth_value = ngx_pcalloc(r->pool, strlen(bson_value->value.v_utf8.len) + 1 )) == NULL) {
+		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_value", strlen(bson_value->value.v_utf8.len));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
-	strcpy(session->auth_value, pld_auth_value_s);
+	memcpy(session->auth_value, bson_value->value.v_utf8.str, bson_value->value.v_utf8.len);
+	ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "Token %s found claim %s: %s", session->auth_token, session->jwt_field, session->auth_value);
+
+	bson_destroy(bson);
 
 	// FIXME: If we return prior to these, we will leak some memory
-	free(hdr);
-	free(pld);
-	free(hdr_json);
 	free(pld_json);
 #endif
 
