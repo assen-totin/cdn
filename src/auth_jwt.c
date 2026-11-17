@@ -246,7 +246,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 	}
 
 	// Get the auth value from the payload of the JWT
-	b = bson_iter_init (&bson_iter, bson);	
+	b = bson_iter_init (&bson_iter, pld_bson);	
 	if (! b) {
 		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Token %s Failed to create BSON iterator", session->auth_token);
 		return NGX_HTTP_UNAUTHORIZED;
@@ -269,7 +269,7 @@ ngx_int_t auth_jwt(session_t *session, ngx_http_request_t *r) {
 		return NGX_HTTP_UNAUTHORIZED;
 	}
 
-	if ((session->auth_value = ngx_pcalloc(r->pool, strlen(bson_value->value.v_utf8.len) + 1 )) == NULL) {
+	if ((session->auth_value = ngx_pcalloc(r->pool, bson_value->value.v_utf8.len + 1 )) == NULL) {
 		ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "Failed to allocate %l bytes for auth_value", strlen(bson_value->value.v_utf8.len));
 		return NGX_HTTP_INTERNAL_SERVER_ERROR;
 	}
